@@ -34,15 +34,34 @@ def get_question_options_keyboard(
     return InlineKeyboardMarkup([row1, row2])
 
 
-def get_leaderboard_keyboard(challenge_id: Optional[int] = None) -> InlineKeyboardMarkup:
-    """Navigation for Weekly vs Monthly leaderboards in column layout."""
+def get_leaderboard_keyboard(
+    challenge_id: Optional[int] = None,
+    mode: str = "weekly",
+    page: int = 1,
+    total_pages: int = 1,
+) -> InlineKeyboardMarkup:
+    """Navigation for Weekly vs Monthly leaderboards with pagination in column layout."""
     ch_id = challenge_id or 0
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🏆 Weekly Leaderboard", callback_data=f"lb_weekly:{ch_id}")],
-            [InlineKeyboardButton("📅 Monthly Cumulative Leaderboard", callback_data="lb_monthly")],
-        ]
-    )
+    buttons = []
+
+    # 1. Pagination Row (when there are multiple pages)
+    if total_pages > 1:
+        nav_row = []
+        if page > 1:
+            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"lb_{mode}:{ch_id}:{page - 1}"))
+
+        nav_row.append(InlineKeyboardButton(f"📄 {page}/{total_pages}", callback_data="noop"))
+
+        if page < total_pages:
+            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"lb_{mode}:{ch_id}:{page + 1}"))
+
+        buttons.append(nav_row)
+
+    # 2. Column Mode Switchers
+    buttons.append([InlineKeyboardButton("🏆 Weekly Leaderboard", callback_data=f"lb_weekly:{ch_id}:1")])
+    buttons.append([InlineKeyboardButton("📅 Monthly Cumulative Leaderboard", callback_data="lb_monthly:0:1")])
+
+    return InlineKeyboardMarkup(buttons)
 
 
 def get_admin_panel_keyboard() -> InlineKeyboardMarkup:

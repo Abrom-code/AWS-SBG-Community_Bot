@@ -187,8 +187,9 @@ def test_weekly_and_monthly_leaderboards():
     asyncio.run(service.link_questions_to_challenge(ch_id))
     asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
 
-    # Simulate Student A (High score)
-    p1 = asyncio.run(service.register_or_get_participant(ch_id, 101, "Alice"))
+    # Simulate Student A (High score) with username
+    p1 = asyncio.run(service.register_or_get_participant(ch_id, 101, "Alice", username="alice_cloud"))
+    assert p1["username"] == "alice_cloud"
     asyncio.run(service.start_participant_quiz(ch_id, 101))
     asyncio.run(service.get_next_question_for_participant(ch_id, 101))
     p1_data = asyncio.run(service.register_or_get_participant(ch_id, 101))
@@ -200,7 +201,7 @@ def test_weekly_and_monthly_leaderboards():
     p1_data3 = asyncio.run(service.register_or_get_participant(ch_id, 101))
     asyncio.run(service.record_answer_and_advance(ch_id, 101, p1_data3["current_option_order"]["_display_correct"], 2))
 
-    # Simulate Student B (Lower score)
+    # Simulate Student B (Lower score) without username
     p2 = asyncio.run(service.register_or_get_participant(ch_id, 102, "Bob"))
     asyncio.run(service.start_participant_quiz(ch_id, 102))
     asyncio.run(service.get_next_question_for_participant(ch_id, 102))
@@ -213,15 +214,78 @@ def test_weekly_and_monthly_leaderboards():
 
     # Test Weekly Leaderboard
     weekly_lb = asyncio.run(service.get_weekly_leaderboard(ch_id, limit=5))
-    assert len(weekly_lb) == 2
-    assert weekly_lb[0]["user_name"] == "Alice"
-    assert weekly_lb[0]["rank"] == 1
-    assert weekly_lb[1]["user_name"] == "Bob"
-    assert weekly_lb[1]["rank"] == 2
-    assert weekly_lb[0]["score"] > weekly_lb[1]["score"]
+    entries = weekly_lb["entries"]
+    assert weekly_lb["total_count"] == 2
+    assert weekly_lb["total_pages"] == 1
+    assert len(entries) == 2
+    assert entries[0]["user_name"] == "Alice"
+    assert entries[0]["username"] == "alice_cloud"
+    assert entries[0]["rank"] == 1
+    assert entries[1]["user_name"] == "Bob"
+    assert entries[1]["rank"] == 2
+    assert entries[0]["score"] > entries[1]["score"]
 
     # Test Monthly Cumulative Leaderboard
     monthly_lb = asyncio.run(service.get_monthly_leaderboard(limit=5))
-    assert len(monthly_lb) == 2
-    assert monthly_lb[0]["user_name"] == "Alice"
-    assert monthly_lb[0]["total_score"] > monthly_lb[1]["total_score"]
+    m_entries = monthly_lb["entries"]
+    assert monthly_lb["total_count"] == 2
+    assert len(m_entries) == 2
+    assert m_entries[0]["user_name"] == "Alice"
+    assert m_entries[0]["username"] == "alice_cloud"
+    assert m_entries[0]["total_score"] > m_entries[1]["total_score"]
+
+
+def test_leaderboard_pagination_and_navigation_controls():
+    asyncio.run(db.reset_db())
+    asyncio.run(service.import_questions_from_csv(SAMPLE_CSV))
+
+    ch_id = asyncio.run(service.create_challenge(title="Large Quiz"))
+    asyncio.run(service.link_questions_to_challenge(ch_id))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    # Register and complete for 15 participants
+    for i in range(1, 16):
+        uid = 1000 + i
+        uname = f"Student_{i:02d}"
+        asyncio.run(service.register_or_get_participant(ch_id, uid, uname, username=f"user_{i}"))
+        asyncio.run(service.start_participant_quiz(ch_id, uid))
+        for q_idx in range(3):
+            asyncio.run(service.get_next_question_for_participant(ch_id, uid))
+            p_data = asyncio.run(service.register_or_get_participant(ch_id, uid))
+            correct_key = p_data["current_option_order"]["_display_correct"]
+            # Alternate scores
+            ans = correct_key if (i % 2 == 0 or q_idx == 0) else "INVALID"
+            asyncio.run(service.record_answer_and_advance(ch_id, uid, ans, q_idx))
+
+    # Page 1 (limit 10)
+    page1 = asyncio.run(service.get_weekly_leaderboard(ch_id, limit=10, page=1))
+    assert page1["total_count"] == 15
+    assert page1["total_pages"] == 2
+    assert page1["has_next"] is True
+    assert page1["has_prev"] is False
+    assert len(page1["entries"]) == 10
+    assert page1["entries"][0]["rank"] == 1
+    assert page1["entries"][9]["rank"] == 10
+
+    # Page 2 (limit 10)
+    page2 = asyncio.run(service.get_weekly_leaderboard(ch_id, limit=10, page=2))
+    assert page2["has_next"] is False
+    assert page2["has_prev"] is True
+    assert len(page2["entries"]) == 5
+    assert page2["entries"][0]["rank"] == 11
+    assert page2["entries"][4]["rank"] == 15
+
+    # Keyboard pagination checks
+    from app.challenge.keyboards import get_leaderboard_keyboard
+    kb1 = get_leaderboard_keyboard(ch_id, mode="weekly", page=1, total_pages=2)
+    kb1_texts = [btn.text for row in kb1.inline_keyboard for btn in row]
+    assert "Next ➡️" in kb1_texts
+    assert "📄 1/2" in kb1_texts
+    assert "⬅️ Prev" not in kb1_texts
+
+    kb2 = get_leaderboard_keyboard(ch_id, mode="weekly", page=2, total_pages=2)
+    kb2_texts = [btn.text for row in kb2.inline_keyboard for btn in row]
+    assert "⬅️ Prev" in kb2_texts
+    assert "📄 2/2" in kb2_texts
+    assert "Next ➡️" not in kb2_texts
+

@@ -221,69 +221,115 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Displays the community challenge leaderboard."""
     challenge = await get_active_challenge()
     ch_id = challenge["id"] if challenge else 0
-    await send_leaderboard_view(update.message.reply_text, ch_id, mode="weekly")
+    await send_leaderboard_view(update.message.reply_text, ch_id, mode="weekly", page=1)
 
 
 async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Switches leaderboard views between weekly challenge and monthly season."""
+    """Switches leaderboard views and handles next/prev pagination."""
     query = update.callback_query
     await query.answer()
 
-    data = query.data.split(":")
-    mode = data[0]
+    if query.data == "noop":
+        return
 
-    if mode == "lb_weekly":
+    data = query.data.split(":")
+    mode_prefix = data[0]
+
+    if mode_prefix == "lb_weekly":
         ch_id = int(data[1]) if len(data) > 1 and data[1].isdigit() else 0
+        page = int(data[2]) if len(data) > 2 and data[2].isdigit() else 1
         if ch_id == 0:
             active = await get_active_challenge()
             ch_id = active["id"] if active else 0
-        await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly")
-    elif mode == "lb_monthly":
-        await send_leaderboard_view(query.edit_message_text, 0, mode="monthly")
+        await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page)
+    elif mode_prefix == "lb_monthly":
+        page = int(data[2]) if len(data) > 2 and data[2].isdigit() else (int(data[1]) if len(data) > 1 and data[1].isdigit() else 1)
+        await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page)
 
 
-async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "weekly"):
-    """Renders formatted leaderboard text with ranks and medals."""
-    medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣", "6️⃣", "7️⃣", "8️⃣", "9️⃣", "🔟"]
+def _get_rank_badge(rank: int) -> str:
+    if rank == 1:
+        return "🥇"
+    elif rank == 2:
+        return "🥈"
+    elif rank == 3:
+        return "🥉"
+    elif rank <= 10:
+        return f"<b>{rank}.</b>"
+    return f"#{rank}"
 
+
+async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "weekly", page: int = 1):
+    """Renders formatted leaderboard text with ranks, medals, and clickable Telegram profile links."""
     if mode == "weekly" and challenge_id > 0:
         ch = await get_challenge(challenge_id)
         title = html.escape(ch["title"]) if ch else "Challenge"
-        lb = await get_weekly_leaderboard(challenge_id, limit=10)
+        lb_data = await get_weekly_leaderboard(challenge_id, limit=10, page=page)
+        entries = lb_data["entries"]
+        total_pages = lb_data["total_pages"]
+        total_count = lb_data["total_count"]
 
-        if not lb:
+        if not entries:
             text = (
                 f"🏆 <b>Weekly Leaderboard: {title}</b>\n\n"
                 f"<i>No completed submissions yet. Be the first to top the board!</i>"
             )
         else:
-            lines = [f"🏆 <b>Weekly Leaderboard: {title}</b>\n"]
-            for row in lb:
-                rank_icon = medals[row["rank"] - 1] if row["rank"] <= len(medals) else f"#{row['rank']}"
-                name = html.escape(row["user_name"])
+            page_info = f" <i>(Page {page} of {total_pages})</i>" if total_pages > 1 else ""
+            lines = [f"🏆 <b>Weekly Leaderboard: {title}</b>{page_info}\n"]
+            for row in entries:
+                rank_icon = _get_rank_badge(row["rank"])
+                escaped_name = html.escape(row["user_name"])
+                username = row.get("username", "")
+
+                if username:
+                    user_link = f'<a href="https://t.me/{html.escape(username)}">{escaped_name}</a>'
+                    handle_tag = f" (@{html.escape(username)})"
+                else:
+                    user_link = f'<a href="tg://user?id={row["telegram_user_id"]}">{escaped_name}</a>'
+                    handle_tag = ""
+
                 score = row["score"]
                 correct = row["correct_count"]
                 total = row["answered_count"]
-                lines.append(f"{rank_icon} <b>{name}</b> — <code>{score} pts</code> ({correct}/{total} ✅)")
+                lines.append(f"{rank_icon} {user_link}{handle_tag} — <code>{score} pts</code> ({correct}/{total} ✅)")
             text = "\n".join(lines)
     else:
-        lb = await get_monthly_leaderboard(limit=10)
-        if not lb:
+        lb_data = await get_monthly_leaderboard(limit=10, page=page)
+        entries = lb_data["entries"]
+        total_pages = lb_data["total_pages"]
+        total_count = lb_data["total_count"]
+
+        if not entries:
             text = (
                 f"📅 <b>Monthly Cumulative Leaderboard</b>\n\n"
                 f"<i>No completed challenge data for this season yet.</i>"
             )
         else:
-            lines = ["📅 <b>Monthly Cumulative Champions</b>\n"]
-            for row in lb:
-                rank_icon = medals[row["rank"] - 1] if row["rank"] <= len(medals) else f"#{row['rank']}"
-                name = html.escape(row["user_name"])
+            page_info = f" <i>(Page {page} of {total_pages})</i>" if total_pages > 1 else ""
+            lines = [f"📅 <b>Monthly Cumulative Champions</b>{page_info}\n"]
+            for row in entries:
+                rank_icon = _get_rank_badge(row["rank"])
+                escaped_name = html.escape(row["user_name"])
+                username = row.get("username", "")
+
+                if username:
+                    user_link = f'<a href="https://t.me/{html.escape(username)}">{escaped_name}</a>'
+                    handle_tag = f" (@{html.escape(username)})"
+                else:
+                    user_link = f'<a href="tg://user?id={row["telegram_user_id"]}">{escaped_name}</a>'
+                    handle_tag = ""
+
                 total_pts = row["total_score"]
                 completed = row["challenges_completed"]
-                lines.append(f"{rank_icon} <b>{name}</b> — <code>{total_pts} pts</code> ({completed} challenges)")
+                lines.append(f"{rank_icon} {user_link}{handle_tag} — <code>{total_pts} pts</code> ({completed} challenges)")
             text = "\n".join(lines)
 
-    await sender_func(text, parse_mode=ParseMode.HTML, reply_markup=get_leaderboard_keyboard(challenge_id))
+    await sender_func(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_leaderboard_keyboard(challenge_id, mode=mode, page=page, total_pages=total_pages),
+    )
 
 
 # ---------------------------------------------------------------------------

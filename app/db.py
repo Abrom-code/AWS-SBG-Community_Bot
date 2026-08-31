@@ -127,6 +127,7 @@ async def init_db(db_path: str = None) -> None:
                             challenge_id BIGINT NOT NULL,
                             telegram_user_id BIGINT NOT NULL,
                             user_name TEXT,
+                            username TEXT,
                             started_at TIMESTAMP,
                             completed_at TIMESTAMP,
                             current_question_index INT DEFAULT 0,
@@ -141,6 +142,10 @@ async def init_db(db_path: str = None) -> None:
                             UNIQUE(challenge_id, telegram_user_id)
                         );
                     """)
+                    try:
+                        await cur.execute("ALTER TABLE challenge_participants ADD COLUMN IF NOT EXISTS username TEXT;")
+                    except Exception:
+                        pass
                     await cur.execute("""
                         CREATE TABLE IF NOT EXISTS challenge_answers (
                             id BIGSERIAL PRIMARY KEY,
@@ -259,6 +264,7 @@ async def init_db(db_path: str = None) -> None:
                         challenge_id INTEGER NOT NULL,
                         telegram_user_id INTEGER NOT NULL,
                         user_name TEXT,
+                        username TEXT,
                         started_at TIMESTAMP,
                         completed_at TIMESTAMP,
                         current_question_index INTEGER DEFAULT 0,
@@ -273,6 +279,10 @@ async def init_db(db_path: str = None) -> None:
                         UNIQUE(challenge_id, telegram_user_id)
                     );
                 """)
+                try:
+                    await db.execute("ALTER TABLE challenge_participants ADD COLUMN username TEXT;")
+                except Exception:
+                    pass
                 await db.execute("""
                     CREATE TABLE IF NOT EXISTS challenge_answers (
                         id INTEGER PRIMARY KEY AUTOINCREMENT,

@@ -442,18 +442,21 @@ async def get_challenge_questions(challenge_id: int) -> List[Dict[str, Any]]:
     return questions
 
 
+import math
+
+
 # ---------------------------------------------------------------------------
 # Participant Lifecycle & Quiz Progression
 # ---------------------------------------------------------------------------
 async def register_or_get_participant(
-    challenge_id: int, telegram_user_id: int, user_name: str = ""
+    challenge_id: int, telegram_user_id: int, user_name: str = "", username: str = ""
 ) -> Dict[str, Any]:
-    """Registers a participant or retrieves existing registration."""
+    """Registers a participant or retrieves existing registration with username tracking."""
     row = await _execute(
         """
         SELECT id, challenge_id, telegram_user_id, user_name, started_at, completed_at,
                current_question_index, question_order_json, current_option_order_json,
-               score, correct_count, answered_count, status, is_locked, current_question_sent_at
+               score, correct_count, answered_count, status, is_locked, current_question_sent_at, username
         FROM challenge_participants
         WHERE challenge_id = ? AND telegram_user_id = ?
         """,
@@ -461,11 +464,21 @@ async def register_or_get_participant(
         fetch="one",
     )
     if row:
+        current_un = row[15] if len(row) > 15 and row[15] else ""
+        current_name = row[3] or ""
+        # Keep username / name updated if provided
+        if (username and username != current_un) or (user_name and user_name != current_name):
+            await _execute(
+                "UPDATE challenge_participants SET user_name = ?, username = ? WHERE id = ?",
+                (user_name or current_name, username or current_un, row[0]),
+            )
+
         return {
             "id": row[0],
             "challenge_id": row[1],
             "telegram_user_id": row[2],
-            "user_name": row[3],
+            "user_name": user_name or current_name,
+            "username": username or current_un,
             "started_at": row[4],
             "completed_at": row[5],
             "current_question_index": row[6],
@@ -488,11 +501,11 @@ async def register_or_get_participant(
     part_id = await _execute(
         """
         INSERT INTO challenge_participants (
-            challenge_id, telegram_user_id, user_name, current_question_index,
+            challenge_id, telegram_user_id, user_name, username, current_question_index,
             question_order_json, score, correct_count, answered_count, status, is_locked
-        ) VALUES (?, ?, ?, 0, ?, 0.0, 0, 0, 'REGISTERED', 0)
+        ) VALUES (?, ?, ?, ?, 0, ?, 0.0, 0, 0, 'REGISTERED', 0)
         """,
-        (challenge_id, telegram_user_id, user_name, json.dumps(q_ids)),
+        (challenge_id, telegram_user_id, user_name, username or "", json.dumps(q_ids)),
         fetch="id",
     )
 
@@ -501,6 +514,7 @@ async def register_or_get_participant(
         "challenge_id": challenge_id,
         "telegram_user_id": telegram_user_id,
         "user_name": user_name,
+        "username": username or "",
         "started_at": None,
         "completed_at": None,
         "current_question_index": 0,
@@ -733,55 +747,106 @@ async def record_answer_and_advance(
 # ---------------------------------------------------------------------------
 # Leaderboards
 # ---------------------------------------------------------------------------
-async def get_weekly_leaderboard(challenge_id: int, limit: int = 10) -> List[Dict[str, Any]]:
-    """Computes the leaderboard for a specific challenge."""
+async def get_weekly_leaderboard(
+    challenge_id: int, limit: int = 10, page: int = 1
+) -> Dict[str, Any]:
+    """Computes the paginated leaderboard for a specific challenge."""
+    page = max(1, page)
+    offset = (page - 1) * limit
+
+    cnt_row = await _execute(
+        "SELECT COUNT(*) FROM challenge_participants WHERE challenge_id = ? AND status = 'COMPLETED'",
+        (challenge_id,),
+        fetch="one",
+    )
+    total_count = cnt_row[0] if cnt_row else 0
+    total_pages = max(1, math.ceil(total_count / limit)) if total_count > 0 else 1
+
     rows = await _execute(
         """
-        SELECT user_name, score, correct_count, answered_count, started_at, completed_at
+        SELECT telegram_user_id, user_name, username, score, correct_count, answered_count, started_at, completed_at
         FROM challenge_participants
         WHERE challenge_id = ? AND status = 'COMPLETED'
         ORDER BY score DESC, completed_at ASC
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        (challenge_id, limit),
+        (challenge_id, limit, offset),
         fetch="all",
     )
     leaderboard = []
-    for rank, r in enumerate(rows, start=1):
+    for idx, r in enumerate(rows):
+        rank = offset + idx + 1
         leaderboard.append({
             "rank": rank,
-            "user_name": r[0] or f"Builder #{rank}",
-            "score": float(r[1]),
-            "correct_count": r[2],
-            "answered_count": r[3],
+            "telegram_user_id": r[0],
+            "user_name": r[1] or f"Builder #{rank}",
+            "username": r[2] or "",
+            "score": float(r[3]),
+            "correct_count": r[4],
+            "answered_count": r[5],
         })
-    return leaderboard
+    return {
+        "entries": leaderboard,
+        "total_count": total_count,
+        "page": page,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
+    }
 
 
-async def get_monthly_leaderboard(season_id: Optional[int] = None, limit: int = 10) -> List[Dict[str, Any]]:
-    """Aggregates cumulative scores across all completed challenges in the season."""
+async def get_monthly_leaderboard(
+    season_id: Optional[int] = None, limit: int = 10, page: int = 1
+) -> Dict[str, Any]:
+    """Aggregates paginated cumulative scores across all completed challenges in the season."""
     s_id = season_id or await get_or_create_current_season()
+    page = max(1, page)
+    offset = (page - 1) * limit
+
+    cnt_row = await _execute(
+        """
+        SELECT COUNT(DISTINCT cp.telegram_user_id)
+        FROM challenge_participants cp
+        JOIN challenges c ON cp.challenge_id = c.id
+        WHERE c.season_id = ? AND cp.status = 'COMPLETED'
+        """,
+        (s_id,),
+        fetch="one",
+    )
+    total_count = cnt_row[0] if cnt_row else 0
+    total_pages = max(1, math.ceil(total_count / limit)) if total_count > 0 else 1
+
     rows = await _execute(
         """
-        SELECT cp.user_name, SUM(cp.score) as total_score, SUM(cp.correct_count) as total_correct,
-               COUNT(cp.id) as challenges_completed
+        SELECT cp.telegram_user_id, cp.user_name, MAX(cp.username) as username, SUM(cp.score) as total_score,
+               SUM(cp.correct_count) as total_correct, COUNT(cp.id) as challenges_completed
         FROM challenge_participants cp
         JOIN challenges c ON cp.challenge_id = c.id
         WHERE c.season_id = ? AND cp.status = 'COMPLETED'
         GROUP BY cp.telegram_user_id, cp.user_name
         ORDER BY total_score DESC
-        LIMIT ?
+        LIMIT ? OFFSET ?
         """,
-        (s_id, limit),
+        (s_id, limit, offset),
         fetch="all",
     )
     leaderboard = []
-    for rank, r in enumerate(rows, start=1):
+    for idx, r in enumerate(rows):
+        rank = offset + idx + 1
         leaderboard.append({
             "rank": rank,
-            "user_name": r[0] or f"Champion #{rank}",
-            "total_score": round(float(r[1]), 2),
-            "total_correct": int(r[2]),
-            "challenges_completed": int(r[3]),
+            "telegram_user_id": r[0],
+            "user_name": r[1] or f"Champion #{rank}",
+            "username": r[2] or "",
+            "total_score": round(float(r[3]), 2),
+            "total_correct": int(r[4]),
+            "challenges_completed": int(r[5]),
         })
-    return leaderboard
+    return {
+        "entries": leaderboard,
+        "total_count": total_count,
+        "page": page,
+        "total_pages": total_pages,
+        "has_next": page < total_pages,
+        "has_prev": page > 1,
+    }
