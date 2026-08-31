@@ -162,7 +162,8 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🏗️ <b>Category:</b> {category}\n"
             f"⏳ <b>Starts:</b> {time_until} <i>({starts_at})</i>\n"
             f"⏱️ <b>Exam Time:</b> {duration_str}\n"
-            f"📊 <b>Questions:</b> {total_q} questions\n\n"
+            f"📊 <b>Questions:</b> {total_q} questions\n"
+            f"🛡️ <b>Guidelines:</b> 1 attempt • 1 account per builder • No AI assistance\n\n"
             f"<i>The challenge will automatically unlock at the scheduled start time.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_start_keyboard(ch_id),
@@ -175,7 +176,8 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"<blockquote>{desc}</blockquote>\n\n"
         f"📊 <b>Questions:</b> {total_q} questions\n"
         f"⏱️ <b>Exam Duration:</b> {duration_str}\n"
-        f"🎯 <b>Rules:</b> 1 attempt only • 70% Accuracy + 30% Speed Efficiency Bonus\n\n"
+        f"🎯 <b>Scoring:</b> 70% Accuracy + 30% Speed Efficiency Bonus\n"
+        f"🛡️ <b>Guidelines:</b> 1 attempt only • 1 account per builder • No AI assistance during timed quiz\n\n"
         f"Ready to prove your cloud architecture knowledge?",
         parse_mode=ParseMode.HTML,
         reply_markup=get_challenge_start_keyboard(ch_id),
@@ -283,15 +285,12 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         if not ch:
-            await query.edit_message_text("⚠️ Challenge not found.")
+            await query.answer("⚠️ Challenge not found.", show_alert=True)
             return
 
         title = html.escape(ch["title"])
-        desc = html.escape(ch["description"] or "AWS Cloud Architecture Competition")
         category = html.escape(ch["category"])
         status = ch["status"]
-        status_tag = "🏁 ENDED" if status == "ENDED" else f"🟢 {status}"
-
         questions = await get_challenge_questions(ch_id)
         total_q = len(questions)
 
@@ -493,15 +492,15 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
 # Scoring & Informative Rules
 # ---------------------------------------------------------------------------
 def get_scoring_rules_text() -> str:
-    """Returns formatted explanation of overall exam timing and two-factor scoring."""
+    """Returns formatted explanation of overall exam timing, two-factor scoring, and community guidelines."""
     return (
-        "📖 <b>AWS Builder Challenge: Exam Guide & Scoring Rules</b>\n\n"
-        "⏱️ <b>1. Overall Exam Timer</b>\n"
+        "📖 <b>AWS Builder Challenge: Exam Guide & Community Guidelines</b>\n\n"
+        "⏱️ <b>1. Overall Exam Timer & Self-Pacing</b>\n"
         "Each challenge provides a unified <b>Overall Test Time Limit</b> (e.g. 10 minutes total for all questions):\n"
         "• You control your own pacing across the entire exam.\n"
-        "• Spend more time on difficult architecture questions and answer simple ones quickly!\n"
-        "• The remaining test time is displayed at the top of each question.\n\n"
-        "🎯 <b>2. Two-Factor Scoring Model</b>\n"
+        "• Spend more time on complex architecture scenarios and answer simpler questions quickly!\n"
+        "• The countdown clock is displayed live at the top of each question card.\n\n"
+        "🎯 <b>2. Two-Factor Scoring Formula</b>\n"
         "Your final score combines <b>Accuracy (70%)</b> and <b>Completion Speed Bonus (30%)</b>:\n\n"
         "<blockquote><b>Final Score = Raw Correct Points × (0.70 + 0.30 × (1 - Total Time / Allotted Time))</b></blockquote>\n\n"
         "📊 <b>Efficiency Multiplier Examples (10-Minute Challenge):</b>\n"
@@ -510,13 +509,16 @@ def get_scoring_rules_text() -> str:
         "  ⚡ <b>Finish in 8 mins:</b> <code>76%</code> of maximum points\n"
         "  ⚡ <b>Finish in 10 mins:</b> <code>70%</code> (Full accuracy baseline)\n"
         "  ❌ <b>Overtime (>10 mins):</b> Exam automatically submits answered questions\n\n"
-        "🔀 <b>3. Anti-Cheat & Fair Play</b>\n"
-        "• <b>One Official Attempt:</b> Once you tap Start Challenge, your exam clock runs continuously.\n"
-        "• <b>Randomized Questions & Options:</b> Question sequence and answer buttons (A, B, C, D) are randomized for every student.\n\n"
+        "🛡️ <b>3. Community Guidelines & Code of Conduct</b>\n"
+        "• <b>🚫 Strictly One Account:</b> Participating using multiple or secondary Telegram accounts is strictly forbidden. Builders caught using duplicate accounts will have all entries disqualified from weekly and monthly championship boards.\n"
+        "• <b>🤖 No AI or Automation Assistance:</b> The goal is to build genuine cloud engineering competence. Using automated bots, OCR scrapers, or pasting questions into AI tools during timed quizzes is prohibited.\n"
+        "• <b>⏱️ Single Continuous Attempt:</b> Once you tap Start Challenge, your exam clock runs continuously. Leaving Telegram does not pause the timer.\n"
+        "• <b>🔒 Academic Integrity & No Leaks:</b> Do not share question screenshots, answer keys, or question dumps with others before the weekly challenge concludes.\n"
+        "• <b>📚 Post-Exam Review:</b> Full explanations and correct answers are revealed right after you submit. Past challenges remain in /archive for open practice!\n\n"
         "🏆 <b>4. Championship Leaderboards & Tie-Breakers</b>\n"
         "• <b>Weekly Leaderboard:</b> Instant rankings for the active quiz.\n"
         "• <b>Monthly Cumulative Championship:</b> Sum of all weekly challenge scores for the month.\n"
-        "• <b>Tie-Breaker:</b> If two students score the same accuracy, the student with the fastest total completion time ranks higher!\n\n"
+        "• <b>Tie-Breaker:</b> If two students achieve the same accuracy score, the student with the fastest total completion time ranks higher!\n\n"
         "<i>Compete weekly, master AWS cloud architectures, and climb the leaderboard!</i>"
     )
 
