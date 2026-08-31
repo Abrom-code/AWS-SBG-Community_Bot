@@ -109,7 +109,7 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await cb_query.answer()
         sender_func = cb_query.edit_message_text
     elif update.message:
-        sender_func = update.message.reply_text
+        sender_func = lambda text, **kwargs: update.message.reply_text(text, protect_content=True, **kwargs)
     else:
         return
 

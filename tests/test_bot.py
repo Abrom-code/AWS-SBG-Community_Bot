@@ -27,22 +27,24 @@ class FakeMessage:
         self.reply_photo_calls = []
         self.reply_to_message = None
 
-    async def reply_text(self, text, parse_mode=None, reply_markup=None):
+    async def reply_text(self, text, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
         self.reply_text_calls.append(
             {
                 "text": text,
                 "parse_mode": parse_mode,
                 "reply_markup": reply_markup,
+                "protect_content": protect_content,
             }
         )
 
-    async def reply_photo(self, photo, caption=None, parse_mode=None, reply_markup=None):
+    async def reply_photo(self, photo, caption=None, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
         self.reply_photo_calls.append(
             {
                 "photo": photo,
                 "caption": caption,
                 "parse_mode": parse_mode,
                 "reply_markup": reply_markup,
+                "protect_content": protect_content,
             }
         )
 
@@ -97,13 +99,13 @@ class FakeBot:
         self.edited_messages = []
         self.deleted_messages = []
 
-    async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None):
+    async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
         message_id = len(self.sent_messages) + 1
         self.sent_messages.append((chat_id, text, message_id, parse_mode))
         self.send_message_calls.append({"chat_id": chat_id, "text": text, "parse_mode": parse_mode})
         return type("SentMessage", (), {"message_id": message_id})()
 
-    async def send_photo(self, chat_id, photo, caption=None, parse_mode=None, reply_markup=None):
+    async def send_photo(self, chat_id, photo, caption=None, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
         message_id = len(self.sent_messages) + 1
         self.sent_messages.append((chat_id, caption, message_id, parse_mode))
         return type("SentMessage", (), {"message_id": message_id})()
