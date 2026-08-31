@@ -13,7 +13,10 @@ from app.db import (
     set_user_state,
     save_feedback_submission,
     get_feedback_submission,
+    get_feedback_submission_by_user_message,
     delete_feedback_submission,
+    save_admin_reply_mapping,
+    get_admin_reply_mapping,
 )
 
 # Load environment variables from .env file
@@ -208,6 +211,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     sent_message.message_id,
                     user_id,
                     user.first_name,
+                    user_message_id=update.message.message_id,
                 )
 
             # Restore the standard keyboard for the user
@@ -254,19 +258,96 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"<i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
     )
 
-    await context.bot.send_message(
+    delivered_msg = await context.bot.send_message(
         chat_id=sender_chat_id,
         text=reply_message,
         parse_mode=ParseMode.HTML,
     )
 
-    # Link this admin reply message ID to the ticket so follow-up thread replies also route to the user
+    # Link this admin reply message ID to the ticket so follow-up thread replies and edits route to the user
     if getattr(update.message, "message_id", None):
         await save_feedback_submission(
             update.message.message_id,
             sender_chat_id,
             submission.get("sender_name", ""),
+            user_message_id=submission.get("user_message_id"),
         )
+        await save_admin_reply_mapping(
+            update.message.message_id,
+            sender_chat_id,
+            delivered_msg.message_id,
+        )
+
+
+async def handle_admin_edited_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Edits the forwarded reply in the member's private chat when an admin edits their reply."""
+    if not update.edited_message or not update.edited_message.text:
+        return
+
+    admin_msg_id = update.edited_message.message_id
+    mapping = await get_admin_reply_mapping(admin_msg_id)
+    if not mapping:
+        return
+
+    user_chat_id = mapping["user_chat_id"]
+    delivered_msg_id = mapping["delivered_message_id"]
+    response_text = update.edited_message.text
+    safe_reply = html.escape(response_text)
+
+    reply_message = (
+        f"💬 <b>Response from the AWS Student Builder Core Team</b> <i>(edited)</i>\n\n"
+        f"<blockquote>{safe_reply}</blockquote>\n\n"
+        f"<i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
+    )
+
+    try:
+        await context.bot.edit_message_text(
+            chat_id=user_chat_id,
+            message_id=delivered_msg_id,
+            text=reply_message,
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as e:
+        logger.error(f"Failed to update edited admin reply in member chat: {e}")
+
+
+async def handle_user_edited_feedback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Updates the forwarded card in the admin group when a member edits their initial feedback."""
+    if not update.edited_message or not update.edited_message.text or ADMIN_GROUP_ID == 0:
+        return
+
+    user_msg_id = update.edited_message.message_id
+    submission = await get_feedback_submission_by_user_message(user_msg_id)
+    if not submission:
+        return
+
+    admin_msg_id = submission["message_id"]
+    user = update.effective_user
+    text = update.edited_message.text
+
+    name = f"{user.first_name} {user.last_name or ''}".strip()
+    safe_name = html.escape(name)
+    safe_username = f"@{html.escape(user.username)}" if user.username else "<i>No username</i>"
+    safe_text = html.escape(text)
+
+    admin_notification = (
+        f"📥 <b>New AWS Community Feedback</b> <i>(edited by user)</i>\n\n"
+        f"👤 <b>From:</b> {safe_name} ({safe_username})\n"
+        f"🆔 <b>User ID:</b> <code>{user.id}</code>\n\n"
+        f"💬 <b>Message:</b>\n"
+        f"<blockquote>{safe_text}</blockquote>\n\n"
+        f"<i>💡 Reply directly to this message to send an answer to the member.</i>"
+    )
+
+    try:
+        await context.bot.edit_message_text(
+            chat_id=ADMIN_GROUP_ID,
+            message_id=admin_msg_id,
+            text=admin_notification,
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception as e:
+        logger.error(f"Failed to update edited feedback card in admin group: {e}")
 
 
 def create_application(token: str = None):
@@ -299,6 +380,7 @@ def create_application(token: str = None):
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
+    # Handle admin replies
     app.add_handler(
         MessageHandler(
             filters.TEXT & filters.Chat(ADMIN_GROUP_ID) & (~filters.COMMAND),
@@ -306,8 +388,26 @@ def create_application(token: str = None):
         )
     )
 
+    # Handle edited admin replies
+    app.add_handler(
+        MessageHandler(
+            filters.UpdateType.EDITED_MESSAGE & filters.Chat(ADMIN_GROUP_ID) & (~filters.COMMAND),
+            handle_admin_edited_reply,
+        )
+    )
+
+    # Handle edited user feedback
+    app.add_handler(
+        MessageHandler(
+            filters.UpdateType.EDITED_MESSAGE & filters.ChatType.PRIVATE & (~filters.COMMAND),
+            handle_user_edited_feedback,
+        )
+    )
+
+    # Handle normal user messages
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
     return app
+
 
 

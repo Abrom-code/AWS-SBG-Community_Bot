@@ -48,22 +48,33 @@ class FakeMessage:
 
 
 class FakeUpdate:
-    def __init__(self, user_id=42, text="", chat_id=1, reply_to_message_id=None):
+    def __init__(self, user_id=42, text="", chat_id=1, reply_to_message_id=None, is_edited=False):
         self.effective_user = FakeUser(user_id=user_id)
-        self.message = FakeMessage(text=text, chat_id=chat_id)
+        msg = FakeMessage(text=text, chat_id=chat_id)
         if reply_to_message_id is not None:
-            self.message.reply_to_message = type(
+            msg.reply_to_message = type(
                 "ReplyToMessage", (), {"message_id": reply_to_message_id}
             )()
+        if is_edited:
+            self.message = None
+            self.edited_message = msg
+        else:
+            self.message = msg
+            self.edited_message = None
 
 
 class FakeBot:
     def __init__(self):
         self.sent_messages = []
+        self.edited_messages = []
 
     async def send_message(self, chat_id, text, parse_mode=None):
         message_id = len(self.sent_messages) + 1
         self.sent_messages.append((chat_id, text, message_id, parse_mode))
+        return type("SentMessage", (), {"message_id": message_id})()
+
+    async def edit_message_text(self, chat_id, message_id, text, parse_mode=None):
+        self.edited_messages.append((chat_id, message_id, text, parse_mode))
         return type("SentMessage", (), {"message_id": message_id})()
 
 
@@ -264,6 +275,55 @@ def test_start_command_falls_back_to_text_when_logo_missing(monkeypatch):
 def test_create_application_initializes_handlers():
     app = bot.create_application(token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
     assert app is not None
+
+
+def test_handle_admin_edited_reply_updates_member_chat():
+    asyncio.run(db.reset_db())
+    context = FakeContext()
+    
+    # Pre-populate mapping
+    asyncio.run(db.save_admin_reply_mapping(admin_message_id=88, user_chat_id=777, delivered_message_id=99))
+    
+    edit_update = FakeUpdate(user_id=1, text="Here is the corrected response.", is_edited=True)
+    edit_update.edited_message.message_id = 88
+
+    asyncio.run(bot.handle_admin_edited_reply(edit_update, context))
+
+    assert len(context.bot.edited_messages) == 1
+    chat_id, message_id, text, parse_mode = context.bot.edited_messages[0]
+    assert chat_id == 777
+    assert message_id == 99
+    assert "<i>(edited)</i>" in text
+    assert "<blockquote>Here is the corrected response.</blockquote>" in text
+    assert parse_mode == ParseMode.HTML
+
+
+def test_handle_user_edited_feedback_updates_admin_group_card():
+    asyncio.run(db.reset_db())
+    context = FakeContext()
+    original_admin_group_id = bot.ADMIN_GROUP_ID
+    bot.ADMIN_GROUP_ID = 999
+    
+    # Save submission with user_message_id
+    asyncio.run(db.save_feedback_submission(message_id=100, sender_chat_id=555, sender_name="Jane", user_message_id=200))
+    
+    edit_update = FakeUpdate(user_id=555, text="Updated feedback description.", is_edited=True)
+    edit_update.edited_message.message_id = 200
+    edit_update.effective_user.first_name = "Jane"
+    edit_update.effective_user.username = "jane_doe"
+
+    asyncio.run(bot.handle_user_edited_feedback(edit_update, context))
+
+    assert len(context.bot.edited_messages) == 1
+    chat_id, message_id, text, parse_mode = context.bot.edited_messages[0]
+    assert chat_id == 999
+    assert message_id == 100
+    assert "<i>(edited by user)</i>" in text
+    assert "<blockquote>Updated feedback description.</blockquote>" in text
+    assert parse_mode == ParseMode.HTML
+    
+    bot.ADMIN_GROUP_ID = original_admin_group_id
+
 
 
 
