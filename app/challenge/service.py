@@ -991,6 +991,70 @@ async def register_or_get_participant(
     }
 
 
+def calculate_remaining_exam_seconds(
+    challenge: Dict[str, Any], started_at_str: Optional[str] = None
+) -> Tuple[float, bool, Optional[str]]:
+    """
+    Computes accurate time remaining for an exam session, accounting for:
+    1. Standard exam duration limit (e.g. 20 minutes)
+    2. Challenge closing deadline (e.g. ends_at timestamp)
+
+    Returns:
+        (remaining_seconds, is_deadline_capped, closing_time_iso)
+    """
+    now_dt = datetime.now(timezone.utc)
+    configured_seconds = float(challenge.get("duration_seconds") or 600)
+    if configured_seconds > 7200:
+        configured_seconds = 600.0
+
+    # If challenge is an archived/ended challenge, allow practice without live deadline capping
+    ch_status = challenge.get("status", "LIVE")
+    if ch_status == "ENDED":
+        if not started_at_str:
+            return (configured_seconds, False, None)
+        started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
+        if started_dt.tzinfo is None:
+            started_dt = started_dt.replace(tzinfo=timezone.utc)
+        elapsed = max(0.0, (now_dt - started_dt).total_seconds())
+        time_from_exam_timer = max(0.0, configured_seconds - elapsed)
+        return (time_from_exam_timer, False, None)
+
+    ends_at_str = challenge.get("ends_at")
+    seconds_until_close = None
+    if ends_at_str:
+        try:
+            ends_dt = datetime.fromisoformat(ends_at_str.replace("Z", "+00:00"))
+            if ends_dt.tzinfo is None:
+                ends_dt = ends_dt.replace(tzinfo=timezone.utc)
+            seconds_until_close = max(0.0, (ends_dt - now_dt).total_seconds())
+        except Exception:
+            seconds_until_close = None
+
+    # 1. Participant hasn't started yet
+    if not started_at_str:
+        if seconds_until_close is not None:
+            if seconds_until_close <= 0.0:
+                return (0.0, True, ends_at_str)
+            if seconds_until_close < configured_seconds:
+                return (seconds_until_close, True, ends_at_str)
+        return (configured_seconds, False, ends_at_str)
+
+    # 2. Participant has already started
+    started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
+    if started_dt.tzinfo is None:
+        started_dt = started_dt.replace(tzinfo=timezone.utc)
+
+    elapsed = max(0.0, (now_dt - started_dt).total_seconds())
+    time_from_exam_timer = max(0.0, configured_seconds - elapsed)
+
+    if seconds_until_close is not None:
+        effective_remaining = min(time_from_exam_timer, seconds_until_close)
+        is_capped = (seconds_until_close < time_from_exam_timer)
+        return (effective_remaining, is_capped, ends_at_str)
+
+    return (time_from_exam_timer, False, None)
+
+
 async def start_participant_quiz(challenge_id: int, telegram_user_id: int) -> None:
     """Marks a participant as IN_PROGRESS and records started_at timestamp."""
     now = datetime.now(timezone.utc).isoformat()
@@ -1003,7 +1067,7 @@ async def start_participant_quiz(challenge_id: int, telegram_user_id: int) -> No
 async def get_next_question_for_participant(
     challenge_id: int, telegram_user_id: int
 ) -> Optional[Dict[str, Any]]:
-    """Prepares the next question for a participant with randomized option mapping and overall exam timer."""
+    """Prepares the next question for a participant with randomized option mapping and capped deadline timer."""
     part = await register_or_get_participant(challenge_id, telegram_user_id)
     if part["status"] not in ("REGISTERED", "IN_PROGRESS"):
         return None
@@ -1014,21 +1078,16 @@ async def get_next_question_for_participant(
         return None
 
     challenge = await get_challenge(challenge_id)
-    test_limit = challenge["duration_seconds"] if (challenge and challenge.get("duration_seconds") and challenge["duration_seconds"] <= 7200) else 600
+    if not challenge:
+        return None
 
     now_dt = datetime.now(timezone.utc)
-    started_at_str = part.get("started_at")
-    time_remaining_seconds = float(test_limit)
-
-    if started_at_str:
-        started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
-        if started_dt.tzinfo is None:
-            started_dt = started_dt.replace(tzinfo=timezone.utc)
-        elapsed = max(0.0, (now_dt - started_dt).total_seconds())
-        time_remaining_seconds = max(0.0, test_limit - elapsed)
+    time_remaining_seconds, is_capped, ends_at_str = calculate_remaining_exam_seconds(
+        challenge, part.get("started_at")
+    )
 
     if time_remaining_seconds <= 0 and part["status"] == "IN_PROGRESS":
-        # Exam timed out
+        # Exam timed out or challenge window closed
         await _execute(
             "UPDATE challenge_participants SET status = 'COMPLETED', completed_at = ?, is_locked = 0 WHERE id = ?",
             (now_dt.isoformat(), part["id"]),
@@ -1096,6 +1155,7 @@ async def get_next_question_for_participant(
         "display_keys": display_keys,
         "time_remaining_seconds": time_remaining_seconds,
         "time_remaining_str": time_remaining_str,
+        "is_deadline_capped": is_capped,
     }
 
 
@@ -1124,8 +1184,15 @@ async def record_answer_and_advance(
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
 
-    # Calculate overall exam time taken
+    challenge = await get_challenge(challenge_id)
+    if not challenge:
+        return {"error": "Challenge not found."}
+
     started_at_str = part.get("started_at")
+    time_remaining_seconds, is_capped, ends_at_str = calculate_remaining_exam_seconds(
+        challenge, started_at_str
+    )
+
     total_time_taken = 0.0
     if started_at_str:
         started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
@@ -1133,19 +1200,21 @@ async def record_answer_and_advance(
             started_dt = started_dt.replace(tzinfo=timezone.utc)
         total_time_taken = max(0.0, (now - started_dt).total_seconds())
 
-    challenge = await get_challenge(challenge_id)
-    test_limit = challenge["duration_seconds"] if (challenge and challenge.get("duration_seconds") and challenge["duration_seconds"] <= 7200) else 600
+    test_limit = float(challenge.get("duration_seconds") or 600)
+    if test_limit > 7200:
+        test_limit = 600.0
+
     acc_weight = challenge["accuracy_weight"] if challenge else 0.70
     spd_weight = challenge["speed_weight"] if challenge else 0.30
 
-    if total_time_taken > test_limit:
-        # Overtime timeout
+    if time_remaining_seconds <= 0:
+        # Overtime or challenge window closed
         await _execute(
             "UPDATE challenge_participants SET status = 'COMPLETED', completed_at = ?, is_locked = 0 WHERE id = ?",
             (now_iso, part["id"]),
         )
         return {
-            "error": "Exam time has expired! Your completed answers have been submitted.",
+            "error": "Time's up! The allowed exam window or challenge closing deadline has been reached. Your completed answers have been submitted.",
             "is_completed": True,
             "current_score": part["score"],
             "correct_count": part["correct_count"],

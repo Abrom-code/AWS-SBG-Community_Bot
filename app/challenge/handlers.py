@@ -1,5 +1,6 @@
 import html
 import logging
+import math
 from typing import Optional
 
 from telegram import Update
@@ -17,6 +18,7 @@ from app.challenge.service import (
     get_monthly_leaderboard,
     get_challenge_questions,
     list_past_challenges,
+    calculate_remaining_exam_seconds,
 )
 from app.challenge.keyboards import (
     get_challenge_start_keyboard,
@@ -71,13 +73,20 @@ def _format_question_card(q_data: dict) -> str:
     diff = html.escape(q_data["difficulty"])
     opts = q_data["options"]
     timer_str = q_data.get("time_remaining_str", "")
+    is_capped = q_data.get("is_deadline_capped", False)
 
     opt_a = html.escape(opts["A"])
     opt_b = html.escape(opts["B"])
     opt_c = html.escape(opts["C"])
     opt_d = html.escape(opts["D"])
 
-    timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code>\n\n" if timer_str else ""
+    if timer_str:
+        if is_capped:
+            timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code> ⚠️ <i>(Capped by Challenge Deadline)</i>\n\n"
+        else:
+            timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code>\n\n"
+    else:
+        timer_line = ""
 
     return (
         f"🧩 <b>Question {q_num} of {total}</b> <i>[{cat} • {diff}]</i>\n"
@@ -170,6 +179,29 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    # Check if closing deadline is near or passed
+    remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(challenge, None)
+    if ends_at_str and remaining_sec <= 0:
+        await sender_func(
+            f"🏁 <b>This challenge has concluded!</b>\n\n"
+            f"⚡ <b>{title}</b>\n"
+            f"The challenge closing deadline was reached.\n"
+            f"Check the leaderboard or stay tuned for our next weekly competition!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_leaderboard_keyboard(ch_id),
+        )
+        return
+
+    capped_notice = ""
+    if is_capped and remaining_sec > 0:
+        capped_mins = max(1, int(math.ceil(remaining_sec / 60)))
+        duration_str = f"<b>{capped_mins} minutes</b> ⚠️ <i>(Capped by Challenge Deadline)</i>"
+        capped_notice = (
+            f"\n\n⚠️ <b>Important Deadline Notice:</b>\n"
+            f"The standard exam duration is {exam_mins} minutes, but this challenge closes in "
+            f"<b>{capped_mins} minutes</b>! Your active test timer is capped to the closing deadline."
+        )
+
     # Challenge is LIVE and participant can take it
     await sender_func(
         f"⚡ <b>{title}</b>\n\n"
@@ -177,7 +209,8 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"📊 <b>Questions:</b> {total_q} questions\n"
         f"⏱️ <b>Exam Duration:</b> {duration_str}\n"
         f"🎯 <b>Scoring:</b> 70% Accuracy + 30% Speed Efficiency Bonus\n"
-        f"🛡️ <b>Guidelines:</b> 1 attempt only • 1 account per builder • No AI assistance during timed quiz\n\n"
+        f"🛡️ <b>Guidelines:</b> 1 attempt only • 1 account per builder • No AI assistance during timed quiz"
+        f"{capped_notice}\n\n"
         f"Ready to prove your cloud architecture knowledge?",
         parse_mode=ParseMode.HTML,
         reply_markup=get_challenge_start_keyboard(ch_id),
@@ -208,6 +241,12 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
         return
     elif ch_status == "DRAFT":
         await query.answer("🛠️ This challenge is in draft mode and not yet published.", show_alert=True)
+        return
+
+    # Check if challenge deadline has passed
+    remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(challenge, None)
+    if ends_at_str and remaining_sec <= 0:
+        await query.answer("❌ This challenge window has officially closed. The deadline has passed.", show_alert=True)
         return
 
     part = await register_or_get_participant(ch_id, user_id, user_name, username)

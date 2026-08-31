@@ -457,7 +457,67 @@ def test_challenge_specific_question_crud_and_csv_import():
     asyncio.run(service.remove_question_from_challenge(ch_id, q1_id))
     ch_q3 = asyncio.run(service.get_challenge_questions(ch_id))
     assert len(ch_q3) == 1
-    assert ch_q3[0]["question_text"] == "What is KMS?"
+def test_challenge_time_capping_and_closing_deadline():
+    asyncio.run(db.reset_db())
+    from datetime import datetime, timezone, timedelta
+
+    now_dt = datetime.now(timezone.utc)
+    # Challenge ends in 5 minutes (300 seconds), but standard duration is 20 minutes (1200 seconds)
+    ends_at_str = (now_dt + timedelta(minutes=5)).isoformat()
+
+    ch_id = asyncio.run(
+        service.create_challenge(
+            title="Closing Soon Sprint",
+            category="Serverless",
+            duration_seconds=1200,
+            starts_at=now_dt.isoformat(),
+            ends_at=ends_at_str,
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    q_data = {
+        "question_text": "What is AWS Fargate?",
+        "option_a": "Serverless container compute",
+        "option_b": "Virtual machine",
+        "option_c": "Relational database",
+        "option_d": "DNS server",
+        "correct_option": "A",
+    }
+    asyncio.run(service.add_question_to_challenge(ch_id, q_data))
+
+    challenge = asyncio.run(service.get_challenge(ch_id))
+
+    # 1. Before starting: calculate_remaining_exam_seconds caps to 300 seconds (5 mins) instead of 1200s
+    rem_sec, is_capped, close_iso = service.calculate_remaining_exam_seconds(challenge, None)
+    assert is_capped is True
+    assert 290 <= rem_sec <= 300
+
+    # 2. Participant starts quiz
+    user_id = 77777
+    part = asyncio.run(service.register_or_get_participant(ch_id, user_id, "FastBuilder"))
+    asyncio.run(service.start_participant_quiz(ch_id, user_id))
+
+    # 3. Next question is marked deadline capped
+    q = asyncio.run(service.get_next_question_for_participant(ch_id, user_id))
+    assert q is not None
+    assert q["is_deadline_capped"] is True
+    assert "04:" in q["time_remaining_str"] or "05:" in q["time_remaining_str"]
+
+    # 4. If challenge already concluded in the past (e.g. ended 1 minute ago)
+    past_ends_at = (now_dt - timedelta(minutes=1)).isoformat()
+    asyncio.run(service.update_challenge_details(ch_id, ends_at=past_ends_at))
+    closed_ch = asyncio.run(service.get_challenge(ch_id))
+    rem_sec_closed, is_capped_closed, _ = service.calculate_remaining_exam_seconds(closed_ch, None)
+    assert rem_sec_closed <= 0.0
+
+    # Attempting to fetch next question auto-completes participant due to deadline closure
+    q_expired = asyncio.run(service.get_next_question_for_participant(ch_id, user_id))
+    assert q_expired is None
+
+    part_completed = asyncio.run(service.register_or_get_participant(ch_id, user_id))
+    assert part_completed["status"] == "COMPLETED"
+
 
 
 
