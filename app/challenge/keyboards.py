@@ -162,17 +162,14 @@ def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton("➕ Create Challenge", callback_data="adm_create_ch"),
-                InlineKeyboardButton("📋 View Challenges", callback_data="adm_list_ch"),
+                InlineKeyboardButton("📋 Manage Challenges", callback_data="adm_list_ch"),
             ],
             [
                 InlineKeyboardButton("🏆 Leaderboards", callback_data="adm_leaderboards"),
                 InlineKeyboardButton("📊 Monthly Report", callback_data="adm_report"),
             ],
             [
-                InlineKeyboardButton("📥 Import Questions (CSV)", callback_data="adm_import_csv"),
                 InlineKeyboardButton("❓ Question Bank", callback_data="adm_qbank"),
-            ],
-            [
                 InlineKeyboardButton("📢 Broadcast Notification", callback_data="adm_broadcast"),
             ],
         ]
@@ -223,11 +220,10 @@ def get_admin_broadcast_confirm_keyboard(target_action: str = "custom") -> Inlin
 
 
 def get_question_bank_actions_keyboard() -> InlineKeyboardMarkup:
-    """Action buttons for Question Bank management."""
+    """Action buttons for Question Bank inspection."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("✍️ Add Single Question Interactively", callback_data="adm_add_single_q")],
-            [InlineKeyboardButton("📥 Bulk Import Questions (CSV)", callback_data="adm_import_csv")],
+            [InlineKeyboardButton("📋 Manage Challenges", callback_data="adm_list_ch")],
             [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
         ]
     )

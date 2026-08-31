@@ -16,38 +16,48 @@ logger = logging.getLogger(__name__)
 
 
 def parse_single_question_text(raw_text: str) -> Optional[Dict[str, Any]]:
-    """Robustly parses a single question from various user input formats.
+    """
+    Flexible parser that converts human-formatted question text or CSV into structured question data.
 
     Supports:
     - Standard multiline (Question, A/B/C/D, Answer, Category, Difficulty, Explanation)
-    - Option prefixes: A:, A., A), Option A:, 1., 1), etc.
-    - Answer prefixes: Answer: B, Correct: B, Ans: B, etc.
-    - Single-line comma-separated CSV format
+    - Option prefixes: A:, A., A), Option A:, 1., 1), - A:, * A:, • A., etc.
+    - Markdown codeblock wrapping (``` ... ```)
+    - Answer prefixes: Answer: B, Correct: B, Ans: B, Answer: 2, etc.
+    - Positional single-line and multiline CSV
     """
     text = raw_text.strip()
     if not text:
         return None
+
+    # Remove markdown code block fences if present
+    if text.startswith("```") and text.endswith("```"):
+        text = text[3:-3].strip()
+        if text.lower().startswith("csv") or text.lower().startswith("text"):
+            text = text.split("\n", 1)[1].strip()
 
     # 1. Try single-line CSV parse if commas are present and text is short
     if "," in text and text.count("\n") < 2:
         try:
             reader = csv.reader(io.StringIO(text))
             row = next(reader, None)
-            if row and len(row) >= 6:
-                correct = row[5].strip().upper()
-                if correct in ("A", "B", "C", "D"):
-                    return {
-                        "question_text": row[0].strip(),
-                        "option_a": row[1].strip(),
-                        "option_b": row[2].strip(),
-                        "option_c": row[3].strip(),
-                        "option_d": row[4].strip(),
-                        "correct_option": correct,
-                        "difficulty": row[6].strip().upper() if len(row) > 6 and row[6].strip() else "MEDIUM",
-                        "category": row[7].strip() if len(row) > 7 and row[7].strip() else "General",
-                        "base_points": float(row[8].strip()) if len(row) > 8 and row[8].strip().replace(".", "", 1).isdigit() else 10.0,
-                        "explanation": row[9].strip() if len(row) > 9 else "",
-                    }
+            if row and len(row) >= 5:
+                correct = row[5].strip().upper() if len(row) > 5 else "A"
+                if correct not in ("A", "B", "C", "D"):
+                    num_map = {"1": "A", "2": "B", "3": "C", "4": "D"}
+                    correct = num_map.get(correct, "A")
+                return {
+                    "question_text": row[0].strip(),
+                    "option_a": row[1].strip(),
+                    "option_b": row[2].strip(),
+                    "option_c": row[3].strip() if len(row) > 3 else "N/A",
+                    "option_d": row[4].strip() if len(row) > 4 else "N/A",
+                    "correct_option": correct,
+                    "difficulty": row[6].strip().upper() if len(row) > 6 and row[6].strip().upper() in ("EASY", "MEDIUM", "HARD") else "MEDIUM",
+                    "category": row[7].strip() if len(row) > 7 and row[7].strip() else "General",
+                    "base_points": float(row[8].strip()) if len(row) > 8 and row[8].strip().replace(".", "", 1).isdigit() else 10.0,
+                    "explanation": row[9].strip() if len(row) > 9 else "",
+                }
         except Exception:
             pass
 
@@ -61,28 +71,33 @@ def parse_single_question_text(raw_text: str) -> Optional[Dict[str, Any]]:
     explanation = ""
 
     for line in lines:
+        # Strip leading bullet points, markdown quotes, or hashtags
+        clean_line = re.sub(r"^[\*\-\•\>\#\s]+", "", line).strip()
+        if not clean_line or clean_line.startswith("```"):
+            continue
+
         # Check Option A / 1
-        m_a = re.match(r"^(?:option\s+)?(?:a|1)[\.\:\)\-]\s*(.*)$", line, re.IGNORECASE)
+        m_a = re.match(r"^(?:option\s+)?(?:a|1)[\.\:\)\-\s]\s*(.*)$", clean_line, re.IGNORECASE)
         # Check Option B / 2
-        m_b = re.match(r"^(?:option\s+)?(?:b|2)[\.\:\)\-]\s*(.*)$", line, re.IGNORECASE)
+        m_b = re.match(r"^(?:option\s+)?(?:b|2)[\.\:\)\-\s]\s*(.*)$", clean_line, re.IGNORECASE)
         # Check Option C / 3
-        m_c = re.match(r"^(?:option\s+)?(?:c|3)[\.\:\)\-]\s*(.*)$", line, re.IGNORECASE)
+        m_c = re.match(r"^(?:option\s+)?(?:c|3)[\.\:\)\-\s]\s*(.*)$", clean_line, re.IGNORECASE)
         # Check Option D / 4
-        m_d = re.match(r"^(?:option\s+)?(?:d|4)[\.\:\)\-]\s*(.*)$", line, re.IGNORECASE)
+        m_d = re.match(r"^(?:option\s+)?(?:d|4)[\.\:\)\-\s]\s*(.*)$", clean_line, re.IGNORECASE)
 
-        m_ans = re.match(r"^(?:answer|correct(?:\s*option)?|ans)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
-        m_cat = re.match(r"^(?:category|cat)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
-        m_diff = re.match(r"^(?:difficulty|diff)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
-        m_exp = re.match(r"^(?:explanation|exp|reason)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
-        m_q = re.match(r"^(?:question|q)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
+        m_ans = re.match(r"^(?:answer|correct(?:\s*option)?|ans)[\.\:\-\s]?\s*(.*)$", clean_line, re.IGNORECASE)
+        m_cat = re.match(r"^(?:category|cat)[\.\:\-\s]?\s*(.*)$", clean_line, re.IGNORECASE)
+        m_diff = re.match(r"^(?:difficulty|diff)[\.\:\-\s]?\s*(.*)$", clean_line, re.IGNORECASE)
+        m_exp = re.match(r"^(?:explanation|exp|reason)[\.\:\-\s]?\s*(.*)$", clean_line, re.IGNORECASE)
+        m_q = re.match(r"^(?:question|q)[\.\:\-\s]?\s*(.*)$", clean_line, re.IGNORECASE)
 
-        if m_a:
+        if m_a and not opt_a:
             opt_a = m_a.group(1).strip()
-        elif m_b:
+        elif m_b and not opt_b:
             opt_b = m_b.group(1).strip()
-        elif m_c:
+        elif m_c and not opt_c:
             opt_c = m_c.group(1).strip()
-        elif m_d:
+        elif m_d and not opt_d:
             opt_d = m_d.group(1).strip()
         elif m_ans:
             val = m_ans.group(1).strip().upper()
@@ -108,10 +123,17 @@ def parse_single_question_text(raw_text: str) -> Optional[Dict[str, Any]]:
             if not q_text:
                 q_text = m_q.group(1).strip()
         else:
-            if not q_text and not line.startswith("```") and not line.startswith("#"):
-                q_text = line
+            if not q_text:
+                q_text = clean_line
 
-    if q_text and opt_a and opt_b and opt_c and opt_d:
+    if q_text and opt_a and opt_b:
+        if not opt_c:
+            opt_c = "N/A"
+        if not opt_d:
+            opt_d = "None of the above"
+        if not answer:
+            answer = "A"
+
         return {
             "question_text": q_text,
             "option_a": opt_a,

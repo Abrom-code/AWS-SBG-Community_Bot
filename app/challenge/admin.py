@@ -214,47 +214,33 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data == "adm_qbank":
-        questions = await list_questions(limit=100)
+        questions = await list_questions(limit=10)
         count = len(questions)
+        if not questions:
+            await query.edit_message_text(
+                "❓ <b>AWS Question Bank</b>\n\n"
+                "📊 <b>Active Questions:</b> <code>0</code>\n\n"
+                "<i>No questions found in repository yet.</i>\n\n"
+                "💡 <b>How to Add Questions:</b>\n"
+                "Questions belong directly to weekly topic challenges.\n"
+                "Tap <b>Manage Challenges</b> below to create a challenge or add questions to an existing one!",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_question_bank_actions_keyboard(),
+            )
+            return
+
+        lines = [f"❓ <b>AWS Question Bank Repository</b> — <code>{count} questions shown</code>:\n"]
+        for idx, q in enumerate(questions[:8]):
+            q_t = html.escape(q.get("question_text", "Untitled")[:42])
+            cat = html.escape(q.get("category", "General"))
+            c_opt = q.get("correct_option", "A")
+            lines.append(f"<b>{idx+1}.</b> [{cat}] {q_t}... <i>(Ans: {c_opt})</i>")
+
+        lines.append("\n💡 <i>To add new questions or import CSV, select a challenge in <b>Manage Challenges</b>.</i>")
         await query.edit_message_text(
-            f"❓ <b>AWS Question Bank Operations</b>\n\n"
-            f"📊 <b>Active Questions Available:</b> <code>{count}</code>\n\n"
-            f"You can add questions interactively one-by-one, or bulk import via CSV.",
+            "\n".join(lines),
             parse_mode=ParseMode.HTML,
             reply_markup=get_question_bank_actions_keyboard(),
-        )
-
-    elif data == "adm_add_single_q":
-        await set_user_state(user.id, "WAITING_FOR_ADMIN_SINGLE_QUESTION")
-        await query.edit_message_text(
-            "✍️ <b>Add Question to Question Bank</b>\n\n"
-            "Please send the question details in the following format:\n\n"
-            "<code>What is Amazon DynamoDB?\n"
-            "A: Relational database\n"
-            "B: Key-value NoSQL database\n"
-            "C: In-memory cache\n"
-            "D: Object storage\n"
-            "Answer: B\n"
-            "Category: Database\n"
-            "Difficulty: EASY\n"
-            "Explanation: DynamoDB is a managed NoSQL key-value store</code>\n\n"
-            "<i>(Type /cancel to abort)</i>",
-            parse_mode=ParseMode.HTML,
-        )
-
-    elif data == "adm_import_csv":
-        await set_user_state(user.id, "WAITING_FOR_ADMIN_CSV")
-        await query.edit_message_text(
-            "📥 <b>Import Question Bank via CSV</b>\n\n"
-            "You can:\n"
-            "1. <b>Paste raw CSV lines</b> directly as a message.\n"
-            "2. Or <b>upload a .csv file</b> as a Telegram document.\n\n"
-            "<b>Format:</b>\n"
-            "<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>\n\n"
-            "<i>Example:</i>\n"
-            "<code>What is S3?,Object Storage,Block Storage,Compute,Database,A,EASY,Storage,10,S3 is scalable object storage</code>\n\n"
-            "<i>(Type /cancel to abort)</i>",
-            parse_mode=ParseMode.HTML,
         )
 
     elif data == "adm_create_ch":

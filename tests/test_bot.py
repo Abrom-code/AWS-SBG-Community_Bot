@@ -586,11 +586,18 @@ def test_admin_interactive_wizard_and_single_question_flow(monkeypatch):
     assert ctx2.user_data.get("wiz_title") == "AWS Lambda & EventBridge Masterclass"
     assert ctx2.user_data.get("wiz_category") == "Serverless"
 
-    # 3. Add Single Question Interactively
-    q_single = FakeCallbackQuery(user_id=99999, data="adm_add_single_q")
+    # 3. Schedule Challenge
+    q_sched = FakeCallbackQuery(user_id=99999, data="adm_cr_sched:now")
+    up_sched = FakeUpdate(user_id=99999, callback_query=q_sched)
+    asyncio.run(handle_admin_callback(up_sched, ctx2))
+    assert "Created!" in q_sched.edited_text
+
+    # 4. Add Question Specifically to this Challenge
+    q_single = FakeCallbackQuery(user_id=99999, data="adm_add_q_to_ch:1")
     up_s = FakeUpdate(user_id=99999, callback_query=q_single)
     ctx_s = FakeContext()
     asyncio.run(handle_admin_callback(up_s, ctx_s))
+    assert "Add Question Specifically for Challenge #1" in q_single.edited_text
 
     question_text = (
         "What is Amazon EventBridge?\n"
@@ -604,11 +611,10 @@ def test_admin_interactive_wizard_and_single_question_flow(monkeypatch):
         "Explanation: EventBridge is a serverless event bus service."
     )
     up_q = FakeUpdate(user_id=99999, text=question_text)
-    ctx_q = FakeContext()
-    asyncio.run(bot.handle_message(up_q, ctx_q))
+    asyncio.run(bot.handle_message(up_q, ctx_s))
 
     assert len(up_q.message.reply_text_calls) == 1
-    assert "Added to Question Bank" in up_q.message.reply_text_calls[0]["text"]
+    assert "Added to Challenge #1!" in up_q.message.reply_text_calls[0]["text"]
 
 
 def test_admin_challenge_edit_and_delete_flow(monkeypatch):
@@ -716,17 +722,19 @@ def test_admin_leaderboard_view_and_monthly_report_top3_builders(monkeypatch):
 
 def test_admin_paste_csv_text_import(monkeypatch):
     from app.challenge.admin import handle_admin_callback
-    from app.challenge.service import list_questions
+    from app.challenge.service import create_challenge, get_challenge_questions
 
     monkeypatch.setenv("ADMIN_USER_IDS", "99999")
     asyncio.run(db.reset_db())
 
-    # 1. Tap Import CSV button
-    q_csv = FakeCallbackQuery(user_id=99999, data="adm_import_csv")
+    ch_id = asyncio.run(create_challenge(title="Storage Challenge", category="Storage"))
+
+    # 1. Tap Import CSV to Challenge button
+    q_csv = FakeCallbackQuery(user_id=99999, data=f"adm_import_csv_to_ch:{ch_id}")
     up_csv = FakeUpdate(user_id=99999, callback_query=q_csv)
     ctx_csv = FakeContext()
     asyncio.run(handle_admin_callback(up_csv, ctx_csv))
-    assert "Import Question Bank via CSV" in q_csv.edited_text
+    assert f"Import Questions for Challenge #{ch_id}" in q_csv.edited_text
 
     # 2. Paste raw CSV lines
     csv_payload = (
@@ -734,15 +742,14 @@ def test_admin_paste_csv_text_import(monkeypatch):
         "What is SQS?,Message Queue,Compute,Cache,DNS,A,EASY,Application,10,Decoupled queue"
     )
     up_msg = FakeUpdate(user_id=99999, text=csv_payload)
-    ctx_msg = FakeContext()
-    asyncio.run(bot.handle_message(up_msg, ctx_msg))
+    asyncio.run(bot.handle_message(up_msg, ctx_csv))
 
     assert len(up_msg.message.reply_text_calls) > 0
     resp_text = up_msg.message.reply_text_calls[0]["text"]
-    assert "Questions Imported Successfully!" in resp_text
+    assert f"Questions Imported for Challenge #{ch_id}!" in resp_text
     assert "<code>2</code>" in resp_text
 
-    questions = asyncio.run(list_questions())
+    questions = asyncio.run(get_challenge_questions(ch_id))
     assert len(questions) == 2
 
 
