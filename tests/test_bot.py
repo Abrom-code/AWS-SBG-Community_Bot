@@ -47,9 +47,16 @@ class FakeMessage:
         )
 
 
+class FakeChat:
+    def __init__(self, chat_id=1, chat_type="private"):
+        self.id = chat_id
+        self.type = chat_type
+
+
 class FakeUpdate:
-    def __init__(self, user_id=42, text="", chat_id=1, reply_to_message_id=None, is_edited=False):
+    def __init__(self, user_id=42, text="", chat_id=1, reply_to_message_id=None, is_edited=False, chat_type="private"):
         self.effective_user = FakeUser(user_id=user_id)
+        self.effective_chat = FakeChat(chat_id=chat_id, chat_type=chat_type)
         msg = FakeMessage(text=text, chat_id=chat_id)
         if reply_to_message_id is not None:
             msg.reply_to_message = type(

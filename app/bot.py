@@ -244,8 +244,15 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     replied_message_id = update.message.reply_to_message.message_id
+    logger.info(
+        f"Admin reply received for message_id={replied_message_id} "
+        f"from user={update.effective_user.id if update.effective_user else 'unknown'} "
+        f"in chat={update.effective_chat.id if update.effective_chat else 'unknown'}"
+    )
+
     submission = await get_feedback_submission(replied_message_id)
     if not submission:
+        logger.warning(f"No active feedback submission found for replied message_id={replied_message_id}")
         return
 
     sender_chat_id = submission["sender_chat_id"]
@@ -258,25 +265,29 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         f"<i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
     )
 
-    delivered_msg = await context.bot.send_message(
-        chat_id=sender_chat_id,
-        text=reply_message,
-        parse_mode=ParseMode.HTML,
-    )
+    try:
+        delivered_msg = await context.bot.send_message(
+            chat_id=sender_chat_id,
+            text=reply_message,
+            parse_mode=ParseMode.HTML,
+        )
+        logger.info(f"Successfully sent admin response to member {sender_chat_id}")
 
-    # Link this admin reply message ID to the ticket so follow-up thread replies and edits route to the user
-    if getattr(update.message, "message_id", None):
-        await save_feedback_submission(
-            update.message.message_id,
-            sender_chat_id,
-            submission.get("sender_name", ""),
-            user_message_id=submission.get("user_message_id"),
-        )
-        await save_admin_reply_mapping(
-            update.message.message_id,
-            sender_chat_id,
-            delivered_msg.message_id,
-        )
+        # Link this admin reply message ID to the ticket so follow-up thread replies and edits route to the user
+        if getattr(update.message, "message_id", None):
+            await save_feedback_submission(
+                update.message.message_id,
+                sender_chat_id,
+                submission.get("sender_name", ""),
+                user_message_id=submission.get("user_message_id"),
+            )
+            await save_admin_reply_mapping(
+                update.message.message_id,
+                sender_chat_id,
+                delivered_msg.message_id,
+            )
+    except Exception as e:
+        logger.error(f"Failed to deliver admin reply to member {sender_chat_id}: {e}")
 
 
 async def handle_admin_edited_reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -380,23 +391,23 @@ def create_application(token: str = None):
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
-    # Handle admin replies
+    # 1. Handle admin replies (captures any reply to a tracked feedback message)
     app.add_handler(
         MessageHandler(
-            filters.TEXT & filters.Chat(ADMIN_GROUP_ID) & (~filters.COMMAND),
+            filters.TEXT & filters.REPLY & (~filters.COMMAND),
             handle_admin_reply,
         )
     )
 
-    # Handle edited admin replies
+    # 2. Handle edited admin replies (group chats)
     app.add_handler(
         MessageHandler(
-            filters.UpdateType.EDITED_MESSAGE & filters.Chat(ADMIN_GROUP_ID) & (~filters.COMMAND),
+            filters.UpdateType.EDITED_MESSAGE & filters.ChatType.GROUPS & (~filters.COMMAND),
             handle_admin_edited_reply,
         )
     )
 
-    # Handle edited user feedback
+    # 3. Handle edited user feedback (private chat)
     app.add_handler(
         MessageHandler(
             filters.UpdateType.EDITED_MESSAGE & filters.ChatType.PRIVATE & (~filters.COMMAND),
@@ -404,8 +415,13 @@ def create_application(token: str = None):
         )
     )
 
-    # Handle normal user messages
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+    # 4. Handle normal user messages (private chat only)
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.ChatType.PRIVATE & (~filters.COMMAND),
+            handle_message,
+        )
+    )
 
     return app
 
