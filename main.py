@@ -1,6 +1,7 @@
 import logging
 import os
 
+from telegram.request import HTTPXRequest
 from telegram.ext import (
     ApplicationBuilder,
     CommandHandler,
@@ -31,7 +32,8 @@ def main():
         logger.error("TELEGRAM_BOT_TOKEN is missing in environment variables.")
         return
 
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
+    request = HTTPXRequest(connect_timeout=20.0, read_timeout=20.0)
+    app = ApplicationBuilder().token(TELEGRAM_TOKEN).request(request).build()
 
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
@@ -49,10 +51,11 @@ def main():
     app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
     webhook_url = os.getenv("WEBHOOK_URL")
-    secret_token = os.getenv("WEBHOOK_SECRET")
-    port = int(os.getenv("PORT", "8443"))
 
     if webhook_url:
+        secret_token = os.getenv("WEBHOOK_SECRET")
+        port_env = os.getenv("PORT", "8443")
+        port = int(port_env) if port_env.isdigit() else 8443
         logger.info("Starting Telegram bot in webhook mode...")
         app.run_webhook(
             listen="0.0.0.0",
@@ -63,7 +66,7 @@ def main():
         )
     else:
         logger.info("AWS Student Builder Feedback Bot is up and running...")
-        app.run_polling()
+        app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":

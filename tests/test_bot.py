@@ -99,6 +99,9 @@ def test_clear_proxy_environment_removes_proxy_variables_and_sets_no_proxy():
     assert os.environ["no_proxy"] == "*"
 
 
+from telegram.constants import ParseMode
+
+
 def test_help_command_returns_expected_shortcuts():
     update = FakeUpdate(user_id=555)
     context = FakeContext()
@@ -106,7 +109,8 @@ def test_help_command_returns_expected_shortcuts():
     asyncio.run(bot.help_command(update, context))
 
     assert update.message.reply_text_calls[0]["text"].startswith("📘")
-    assert "`/start`" in update.message.reply_text_calls[0]["text"]
+    assert "<code>/start</code>" in update.message.reply_text_calls[0]["text"]
+    assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
 
 
 def test_feedback_command_sets_waiting_state_and_removes_keyboard():
@@ -117,6 +121,7 @@ def test_feedback_command_sets_waiting_state_and_removes_keyboard():
 
     assert bot.user_states[111] == bot.WAITING_FOR_FEEDBACK
     assert update.message.reply_text_calls[0]["reply_markup"] is not None
+    assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
 
 
 def test_cancel_command_clears_feedback_state_and_restores_keyboard():
@@ -133,7 +138,11 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
         [button.text for button in row]
         for row in update.message.reply_text_calls[0]["reply_markup"].keyboard
     ]
-    assert labels == [["📝 Submit Feedback", "ℹ️ About"]]
+    assert labels == [
+        ["📝 Submit Feedback", "ℹ️ About"],
+        ["❓ Help"],
+        ["❌ Cancel"],
+    ]
 
 
 def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
@@ -151,11 +160,12 @@ def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
     assert len(context.bot.sent_messages) == 1
     chat_id, text, message_id, parse_mode = context.bot.sent_messages[0]
     assert chat_id == 999
-    assert parse_mode is None
-    assert "📥 **New AWS Community Feedback**" in text
-    assert "This is a test feedback message" in text
+    assert parse_mode == ParseMode.HTML
+    assert "📥 <b>New AWS Community Feedback</b>" in text
+    assert "<blockquote>This is a test feedback message</blockquote>" in text
     assert bot.feedback_submissions[message_id]["sender_chat_id"] == 333
-    assert update.message.reply_text_calls[-1]["text"].startswith("✅ **Thank you!")
+    assert update.message.reply_text_calls[-1]["text"].startswith("✅ <b>Thank you!")
+    assert update.message.reply_text_calls[-1]["parse_mode"] == ParseMode.HTML
     assert bot.user_states[333] is None
 
     bot.ADMIN_GROUP_ID = original_admin_group_id
@@ -178,9 +188,9 @@ def test_handle_admin_reply_routes_staff_reply_back_to_original_member():
     assert len(context.bot.sent_messages) == 1
     chat_id, text, _, parse_mode = context.bot.sent_messages[0]
     assert chat_id == 444
-    assert parse_mode == "Markdown"
-    assert "💬 **Response from the AWS Student Builder core team**" in text
-    assert "Thanks for sharing this." in text
+    assert parse_mode == ParseMode.HTML
+    assert "💬 <b>Response from the AWS Student Builder Core Team</b>" in text
+    assert "<blockquote>Thanks for sharing this.</blockquote>" in text
     assert 7 not in bot.feedback_submissions
 
 
@@ -198,8 +208,8 @@ def test_start_command_sends_photo_when_logo_exists(monkeypatch):
     
     assert len(update.message.reply_photo_calls) == 1
     assert "AWS SBG AASTU Support Bot!" in update.message.reply_photo_calls[0]["caption"]
-    assert "**Join our community:** @AWSAASTU" in update.message.reply_photo_calls[0]["caption"]
-    assert update.message.reply_photo_calls[0]["parse_mode"] == "Markdown"
+    assert "<b>Join our community:</b> @AWSAASTU" in update.message.reply_photo_calls[0]["caption"]
+    assert update.message.reply_photo_calls[0]["parse_mode"] == ParseMode.HTML
 
 
 def test_start_command_falls_back_to_text_when_logo_missing(monkeypatch):
@@ -213,7 +223,8 @@ def test_start_command_falls_back_to_text_when_logo_missing(monkeypatch):
     assert len(update.message.reply_photo_calls) == 0
     assert len(update.message.reply_text_calls) == 1
     assert "AWS SBG AASTU Support Bot!" in update.message.reply_text_calls[0]["text"]
-    assert "**Join our community:** @AWSAASTU" in update.message.reply_text_calls[0]["text"]
-    assert update.message.reply_text_calls[0]["parse_mode"] == "Markdown"
+    assert "<b>Join our community:</b> @AWSAASTU" in update.message.reply_text_calls[0]["text"]
+    assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
+
 
 
