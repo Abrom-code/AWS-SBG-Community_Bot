@@ -75,3 +75,32 @@ def test_scoring_custom_weights_and_base_points():
         speed_weight=0.20,
     )
     assert score == 19.0
+
+
+def test_calculate_exam_score_fast_completion():
+    from app.challenge.scoring import calculate_exam_score
+
+    # 100 raw points, finished in 120s out of 600s (80% remaining -> 0.70 + 0.30*0.8 = 0.94) -> 94.0 pts
+    final_score = calculate_exam_score(
+        raw_points_earned=100.0,
+        total_time_taken_seconds=120.0,
+        total_time_limit_seconds=600.0,
+        accuracy_weight=0.70,
+        speed_weight=0.30,
+    )
+    assert final_score == 94.0
+
+
+def test_calculate_exam_score_full_time():
+    from app.challenge.scoring import calculate_exam_score
+
+    # 100 raw points, finished in 600s out of 600s -> multiplier = 0.70 -> 70.0 pts
+    final_score = calculate_exam_score(
+        raw_points_earned=100.0,
+        total_time_taken_seconds=600.0,
+        total_time_limit_seconds=600.0,
+        accuracy_weight=0.70,
+        speed_weight=0.30,
+    )
+    assert final_score == 70.0
+

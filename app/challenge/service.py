@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import app.db as db
-from app.challenge.scoring import calculate_score
+from app.challenge.scoring import calculate_score, calculate_exam_score
 
 logger = logging.getLogger(__name__)
 
@@ -650,7 +650,7 @@ async def start_participant_quiz(challenge_id: int, telegram_user_id: int) -> No
 async def get_next_question_for_participant(
     challenge_id: int, telegram_user_id: int
 ) -> Optional[Dict[str, Any]]:
-    """Prepares the next question for a participant with randomized option mapping."""
+    """Prepares the next question for a participant with randomized option mapping and overall exam timer."""
     part = await register_or_get_participant(challenge_id, telegram_user_id)
     if part["status"] not in ("REGISTERED", "IN_PROGRESS"):
         return None
@@ -659,6 +659,32 @@ async def get_next_question_for_participant(
     idx = part["current_question_index"]
     if idx >= len(q_order):
         return None
+
+    challenge = await get_challenge(challenge_id)
+    test_limit = challenge["duration_seconds"] if (challenge and challenge.get("duration_seconds") and challenge["duration_seconds"] <= 7200) else 600
+
+    now_dt = datetime.now(timezone.utc)
+    started_at_str = part.get("started_at")
+    time_remaining_seconds = float(test_limit)
+
+    if started_at_str:
+        started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
+        if started_dt.tzinfo is None:
+            started_dt = started_dt.replace(tzinfo=timezone.utc)
+        elapsed = max(0.0, (now_dt - started_dt).total_seconds())
+        time_remaining_seconds = max(0.0, test_limit - elapsed)
+
+    if time_remaining_seconds <= 0 and part["status"] == "IN_PROGRESS":
+        # Exam timed out
+        await _execute(
+            "UPDATE challenge_participants SET status = 'COMPLETED', completed_at = ?, is_locked = 0 WHERE id = ?",
+            (now_dt.isoformat(), part["id"]),
+        )
+        return None
+
+    mins = int(time_remaining_seconds // 60)
+    secs = int(time_remaining_seconds % 60)
+    time_remaining_str = f"{mins:02d}:{secs:02d}"
 
     target_q_id = q_order[idx]
     all_questions = await get_challenge_questions(challenge_id)
@@ -715,6 +741,8 @@ async def get_next_question_for_participant(
         "options": {k: mapping[k] for k in ["A", "B", "C", "D"]},
         "base_points": question["base_points"],
         "display_keys": display_keys,
+        "time_remaining_seconds": time_remaining_seconds,
+        "time_remaining_str": time_remaining_str,
     }
 
 
@@ -743,11 +771,39 @@ async def record_answer_and_advance(
     now = datetime.now(timezone.utc)
     now_iso = now.isoformat()
 
-    # Calculate server-measured response time
+    # Calculate overall exam time taken
+    started_at_str = part.get("started_at")
+    total_time_taken = 0.0
+    if started_at_str:
+        started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
+        if started_dt.tzinfo is None:
+            started_dt = started_dt.replace(tzinfo=timezone.utc)
+        total_time_taken = max(0.0, (now - started_dt).total_seconds())
+
+    challenge = await get_challenge(challenge_id)
+    test_limit = challenge["duration_seconds"] if (challenge and challenge.get("duration_seconds") and challenge["duration_seconds"] <= 7200) else 600
+    acc_weight = challenge["accuracy_weight"] if challenge else 0.70
+    spd_weight = challenge["speed_weight"] if challenge else 0.30
+
+    if total_time_taken > test_limit:
+        # Overtime timeout
+        await _execute(
+            "UPDATE challenge_participants SET status = 'COMPLETED', completed_at = ?, is_locked = 0 WHERE id = ?",
+            (now_iso, part["id"]),
+        )
+        return {
+            "error": "Exam time has expired! Your completed answers have been submitted.",
+            "is_completed": True,
+            "current_score": part["score"],
+            "correct_count": part["correct_count"],
+            "answered_count": part["answered_count"],
+            "total_questions": len(part["question_order"]),
+        }
+
+    # Calculate per-question response time for telemetry
     sent_at_str = part["current_question_sent_at"]
     if sent_at_str:
         sent_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
-        # Ensure timezone compatibility
         if sent_at.tzinfo is None:
             sent_at = sent_at.replace(tzinfo=timezone.utc)
         response_time_seconds = max(0.0, (now - sent_at).total_seconds())
@@ -755,12 +811,6 @@ async def record_answer_and_advance(
         response_time_seconds = 0.0
 
     response_time_ms = int(response_time_seconds * 1000)
-
-    # Fetch challenge config
-    challenge = await get_challenge(challenge_id)
-    time_limit = challenge["question_time_limit_seconds"] if challenge else 60
-    acc_weight = challenge["accuracy_weight"] if challenge else 0.70
-    spd_weight = challenge["speed_weight"] if challenge else 0.30
 
     # Retrieve randomized options mapping
     mapping = part["current_option_order"]
@@ -770,18 +820,7 @@ async def record_answer_and_advance(
     base_points = float(mapping.get("_base_points", 10.0))
 
     is_correct = (selected_option_key.upper() == display_correct.upper())
-
-    points_awarded = calculate_score(
-        is_correct=is_correct,
-        response_time_seconds=response_time_seconds,
-        time_limit_seconds=time_limit,
-        base_points=base_points,
-        accuracy_weight=acc_weight,
-        speed_weight=spd_weight,
-    )
-
-    speed_fraction = max(0.0, min(1.0, 1.0 - (response_time_seconds / time_limit))) if time_limit > 0 else 0.0
-    speed_multiplier = round(acc_weight + (spd_weight * speed_fraction), 3) if is_correct else 0.0
+    points_awarded = base_points if is_correct else 0.0
 
     # Insert detailed answer audit log
     await _execute(
@@ -805,7 +844,7 @@ async def record_answer_and_advance(
             now_iso,
             response_time_ms,
             base_points,
-            speed_multiplier,
+            1.0 if is_correct else 0.0,
             points_awarded,
             now_iso,
         ),
@@ -813,13 +852,21 @@ async def record_answer_and_advance(
 
     # Advance participant state
     new_index = question_index + 1
-    new_score = round(part["score"] + points_awarded, 2)
+    raw_accumulated_score = round(part["score"] + points_awarded, 2)
     new_correct = part["correct_count"] + (1 if is_correct else 0)
     new_answered = part["answered_count"] + 1
     total_q = len(part["question_order"])
     is_completed = new_index >= total_q
 
     if is_completed:
+        # Final exam score combining raw points and overall test completion speed bonus
+        final_score = calculate_exam_score(
+            raw_points_earned=raw_accumulated_score,
+            total_time_taken_seconds=total_time_taken,
+            total_time_limit_seconds=test_limit,
+            accuracy_weight=acc_weight,
+            speed_weight=spd_weight,
+        )
         await _execute(
             """
             UPDATE challenge_participants
@@ -827,8 +874,9 @@ async def record_answer_and_advance(
                 answered_count = ?, status = 'COMPLETED', completed_at = ?, is_locked = 0
             WHERE id = ?
             """,
-            (new_index, new_score, new_correct, new_answered, now_iso, part["id"]),
+            (new_index, final_score, new_correct, new_answered, now_iso, part["id"]),
         )
+        display_score = final_score
     else:
         await _execute(
             """
@@ -837,15 +885,16 @@ async def record_answer_and_advance(
                 answered_count = ?, is_locked = 0
             WHERE id = ?
             """,
-            (new_index, new_score, new_correct, new_answered, part["id"]),
+            (new_index, raw_accumulated_score, new_correct, new_answered, part["id"]),
         )
+        display_score = raw_accumulated_score
 
     return {
         "is_correct": is_correct,
         "points_awarded": points_awarded,
         "response_time_seconds": round(response_time_seconds, 1),
         "response_time_ms": response_time_ms,
-        "current_score": new_score,
+        "current_score": display_score,
         "correct_count": new_correct,
         "answered_count": new_answered,
         "total_questions": total_q,

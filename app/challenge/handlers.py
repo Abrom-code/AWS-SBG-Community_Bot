@@ -62,27 +62,31 @@ def _format_time_until(starts_at_str: Optional[str]) -> str:
 # Helper Formatters
 # ---------------------------------------------------------------------------
 def _format_question_card(q_data: dict) -> str:
-    """Renders a formatted question card with randomized options."""
+    """Renders a formatted question card with randomized options and live exam countdown."""
     q_num = q_data["question_number"]
     total = q_data["total_questions"]
     q_text = html.escape(q_data["question_text"])
     cat = html.escape(q_data["category"])
     diff = html.escape(q_data["difficulty"])
     opts = q_data["options"]
+    timer_str = q_data.get("time_remaining_str", "")
 
     opt_a = html.escape(opts["A"])
     opt_b = html.escape(opts["B"])
     opt_c = html.escape(opts["C"])
     opt_d = html.escape(opts["D"])
 
+    timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code>\n\n" if timer_str else ""
+
     return (
-        f"🧩 <b>Question {q_num} of {total}</b> <i>[{cat} • {diff}]</i>\n\n"
+        f"🧩 <b>Question {q_num} of {total}</b> <i>[{cat} • {diff}]</i>\n"
+        f"{timer_line}"
         f"<b>{q_text}</b>\n\n"
         f"<b>A.</b> {opt_a}\n"
         f"<b>B.</b> {opt_b}\n"
         f"<b>C.</b> {opt_c}\n"
         f"<b>D.</b> {opt_d}\n\n"
-        f"⏱️ <i>Select your answer below as quickly as possible:</i>"
+        f"👉 <i>Select your answer below:</i>"
     )
 
 
@@ -119,7 +123,9 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     title = html.escape(challenge["title"])
     desc = html.escape(challenge["description"] or "Test your AWS cloud skills!")
     category = html.escape(challenge["category"])
-    time_limit = challenge["question_time_limit_seconds"]
+    dur_secs = challenge.get("duration_seconds") or 600
+    exam_mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
+    duration_str = f"{exam_mins} minutes total"
     status = challenge["status"]
 
     questions = await get_challenge_questions(ch_id)
@@ -151,7 +157,7 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"⚡ <b>{title}</b>\n"
             f"🏗️ <b>Category:</b> {category}\n"
             f"⏳ <b>Starts:</b> {time_until} <i>({starts_at})</i>\n"
-            f"⏱️ <b>Time Limit:</b> {time_limit}s per question\n"
+            f"⏱️ <b>Exam Time:</b> {duration_str}\n"
             f"📊 <b>Questions:</b> {total_q} questions\n\n"
             f"<i>The challenge will automatically unlock at the scheduled start time.</i>",
             parse_mode=ParseMode.HTML,
@@ -164,8 +170,8 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⚡ <b>{title}</b>\n\n"
         f"<blockquote>{desc}</blockquote>\n\n"
         f"📊 <b>Questions:</b> {total_q} questions\n"
-        f"⏱️ <b>Time Limit:</b> {time_limit} seconds per question\n"
-        f"🎯 <b>Rules:</b> 1 attempt only • Instant scoring based on accuracy & speed\n\n"
+        f"⏱️ <b>Exam Duration:</b> {duration_str}\n"
+        f"🎯 <b>Rules:</b> 1 attempt only • 70% Accuracy + 30% Speed Efficiency Bonus\n\n"
         f"Ready to prove your cloud architecture knowledge?",
         parse_mode=ParseMode.HTML,
         reply_markup=get_challenge_start_keyboard(ch_id),
@@ -478,31 +484,31 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
 # Scoring & Informative Rules
 # ---------------------------------------------------------------------------
 def get_scoring_rules_text() -> str:
-    """Returns formatted explanation of server-side timing and continuous decay scoring."""
+    """Returns formatted explanation of overall exam timing and two-factor scoring."""
     return (
-        "📖 <b>AWS Builder Challenge: Rules & Scoring Guide</b>\n\n"
-        "🎯 <b>1. Continuous Decay Scoring Formula</b>\n"
-        "Your points on every question combine <b>Accuracy (70%)</b> and <b>Speed (30%)</b>:\n\n"
-        "<blockquote><b>Score = Base Points × (0.70 + 0.30 × (1 - t / T))</b></blockquote>\n\n"
-        "• <b>Base Points:</b> Usually 10 points per question\n"
-        "• <b>t:</b> Your exact server-measured response time (seconds)\n"
-        "• <b>T:</b> Question time limit (e.g. 60 seconds)\n\n"
-        "📊 <b>Score Breakdown Example (10-Point Question, 60s limit):</b>\n"
-        "  ⚡ <b>0s (Instant):</b> <code>10.00 pts</code> (100% max)\n"
-        "  ⚡ <b>10s:</b> <code>9.50 pts</code> (95%)\n"
-        "  ⚡ <b>20s:</b> <code>9.00 pts</code> (90%)\n"
-        "  ⚡ <b>30s:</b> <code>8.50 pts</code> (85%)\n"
-        "  ⚡ <b>45s:</b> <code>7.75 pts</code> (77.5%)\n"
-        "  ⚡ <b>60s:</b> <code>7.00 pts</code> (70% base accuracy)\n"
-        "  ❌ <b>Wrong Answer / >60s (Overtime):</b> <code>0.00 pts</code>\n\n"
-        "⏱️ <b>2. Server-Side Timing</b>\n"
-        "The clock starts the exact millisecond the question is delivered and stops when your tap reaches the server. Client time cannot be spoofed.\n\n"
-        "🔀 <b>3. Anti-Cheat Randomization</b>\n"
-        "Every student receives a unique randomized question order and randomized answer option buttons (A, B, C, D).\n\n"
-        "🏆 <b>4. Championship Leaderboards</b>\n"
+        "📖 <b>AWS Builder Challenge: Exam Guide & Scoring Rules</b>\n\n"
+        "⏱️ <b>1. Overall Exam Timer</b>\n"
+        "Each challenge provides a unified <b>Overall Test Time Limit</b> (e.g. 10 minutes total for all questions):\n"
+        "• You control your own pacing across the entire exam.\n"
+        "• Spend more time on difficult architecture questions and answer simple ones quickly!\n"
+        "• The remaining test time is displayed at the top of each question.\n\n"
+        "🎯 <b>2. Two-Factor Scoring Model</b>\n"
+        "Your final score combines <b>Accuracy (70%)</b> and <b>Completion Speed Bonus (30%)</b>:\n\n"
+        "<blockquote><b>Final Score = Raw Correct Points × (0.70 + 0.30 × (1 - Total Time / Allotted Time))</b></blockquote>\n\n"
+        "📊 <b>Efficiency Multiplier Examples (10-Minute Challenge):</b>\n"
+        "  ⚡ <b>Finish in 2 mins:</b> <code>~94%</code> of maximum points\n"
+        "  ⚡ <b>Finish in 5 mins:</b> <code>85%</code> of maximum points\n"
+        "  ⚡ <b>Finish in 8 mins:</b> <code>76%</code> of maximum points\n"
+        "  ⚡ <b>Finish in 10 mins:</b> <code>70%</code> (Full accuracy baseline)\n"
+        "  ❌ <b>Overtime (>10 mins):</b> Exam automatically submits answered questions\n\n"
+        "🔀 <b>3. Anti-Cheat & Fair Play</b>\n"
+        "• <b>One Official Attempt:</b> Once you tap Start Challenge, your exam clock runs continuously.\n"
+        "• <b>Randomized Questions & Options:</b> Question sequence and answer buttons (A, B, C, D) are randomized for every student.\n\n"
+        "🏆 <b>4. Championship Leaderboards & Tie-Breakers</b>\n"
         "• <b>Weekly Leaderboard:</b> Instant rankings for the active quiz.\n"
-        "• <b>Monthly Cumulative Championship:</b> Sum of all weekly challenge scores for the month.\n\n"
-        "<i>Compete weekly, build your streak, and become an AWS Student Builder Champion!</i>"
+        "• <b>Monthly Cumulative Championship:</b> Sum of all weekly challenge scores for the month.\n"
+        "• <b>Tie-Breaker:</b> If two students score the same accuracy, the student with the fastest total completion time ranks higher!\n\n"
+        "<i>Compete weekly, master AWS cloud architectures, and climb the leaderboard!</i>"
     )
 
 
