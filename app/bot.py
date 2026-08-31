@@ -8,6 +8,14 @@ from telegram.ext import (
 )
 from dotenv import load_dotenv
 
+from app.db import (
+    get_user_state,
+    set_user_state,
+    save_feedback_submission,
+    get_feedback_submission,
+    delete_feedback_submission,
+)
+
 # Load environment variables from .env file
 load_dotenv()
 
@@ -19,13 +27,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# Dictionary to track user conversation states (e.g., waiting for feedback text)
-# In a larger version, this can be swapped out for a database like SQLite.
-user_states = {}
-
-# Maps a forwarded admin-group message id back to the original sender's chat id.
-feedback_submissions = {}
 
 # State constants
 WAITING_FOR_FEEDBACK = "WAITING_FOR_FEEDBACK"
@@ -129,7 +130,7 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Initiates the feedback collection workflow."""
     user_id = update.effective_user.id
-    user_states[user_id] = WAITING_FOR_FEEDBACK
+    await set_user_state(user_id, WAITING_FOR_FEEDBACK)
 
     await update.message.reply_text(
         "✍️ <b>Please type your feedback, suggestion, or issue below:</b>\n\n"
@@ -142,8 +143,9 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancels the current feedback session."""
     user_id = update.effective_user.id
-    if user_states.get(user_id) == WAITING_FOR_FEEDBACK:
-        user_states[user_id] = None
+    current_state = await get_user_state(user_id)
+    if current_state == WAITING_FOR_FEEDBACK:
+        await set_user_state(user_id, None)
         await update.message.reply_text(
             "❌ Feedback submission cancelled.",
             reply_markup=get_main_menu_keyboard(),
@@ -174,9 +176,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await help_command(update, context)
 
     # Check if the user is currently in the feedback-writing state
-    if user_states.get(user_id) == WAITING_FOR_FEEDBACK:
+    current_state = await get_user_state(user_id)
+    if current_state == WAITING_FOR_FEEDBACK:
         # Reset state back to normal
-        user_states[user_id] = None
+        await set_user_state(user_id, None)
 
         # Format feedback package for the admin core team
         name = f"{user.first_name} {user.last_name or ''}".strip()
@@ -201,10 +204,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     text=admin_notification,
                     parse_mode=ParseMode.HTML,
                 )
-                feedback_submissions[sent_message.message_id] = {
-                    "sender_chat_id": user_id,
-                    "sender_name": user.first_name,
-                }
+                await save_feedback_submission(
+                    sent_message.message_id,
+                    user_id,
+                    user.first_name,
+                )
 
             # Restore the standard keyboard for the user
             reply_markup = get_main_menu_keyboard()
@@ -236,7 +240,7 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         return
 
     replied_message_id = update.message.reply_to_message.message_id
-    submission = feedback_submissions.get(replied_message_id)
+    submission = await get_feedback_submission(replied_message_id)
     if not submission:
         return
 
@@ -257,5 +261,42 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     )
 
     # Clean up after delivering the reply.
-    feedback_submissions.pop(replied_message_id, None)
+    await delete_feedback_submission(replied_message_id)
+
+
+def create_application(token: str = None):
+    """Factory function to build and configure the Telegram application instance."""
+    bot_token = token or TELEGRAM_TOKEN
+    if not bot_token:
+        logger.error("TELEGRAM_BOT_TOKEN is missing in environment variables.")
+        return None
+
+    from telegram.request import HTTPXRequest
+    from telegram.ext import (
+        ApplicationBuilder,
+        CommandHandler,
+        MessageHandler,
+        filters,
+    )
+
+    request = HTTPXRequest(connect_timeout=20.0, read_timeout=20.0)
+    app = ApplicationBuilder().token(bot_token).request(request).build()
+
+    app.add_handler(CommandHandler("start", start_command))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("feedback", feedback_command))
+    app.add_handler(CommandHandler("about", about_command))
+    app.add_handler(CommandHandler("cancel", cancel_command))
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & filters.Chat(ADMIN_GROUP_ID) & (~filters.COMMAND),
+            handle_admin_reply,
+        )
+    )
+
+    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
+
+    return app
+
 

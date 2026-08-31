@@ -1,7 +1,6 @@
 # AWS SBG Community Bot
 
 A Telegram bot for the AWS Student Builder Group community that lets members submit feedback, suggestions, and issues directly to the admin/core team.
-Deploy Link: https://aws-sbg-community-bot-1.onrender.com
 
 ## What the bot does
 
@@ -12,7 +11,7 @@ The bot gives community members a fast and friendly way to:
 - submit feedback through `/feedback`
 - learn more about the community channel through `/about`
 
-Once a member sends feedback, the bot forwards the message to the configured admin group. If an admin replies to that forwarded message, the bot sends the reply back to the original member.
+Once a member sends feedback, the bot forwards the message to the configured admin group with clean HTML formatting and blockquotes. If an admin replies to that forwarded message in the group, the bot sends the reply directly back to the original member.
 
 ## Member experience
 
@@ -41,76 +40,74 @@ The main menu presents these quick actions:
 2. The bot asks the member to send their feedback text.
 3. The bot forwards the message to the configured admin group.
 4. An admin replies to that forwarded message in the admin group.
-5. The bot looks up the original recipient and sends the admin reply back to the member.
+5. The bot looks up the original recipient from the database and sends the admin reply back to the member.
 
 ## Project structure
 
-- `main.py` — repository-level startup entrypoint that builds the Telegram application and begins polling
-- `app/bot.py` — bot logic, command handlers, keyboard setup, feedback forwarding, and admin reply routing
-- `.env` — environment values, including the Telegram token and admin group chat ID
-- `requirements.txt` — Python dependency list for the project
+- `main.py` — local polling launcher and container entrypoint
+- `app/bot.py` — bot logic, command handlers, keyboard setup, and application factory
+- `app/db.py` — persistence layer supporting Upstash Redis (serverless) with automatic in-memory fallback for local dev
+- `api/webhook.py` — Vercel serverless webhook entrypoint
+- `vercel.json` — Vercel serverless routing configuration
+- `.env` — environment configuration (bot token, admin group ID, Upstash Redis credentials)
+- `requirements.txt` — Python dependency list
 
-## Setup
+## Setup & Local Development
 
 1. Create and activate a Python virtual environment.
-2. Install the dependencies:
+2. Install dependencies:
 
 ```bash
 pip install -r requirements.txt
 ```
 
-3. Create a `.env` file with the following values:
+3. Create a `.env` file with your credentials:
 
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
 ADMIN_GROUP_CHAT_ID=your_admin_group_chat_id
-WEBHOOK_URL=https://your-domain.example.com
-WEBHOOK_SECRET=your_secret_token
-PORT=8443
 ```
 
-4. Start the bot from the repository root launcher:
+4. Start the bot locally in polling mode:
 
 ```bash
 python main.py
 ```
 
-> The runtime is intentionally separated: `main.py` handles startup, while `app/bot.py` contains the bot behavior and message flow.
+5. Run unit tests:
+
+```bash
+python -m pytest tests/
+```
+
+## Deployment to Vercel (Serverless)
+
+Deploying to Vercel ensures instant response times with zero server sleep/cold starts:
+
+1. **Create an Upstash Redis Database**:
+   - Create a free database at [Upstash](https://upstash.com).
+   - Copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+
+2. **Deploy to Vercel**:
+   - Import this repository on Vercel.
+   - Configure the following Environment Variables in Vercel project settings:
+     - `TELEGRAM_BOT_TOKEN`
+     - `ADMIN_GROUP_CHAT_ID`
+     - `UPSTASH_REDIS_REST_URL`
+     - `UPSTASH_REDIS_REST_TOKEN`
+     - `WEBHOOK_SECRET` (optional, for secure webhook verification)
+
+3. **Register the Webhook with Telegram**:
+   Set your Telegram bot webhook URL to your Vercel deployment:
+   ```
+   https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<YOUR_VERCEL_PROJECT>.vercel.app/api/webhook
+   ```
 
 ## Contributor workflow
 
-Collaborators can improve the bot by following the same setup process and expanding the member/admin experience.
+1. Create a feature branch (`git checkout -b feature/your-feature-name`).
+2. Make your changes and test locally with `python main.py` using your personal test bot.
+3. Verify test suite passes (`python -m pytest tests/`).
+4. Commit and push your feature branch.
+5. Open a Pull Request on GitHub.
 
-### Contributor setup
-
-1. Clone the repository.
-2. Create and activate a virtual environment.
-3. Install the project dependencies.
-4. Copy your token and admin group ID into a local `.env` file.
-5. Run the bot locally using `python main.py`.
-
-### Good collaboration areas
-
-Contributors can help with:
-
-- improving the welcome/help UX
-- refining the forwarding format shown to the admin group
-- adding more graceful handling for cancel and retry flows
-- moving the feedback tracking state from memory to a persistent database
-- adding logging, moderation, or analytics support
-- improving project documentation and contributor guidance
-
-### Recommended contribution flow
-
-1. Create a feature branch.
-2. Make small, focused changes.
-3. Verify the bot still compiles in the project environment.
-4. Test the command and feedback flow manually in Telegram.
-5. Open a pull request with a short summary of the behavior change.
-
-## Notes
-
-- The bot currently uses an in-memory mapping to connect a forwarded admin-group message back to the original sender.
-- Proxy environment variables are cleared during startup so Telegram API requests can succeed in environments where a proxy would otherwise block them.
-- The current implementation is intentionally lightweight and is a strong base for future persistence, moderation, analytics, and admin tooling.
-- Only one bot instance should be polling Telegram for the same bot token at a time. Running multiple instances of the same bot can cause Telegram `getUpdates` conflicts.

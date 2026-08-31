@@ -1,26 +1,10 @@
 import logging
 import os
 
-from telegram.request import HTTPXRequest
-from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    filters,
-)
-
 from app.bot import (
-    ADMIN_GROUP_ID,
-    TELEGRAM_TOKEN,
-    about_command,
-    cancel_command,
     clear_proxy_environment,
-    feedback_command,
-    handle_admin_reply,
-    handle_message,
-    help_command,
+    create_application,
     logger,
-    start_command,
 )
 
 
@@ -28,27 +12,9 @@ def main():
     """Creates the Telegram application and starts it in webhook or polling mode."""
     clear_proxy_environment()
 
-    if not TELEGRAM_TOKEN:
-        logger.error("TELEGRAM_BOT_TOKEN is missing in environment variables.")
+    app = create_application()
+    if not app:
         return
-
-    request = HTTPXRequest(connect_timeout=20.0, read_timeout=20.0)
-    app = ApplicationBuilder().token(TELEGRAM_TOKEN).request(request).build()
-
-    app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("feedback", feedback_command))
-    app.add_handler(CommandHandler("about", about_command))
-    app.add_handler(CommandHandler("cancel", cancel_command))
-
-    app.add_handler(
-        MessageHandler(
-            filters.TEXT & filters.Chat(ADMIN_GROUP_ID) & (~filters.COMMAND),
-            handle_admin_reply,
-        )
-    )
-
-    app.add_handler(MessageHandler(filters.TEXT & (~filters.COMMAND), handle_message))
 
     webhook_url = os.getenv("WEBHOOK_URL")
 

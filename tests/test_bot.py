@@ -6,6 +6,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import app.bot as bot
+import app.db as db
+from telegram.constants import ParseMode
 
 
 class FakeUser:
@@ -99,9 +101,6 @@ def test_clear_proxy_environment_removes_proxy_variables_and_sets_no_proxy():
     assert os.environ["no_proxy"] == "*"
 
 
-from telegram.constants import ParseMode
-
-
 def test_help_command_returns_expected_shortcuts():
     update = FakeUpdate(user_id=555)
     context = FakeContext()
@@ -114,24 +113,28 @@ def test_help_command_returns_expected_shortcuts():
 
 
 def test_feedback_command_sets_waiting_state_and_removes_keyboard():
+    db.reset_memory_store()
     update = FakeUpdate(user_id=111)
     context = FakeContext()
 
     asyncio.run(bot.feedback_command(update, context))
 
-    assert bot.user_states[111] == bot.WAITING_FOR_FEEDBACK
+    state = asyncio.run(db.get_user_state(111))
+    assert state == bot.WAITING_FOR_FEEDBACK
     assert update.message.reply_text_calls[0]["reply_markup"] is not None
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
 
 
 def test_cancel_command_clears_feedback_state_and_restores_keyboard():
+    db.reset_memory_store()
     update = FakeUpdate(user_id=222)
     context = FakeContext()
-    bot.user_states[222] = bot.WAITING_FOR_FEEDBACK
+    asyncio.run(db.set_user_state(222, bot.WAITING_FOR_FEEDBACK))
 
     asyncio.run(bot.cancel_command(update, context))
 
-    assert bot.user_states[222] is None
+    state = asyncio.run(db.get_user_state(222))
+    assert state is None
     assert update.message.reply_text_calls[0]["text"] == "❌ Feedback submission cancelled."
 
     labels = [
@@ -146,14 +149,13 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
 
 
 def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
+    db.reset_memory_store()
     original_admin_group_id = bot.ADMIN_GROUP_ID
     bot.ADMIN_GROUP_ID = 999
-    bot.user_states.clear()
-    bot.feedback_submissions.clear()
 
     update = FakeUpdate(user_id=333, text="This is a test feedback message")
     context = FakeContext()
-    bot.user_states[333] = bot.WAITING_FOR_FEEDBACK
+    asyncio.run(db.set_user_state(333, bot.WAITING_FOR_FEEDBACK))
 
     asyncio.run(bot.handle_message(update, context))
 
@@ -163,25 +165,26 @@ def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
     assert parse_mode == ParseMode.HTML
     assert "📥 <b>New AWS Community Feedback</b>" in text
     assert "<blockquote>This is a test feedback message</blockquote>" in text
-    assert bot.feedback_submissions[message_id]["sender_chat_id"] == 333
+    
+    submission = asyncio.run(db.get_feedback_submission(message_id))
+    assert submission["sender_chat_id"] == 333
     assert update.message.reply_text_calls[-1]["text"].startswith("✅ <b>Thank you!")
     assert update.message.reply_text_calls[-1]["parse_mode"] == ParseMode.HTML
-    assert bot.user_states[333] is None
+    
+    state = asyncio.run(db.get_user_state(333))
+    assert state is None
 
     bot.ADMIN_GROUP_ID = original_admin_group_id
 
 
 def test_handle_admin_reply_routes_staff_reply_back_to_original_member():
-    bot.feedback_submissions.clear()
+    db.reset_memory_store()
     context = FakeContext()
     update = FakeUpdate(user_id=444, text="Thanks for sharing this.")
     update.message.reply_to_message = type(
         "ReplyToMessage", (), {"message_id": 7}
     )()
-    bot.feedback_submissions[7] = {
-        "sender_chat_id": 444,
-        "sender_name": "Original User",
-    }
+    asyncio.run(db.save_feedback_submission(7, 444, "Original User"))
 
     asyncio.run(bot.handle_admin_reply(update, context))
 
@@ -191,7 +194,9 @@ def test_handle_admin_reply_routes_staff_reply_back_to_original_member():
     assert parse_mode == ParseMode.HTML
     assert "💬 <b>Response from the AWS Student Builder Core Team</b>" in text
     assert "<blockquote>Thanks for sharing this.</blockquote>" in text
-    assert 7 not in bot.feedback_submissions
+    
+    submission = asyncio.run(db.get_feedback_submission(7))
+    assert submission is None
 
 
 def test_start_command_sends_photo_when_logo_exists(monkeypatch):
@@ -225,6 +230,12 @@ def test_start_command_falls_back_to_text_when_logo_missing(monkeypatch):
     assert "AWS SBG AASTU Support Bot!" in update.message.reply_text_calls[0]["text"]
     assert "<b>Join our community:</b> @AWSAASTU" in update.message.reply_text_calls[0]["text"]
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
+
+
+def test_create_application_initializes_handlers():
+    app = bot.create_application(token="123456:ABC-DEF1234ghIkl-zyx57W2v1u123ew11")
+    assert app is not None
+
 
 
 

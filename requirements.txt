@@ -6,5 +6,6 @@ httpx==0.28.1
 idna==3.18
 python-dotenv==1.2.2
 python-telegram-bot==22.8
+upstash-redis==1.8.0
 socksio==1.0.0
 tornado==6.5.7
