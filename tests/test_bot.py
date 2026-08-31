@@ -99,9 +99,9 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     ]
 
     assert labels == [
+        ["⚡ Challenges", "🏆 Leaderboard"],
         ["📝 Submit Feedback", "ℹ️ About"],
-        ["❓ Help"],
-        ["❌ Cancel"],
+        ["❓ Help", "❌ Cancel"],
     ]
 
 
@@ -161,9 +161,9 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
         for row in update.message.reply_text_calls[0]["reply_markup"].keyboard
     ]
     assert labels == [
+        ["⚡ Challenges", "🏆 Leaderboard"],
         ["📝 Submit Feedback", "ℹ️ About"],
-        ["❓ Help"],
-        ["❌ Cancel"],
+        ["❓ Help", "❌ Cancel"],
     ]
 
 
@@ -259,7 +259,7 @@ def test_start_command_sends_photo_when_logo_exists(monkeypatch):
     asyncio.run(bot.start_command(update, context))
     
     assert len(update.message.reply_photo_calls) == 1
-    assert "AWS SBG AASTU Support Bot!" in update.message.reply_photo_calls[0]["caption"]
+    assert "AWS SBG AASTU Community & Challenge Bot!" in update.message.reply_photo_calls[0]["caption"]
     assert "<b>Join our community:</b> @AWSAASTU" in update.message.reply_photo_calls[0]["caption"]
     assert update.message.reply_photo_calls[0]["parse_mode"] == ParseMode.HTML
 
@@ -274,7 +274,7 @@ def test_start_command_falls_back_to_text_when_logo_missing(monkeypatch):
     
     assert len(update.message.reply_photo_calls) == 0
     assert len(update.message.reply_text_calls) == 1
-    assert "AWS SBG AASTU Support Bot!" in update.message.reply_text_calls[0]["text"]
+    assert "AWS SBG AASTU Community & Challenge Bot!" in update.message.reply_text_calls[0]["text"]
     assert "<b>Join our community:</b> @AWSAASTU" in update.message.reply_text_calls[0]["text"]
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
 

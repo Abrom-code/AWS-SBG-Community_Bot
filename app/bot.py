@@ -18,6 +18,18 @@ from app.db import (
     save_admin_reply_mapping,
     get_admin_reply_mapping,
 )
+from app.challenge.handlers import (
+    challenge_command,
+    leaderboard_command,
+    handle_challenge_start_callback,
+    handle_challenge_answer_callback,
+    handle_leaderboard_callback,
+)
+from app.challenge.admin import (
+    admin_command,
+    handle_admin_callback,
+    handle_admin_csv_document,
+)
 
 # Load environment variables from .env file
 load_dotenv()
@@ -38,7 +50,11 @@ WAITING_FOR_FEEDBACK = "WAITING_FOR_FEEDBACK"
 def get_main_menu_keyboard():
     """Returns the member-facing menu keyboard with command shortcuts."""
     return ReplyKeyboardMarkup(
-        [["📝 Submit Feedback", "ℹ️ About"], ["❓ Help"], ["❌ Cancel"]],
+        [
+            ["⚡ Challenges", "🏆 Leaderboard"],
+            ["📝 Submit Feedback", "ℹ️ About"],
+            ["❓ Help", "❌ Cancel"],
+        ],
         resize_keyboard=True,
     )
 
@@ -56,14 +72,13 @@ def clear_proxy_environment():
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message with the bot logo and a persistent keyboard option."""
     welcome_text = (
-        "<b>Welcome to the AWS SBG AASTU Support Bot!</b>\n\n"
+        "<b>Welcome to the AWS SBG AASTU Community & Challenge Bot!</b>\n\n"
         "✨ <b>What you can do here:</b>\n"
-        "    🤝 Support\n"
-        "    💬 Feedback\n"
-        "    💡 Suggestions\n"
-        "    📞 Contact the Team\n\n"
-        "We value your opinions, feature requests, and event suggestions.\n\n"
-        "Use the menu below or type <code>/feedback</code> to share your thoughts.\n\n"
+        "    ⚡ <b>Weekly Challenges:</b> Test your cloud skills and climb the leaderboard\n"
+        "    🏆 <b>Leaderboards:</b> Track weekly & monthly season rankings\n"
+        "    💬 <b>Feedback & Suggestions:</b> Direct channel to core team\n"
+        "    🤝 <b>Community Support:</b> Get answers from student builder leads\n\n"
+        "Use the menu below or type <code>/challenge</code> to begin!\n\n"
         "📢 <b>Join our community:</b> @AWSAASTU"
     )
 
@@ -101,8 +116,10 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the available visible commands for members."""
     help_text = (
-        "📘 <b>What We Can Do For You</b>\n\n"
+        "📘 <b>AWS SBG Community Bot Shortcuts</b>\n\n"
         "• <code>/start</code> — Open the main welcome menu\n"
+        "• <code>/challenge</code> — Take the active weekly AWS cloud quiz\n"
+        "• <code>/leaderboard</code> — View weekly & monthly championship rankings\n"
         "• <code>/feedback</code> — Drop a suggestion, idea, or issue for the core team\n"
         "• <code>/about</code> — Learn more about what we do\n"
         "• <code>/cancel</code> — Stop your current feedback draft\n\n"
@@ -118,10 +135,10 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provides details about the bot and community group."""
     about_text = (
-        "ℹ️ <b>About This Bot</b>\n\n"
-        "This is an official feedback channel for the AWS Student Builder community. "
-        "Your submissions go directly to our core team to help us improve upcoming workshops, "
-        "hackathons, and cloud training sessions."
+        "ℹ️ <b>About AWS SBG AASTU</b>\n\n"
+        "The AWS Student Builder Group at AASTU empowers students with practical cloud computing knowledge, "
+        "certifications, architectural challenges, and hackathons.\n\n"
+        "Participate in our weekly challenges via <code>/challenge</code> to sharpen your AWS expertise!"
     )
     await update.message.reply_text(
         about_text,
@@ -171,7 +188,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = user.id
 
     # Handle button clicks text aliases
-    if text == "📝 Submit Feedback":
+    if text == "⚡ Challenges":
+        return await challenge_command(update, context)
+    elif text == "🏆 Leaderboard":
+        return await leaderboard_command(update, context)
+    elif text == "📝 Submit Feedback":
         return await feedback_command(update, context)
     elif text == "ℹ️ About":
         return await about_command(update, context)
@@ -232,7 +253,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         # Default response if they type random text outside of feedback flow
         await update.message.reply_text(
-            "I didn't quite catch that. Use the buttons below or type <code>/feedback</code> to share your thoughts with us!",
+            "I didn't quite catch that. Use the buttons below or type <code>/challenge</code> to take our weekly quiz!",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard(),
         )
@@ -372,6 +393,7 @@ def create_application(token: str = None):
     from telegram.ext import (
         ApplicationBuilder,
         CommandHandler,
+        CallbackQueryHandler,
         MessageHandler,
         filters,
     )
@@ -385,13 +407,28 @@ def create_application(token: str = None):
     )
     app = ApplicationBuilder().token(bot_token).request(request).build()
 
+    # Core Navigation Commands
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("feedback", feedback_command))
     app.add_handler(CommandHandler("about", about_command))
+    app.add_handler(CommandHandler("feedback", feedback_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
-    # 1. Handle admin replies (captures any reply to a tracked feedback message)
+    # Challenge & Leaderboard Commands
+    app.add_handler(CommandHandler("challenge", challenge_command))
+    app.add_handler(CommandHandler("leaderboard", leaderboard_command))
+    app.add_handler(CommandHandler("admin", admin_command))
+
+    # Challenge Callbacks
+    app.add_handler(CallbackQueryHandler(handle_challenge_start_callback, pattern=r"^ch_start:"))
+    app.add_handler(CallbackQueryHandler(handle_challenge_answer_callback, pattern=r"^ch_ans:"))
+    app.add_handler(CallbackQueryHandler(handle_leaderboard_callback, pattern=r"^lb_"))
+    app.add_handler(CallbackQueryHandler(handle_admin_callback, pattern=r"^adm_"))
+
+    # Admin CSV Document Upload
+    app.add_handler(MessageHandler(filters.Document.ALL, handle_admin_csv_document))
+
+    # Admin Feedback Replies
     app.add_handler(
         MessageHandler(
             filters.TEXT & filters.REPLY & (~filters.COMMAND),
@@ -399,7 +436,7 @@ def create_application(token: str = None):
         )
     )
 
-    # 2. Handle edited admin replies (group chats)
+    # Edited Admin Replies
     app.add_handler(
         MessageHandler(
             filters.UpdateType.EDITED_MESSAGE & filters.ChatType.GROUPS & (~filters.COMMAND),
@@ -407,7 +444,7 @@ def create_application(token: str = None):
         )
     )
 
-    # 3. Handle edited user feedback (private chat)
+    # Edited User Feedback
     app.add_handler(
         MessageHandler(
             filters.UpdateType.EDITED_MESSAGE & filters.ChatType.PRIVATE & (~filters.COMMAND),
@@ -415,7 +452,7 @@ def create_application(token: str = None):
         )
     )
 
-    # 4. Handle normal user messages (private chat only)
+    # User Private Messages
     app.add_handler(
         MessageHandler(
             filters.TEXT & filters.ChatType.PRIVATE & (~filters.COMMAND),
@@ -424,6 +461,7 @@ def create_application(token: str = None):
     )
 
     return app
+
 
 
 

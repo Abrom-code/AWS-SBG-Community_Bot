@@ -1,113 +1,122 @@
-# AWS SBG Community Bot
+# AWS SBG Community & Challenge Bot
 
-A Telegram bot for the AWS Student Builder Group community that lets members submit feedback, suggestions, and issues directly to the admin/core team.
+A Telegram bot for the AWS Student Builder Group community featuring an interactive **Weekly Challenge Engine**, **Leaderboards**, and direct **Feedback & Support Routing**.
 
-## What the bot does
+---
 
-The bot gives community members a fast and friendly way to:
+## Key Features
 
-- open the bot and see a visible menu
-- view help and command shortcuts
-- submit feedback through `/feedback`
-- learn more about the community channel through `/about`
+### 1. ⚡ AWS Builder Challenge Engine (Phase 1)
+* **Multiple-Choice Questions (MCQ)**: 4 options with randomized display order and anti-cheat question shuffling per participant.
+* **Server-Side Timing Model**: Server measures exact elapsed response time ($t$) up to the configured question time limit ($T$).
+* **Continuous Decay Scoring Formula**:
+  $$Score = B \times \left(0.70 + 0.30 \times \left(1 - \frac{t}{T}\right)\right)$$
+  * $70\%$ of points awarded for knowledge accuracy, and up to $30\%$ for response speed.
+  * Overtime ($t > T$) or incorrect answers award $0$ points.
+  * Configurable accuracy & speed weights per challenge.
+* **Single Attempt Enforcement**: Exactly 1 attempt per user per challenge.
+* **Anti-Double-Click Lock**: Prevents duplicate answer submissions or rapid tapping glitches.
+* **Challenge Question Snapshotting**: Questions are snapshotted at publication time for immutability.
+* **Leaderboards**:
+  * 🏆 **Weekly Challenge Leaderboard**: Real-time ranks and accuracy for the active challenge.
+  * 📅 **Monthly Cumulative Leaderboard**: Aggregated season scores across all weekly challenges.
 
-Once a member sends feedback, the bot forwards the message to the configured admin group with clean HTML formatting and blockquotes. If an admin replies to that forwarded message in the group, the bot sends the reply directly back to the original member.
+### 2. 👑 Admin Challenge Panel & CSV Importer
+* Accessible via `/admin`.
+* **CSV Bulk Question Importer**: Upload a `.csv` file via Telegram to import hundreds of questions instantly.
+  * Columns: `question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation`
+* **Challenge Lifecycle State Machine**: `DRAFT` $\rightarrow$ `SCHEDULED` $\rightarrow$ `LIVE` $\rightarrow$ `ENDED` (or `CANCELLED`).
 
-## Member experience
+### 3. 💬 Feedback & Community Support System
+* Direct forwarding of feedback tickets to the configured admin group with clean HTML formatting.
+* **Multi-Reply & Thread Support**: Admins can send multiple replies and discussion thread replies that automatically route back to the member.
+* **Real-Time Edit Synchronization**: Editing an admin reply or user feedback dynamically updates the corresponding message in real time.
 
-Members can use either Telegram commands or the visible reply keyboard buttons.
+---
 
-### Commands
+## Member Experience
 
-- `/start` — opens the welcome screen and menu
-- `/help` — displays the visible command list
-- `/feedback` — starts the feedback submission flow
-- `/about` — explains the purpose of the bot
-- `/cancel` — stops the current feedback draft
+### Available Commands
+- `/start` — Opens the welcome screen and main menu
+- `/challenge` — Starts or resumes the active weekly challenge
+- `/leaderboard` — Displays weekly and monthly cumulative rankings
+- `/feedback` — Starts the feedback submission flow
+- `/help` — Displays command list and shortcuts
+- `/about` — Community info and links
+- `/cancel` — Cancels an active feedback draft
+- `/admin` — Admin operations dashboard
 
-### Visible keyboard options
-
-The main menu presents these quick actions:
-
+### Main Menu Shortcuts
+- `⚡ Challenges`
+- `🏆 Leaderboard`
 - `📝 Submit Feedback`
 - `ℹ️ About`
 - `❓ Help`
 - `❌ Cancel`
 
-## Feedback response workflow
+---
 
-1. A member opens the bot and starts a feedback flow.
-2. The bot asks the member to send their feedback text.
-3. The bot forwards the message to the configured admin group.
-4. An admin replies to that forwarded message in the admin group.
-5. The bot looks up the original recipient from the database and sends the admin reply back to the member.
+## Project Structure
 
-## Project structure
+```
+AWS-SBG-Community_Bot/
+├── main.py                     # Local development launcher with auto-reconnect
+├── requirements.txt            # Python dependencies
+├── vercel.json                 # Vercel serverless routing configuration
+├── .env.example                # Environment variables template
+├── api/
+│   └── webhook.py              # Vercel serverless Telegram webhook entrypoint
+├── app/
+│   ├── bot.py                  # Bot application factory & route aggregator
+│   ├── db.py                   # SQLite & PostgreSQL dual-persistence layer
+│   └── challenge/
+│       ├── models.py           # Enums & data structures
+│       ├── scoring.py          # Decoupled accuracy + speed scoring engine
+│       ├── keyboards.py        # Inline keyboards (quiz options, menus, admin)
+│       ├── service.py          # Database operations, session tracking, CSV parser, leaderboards
+│       ├── handlers.py         # Student quiz flow & leaderboard views
+│       └── admin.py            # Admin operations & CSV document upload
+└── tests/
+    ├── test_bot.py             # Feedback & bot core unit tests (12 tests)
+    ├── test_scoring.py         # Scoring engine math unit tests (6 tests)
+    └── test_challenge.py       # Challenge engine & leaderboard tests (5 tests)
+```
 
-- `main.py` — local polling launcher and container entrypoint
-- `app/bot.py` — bot logic, command handlers, keyboard setup, and application factory
-- `app/db.py` — persistence layer supporting SQLite (automatic default, zero-config) and PostgreSQL (via `DATABASE_URL` for Supabase / Neon / Railway)
-- `api/webhook.py` — Vercel serverless webhook entrypoint
-- `vercel.json` — Vercel serverless routing configuration
-- `.env` — environment configuration (bot token, admin group ID, database URL)
-- `requirements.txt` — Python dependency list
+---
 
 ## Setup & Local Development
 
 1. Create and activate a Python virtual environment.
 2. Install dependencies:
-
 ```bash
 pip install -r requirements.txt
 ```
-
-3. Create a `.env` file with your credentials:
-
+3. Configure `.env`:
 ```env
 TELEGRAM_BOT_TOKEN=your_bot_token
 ADMIN_GROUP_CHAT_ID=your_admin_group_chat_id
+# Optional: PostgreSQL Database URL (if omitted, automatically uses local SQLite bot.db)
+# DATABASE_URL=postgresql://user:password@host:port/database
 ```
-
-4. Start the bot locally in polling mode:
-
+4. Start the bot locally:
 ```bash
 python main.py
 ```
-*(The bot will automatically create and use `bot.db` via SQLite with zero extra configuration).*
-
-5. Run unit tests:
-
+5. Run the test suite:
 ```bash
 python -m pytest tests/
 ```
 
+---
+
 ## Deployment to Vercel (Serverless)
 
-Deploying to Vercel ensures instant response times with zero server sleep/cold starts:
-
-1. **Get a Free PostgreSQL Database** (from [Supabase](https://supabase.com), [Neon](https://neon.tech), or Railway):
-   - Create a free project and copy your connection string `DATABASE_URL` (e.g. `postgresql://postgres:...@...pooler.supabase.com:5432/postgres`).
-
-2. **Deploy to Vercel**:
-   - Import this repository on Vercel.
-   - Configure the following Environment Variables in Vercel project settings:
-     - `TELEGRAM_BOT_TOKEN`
-     - `ADMIN_GROUP_CHAT_ID`
-     - `DATABASE_URL`
-     - `WEBHOOK_SECRET` (optional, for secure webhook verification)
-
-3. **Register the Webhook with Telegram**:
-   Set your Telegram bot webhook URL to your Vercel deployment:
-   ```
-   https://api.telegram.org/bot<YOUR_TELEGRAM_BOT_TOKEN>/setWebhook?url=https://<YOUR_VERCEL_PROJECT>.vercel.app/api/webhook
-   ```
-
-## Contributor workflow
-
-1. Create a feature branch (`git checkout -b feature/your-feature-name`).
-2. Make your changes and test locally with `python main.py` using your personal test bot.
-3. Verify test suite passes (`python -m pytest tests/`).
-4. Commit and push your feature branch.
-5. Open a Pull Request on GitHub.
-
-
+1. Import this repository into Vercel.
+2. Configure Environment Variables in Vercel project settings:
+   - `TELEGRAM_BOT_TOKEN`
+   - `ADMIN_GROUP_CHAT_ID`
+   - `DATABASE_URL` (from Supabase or Neon PostgreSQL)
+3. Set your Telegram webhook:
+```
+https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<VERCEL_APP>.vercel.app/api/webhook
+```

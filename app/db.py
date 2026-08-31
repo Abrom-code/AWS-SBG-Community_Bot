@@ -67,6 +67,99 @@ async def init_db(db_path: str = None) -> None:
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         );
                     """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS challenge_seasons (
+                            id BIGSERIAL PRIMARY KEY,
+                            name TEXT NOT NULL,
+                            start_date TIMESTAMP,
+                            end_date TIMESTAMP,
+                            status TEXT DEFAULT 'ACTIVE',
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS challenges (
+                            id BIGSERIAL PRIMARY KEY,
+                            season_id BIGINT,
+                            title TEXT NOT NULL,
+                            description TEXT,
+                            category TEXT DEFAULT 'General',
+                            starts_at TIMESTAMP,
+                            ends_at TIMESTAMP,
+                            duration_seconds INT DEFAULT 3600,
+                            question_time_limit_seconds INT DEFAULT 60,
+                            accuracy_weight REAL DEFAULT 0.70,
+                            speed_weight REAL DEFAULT 0.30,
+                            status TEXT DEFAULT 'DRAFT',
+                            created_by BIGINT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS questions (
+                            id BIGSERIAL PRIMARY KEY,
+                            question_text TEXT NOT NULL,
+                            category TEXT DEFAULT 'General',
+                            difficulty TEXT DEFAULT 'MEDIUM',
+                            option_a TEXT NOT NULL,
+                            option_b TEXT NOT NULL,
+                            option_c TEXT NOT NULL,
+                            option_d TEXT NOT NULL,
+                            correct_option TEXT NOT NULL,
+                            base_points REAL DEFAULT 10.0,
+                            explanation TEXT,
+                            is_active BOOLEAN DEFAULT TRUE,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS challenge_questions (
+                            id BIGSERIAL PRIMARY KEY,
+                            challenge_id BIGINT NOT NULL,
+                            question_id BIGINT NOT NULL,
+                            question_order INT DEFAULT 0,
+                            snapshot_json TEXT
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS challenge_participants (
+                            id BIGSERIAL PRIMARY KEY,
+                            challenge_id BIGINT NOT NULL,
+                            telegram_user_id BIGINT NOT NULL,
+                            user_name TEXT,
+                            started_at TIMESTAMP,
+                            completed_at TIMESTAMP,
+                            current_question_index INT DEFAULT 0,
+                            question_order_json TEXT,
+                            current_option_order_json TEXT,
+                            current_question_sent_at TIMESTAMP,
+                            score REAL DEFAULT 0.0,
+                            correct_count INT DEFAULT 0,
+                            answered_count INT DEFAULT 0,
+                            is_locked INT DEFAULT 0,
+                            status TEXT DEFAULT 'REGISTERED',
+                            UNIQUE(challenge_id, telegram_user_id)
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS challenge_answers (
+                            id BIGSERIAL PRIMARY KEY,
+                            participant_id BIGINT NOT NULL,
+                            challenge_id BIGINT NOT NULL,
+                            question_id BIGINT NOT NULL,
+                            question_position INT,
+                            selected_option TEXT,
+                            correct_option TEXT,
+                            is_correct BOOLEAN,
+                            question_sent_at TIMESTAMP,
+                            answered_at TIMESTAMP,
+                            response_time_ms INT,
+                            base_points REAL,
+                            speed_multiplier REAL,
+                            points_awarded REAL,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
                     await conn.commit()
             _is_initialized = True
             logger.info("Initialized PostgreSQL database tables.")
@@ -103,6 +196,99 @@ async def init_db(db_path: str = None) -> None:
                         admin_message_id INTEGER PRIMARY KEY,
                         user_chat_id INTEGER NOT NULL,
                         delivered_message_id INTEGER NOT NULL,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS challenge_seasons (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        name TEXT NOT NULL,
+                        start_date TIMESTAMP,
+                        end_date TIMESTAMP,
+                        status TEXT DEFAULT 'ACTIVE',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS challenges (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        season_id INTEGER,
+                        title TEXT NOT NULL,
+                        description TEXT,
+                        category TEXT DEFAULT 'General',
+                        starts_at TIMESTAMP,
+                        ends_at TIMESTAMP,
+                        duration_seconds INTEGER DEFAULT 3600,
+                        question_time_limit_seconds INTEGER DEFAULT 60,
+                        accuracy_weight REAL DEFAULT 0.70,
+                        speed_weight REAL DEFAULT 0.30,
+                        status TEXT DEFAULT 'DRAFT',
+                        created_by INTEGER,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS questions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        question_text TEXT NOT NULL,
+                        category TEXT DEFAULT 'General',
+                        difficulty TEXT DEFAULT 'MEDIUM',
+                        option_a TEXT NOT NULL,
+                        option_b TEXT NOT NULL,
+                        option_c TEXT NOT NULL,
+                        option_d TEXT NOT NULL,
+                        correct_option TEXT NOT NULL,
+                        base_points REAL DEFAULT 10.0,
+                        explanation TEXT,
+                        is_active INTEGER DEFAULT 1,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS challenge_questions (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        challenge_id INTEGER NOT NULL,
+                        question_id INTEGER NOT NULL,
+                        question_order INTEGER DEFAULT 0,
+                        snapshot_json TEXT
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS challenge_participants (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        challenge_id INTEGER NOT NULL,
+                        telegram_user_id INTEGER NOT NULL,
+                        user_name TEXT,
+                        started_at TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        current_question_index INTEGER DEFAULT 0,
+                        question_order_json TEXT,
+                        current_option_order_json TEXT,
+                        current_question_sent_at TIMESTAMP,
+                        score REAL DEFAULT 0.0,
+                        correct_count INTEGER DEFAULT 0,
+                        answered_count INTEGER DEFAULT 0,
+                        is_locked INTEGER DEFAULT 0,
+                        status TEXT DEFAULT 'REGISTERED',
+                        UNIQUE(challenge_id, telegram_user_id)
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS challenge_answers (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        participant_id INTEGER NOT NULL,
+                        challenge_id INTEGER NOT NULL,
+                        question_id INTEGER NOT NULL,
+                        question_position INTEGER,
+                        selected_option TEXT,
+                        correct_option TEXT,
+                        is_correct INTEGER,
+                        question_sent_at TIMESTAMP,
+                        answered_at TIMESTAMP,
+                        response_time_ms INTEGER,
+                        base_points REAL,
+                        speed_multiplier REAL,
+                        points_awarded REAL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
@@ -548,6 +734,12 @@ async def reset_db(db_path: str = None) -> None:
                     await cur.execute("DELETE FROM user_states;")
                     await cur.execute("DELETE FROM feedback_submissions;")
                     await cur.execute("DELETE FROM admin_reply_mappings;")
+                    await cur.execute("DELETE FROM challenge_answers;")
+                    await cur.execute("DELETE FROM challenge_participants;")
+                    await cur.execute("DELETE FROM challenge_questions;")
+                    await cur.execute("DELETE FROM challenges;")
+                    await cur.execute("DELETE FROM questions;")
+                    await cur.execute("DELETE FROM challenge_seasons;")
                     await conn.commit()
         except Exception as e:
             logger.error(f"Error resetting Postgres: {e}")
@@ -559,6 +751,12 @@ async def reset_db(db_path: str = None) -> None:
                 await db.execute("DELETE FROM user_states;")
                 await db.execute("DELETE FROM feedback_submissions;")
                 await db.execute("DELETE FROM admin_reply_mappings;")
+                await db.execute("DELETE FROM challenge_answers;")
+                await db.execute("DELETE FROM challenge_participants;")
+                await db.execute("DELETE FROM challenge_questions;")
+                await db.execute("DELETE FROM challenges;")
+                await db.execute("DELETE FROM questions;")
+                await db.execute("DELETE FROM challenge_seasons;")
                 await db.commit()
         except Exception as e:
             logger.error(f"Error resetting SQLite: {e}")
