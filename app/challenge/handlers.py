@@ -96,9 +96,18 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = user.username or ""
 
+    cb_query = getattr(update, "callback_query", None)
+    if cb_query:
+        await cb_query.answer()
+        sender_func = cb_query.edit_message_text
+    elif update.message:
+        sender_func = update.message.reply_text
+    else:
+        return
+
     challenge = await get_active_challenge()
     if not challenge:
-        await update.message.reply_text(
+        await sender_func(
             "⚡ <b>AWS Builder Challenges</b>\n\n"
             "There is no live challenge at the moment.\n"
             "Weekly challenges are scheduled by the core team. Check back soon or stay tuned to @AWSAASTU!",
@@ -123,7 +132,7 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         score = part["score"]
         correct = part["correct_count"]
         answered = part["answered_count"]
-        await update.message.reply_text(
+        await sender_func(
             f"🏁 <b>You already completed this challenge!</b>\n\n"
             f"⚡ <b>{title}</b>\n"
             f"🏆 <b>Your Score:</b> <code>{score} pts</code>\n"
@@ -137,7 +146,7 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if status == "SCHEDULED":
         time_until = _format_time_until(challenge.get("starts_at"))
         starts_at = challenge.get("starts_at", "Soon")
-        await update.message.reply_text(
+        await sender_func(
             f"📅 <b>Upcoming AWS Builder Challenge</b>\n\n"
             f"⚡ <b>{title}</b>\n"
             f"🏗️ <b>Category:</b> {category}\n"
@@ -151,7 +160,7 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Challenge is LIVE and participant can take it
-    await update.message.reply_text(
+    await sender_func(
         f"⚡ <b>{title}</b>\n\n"
         f"<blockquote>{desc}</blockquote>\n\n"
         f"📊 <b>Questions:</b> {total_q} questions\n"

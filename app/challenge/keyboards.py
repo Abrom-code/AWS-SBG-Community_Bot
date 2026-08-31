@@ -11,6 +11,7 @@ def get_challenge_start_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("🏆 Leaderboard", callback_data=f"lb_weekly:{challenge_id}"),
                 InlineKeyboardButton("📖 How Scoring Works", callback_data="ch_rules"),
             ],
+            [InlineKeyboardButton("🔙 Back to Challenge Center", callback_data="ch_hub")],
         ]
     )
 
@@ -70,6 +71,18 @@ def get_leaderboard_keyboard(
     action_row.append(InlineKeyboardButton("📖 How Scoring Works", callback_data="ch_rules"))
     buttons.append(action_row)
 
+    # 4. Context-aware Back navigation
+    if ch_id > 0:
+        buttons.append([
+            InlineKeyboardButton("🔙 Back to Challenge", callback_data=f"ch_past:{ch_id}"),
+            InlineKeyboardButton("🔙 Challenge Center", callback_data="ch_hub"),
+        ])
+    else:
+        buttons.append([
+            InlineKeyboardButton("📚 Past Challenges", callback_data="ch_past_list"),
+            InlineKeyboardButton("🔙 Challenge Center", callback_data="ch_hub"),
+        ])
+
     return InlineKeyboardMarkup(buttons)
 
 
@@ -82,6 +95,7 @@ def get_scoring_rules_keyboard(challenge_id: Optional[int] = None) -> InlineKeyb
         buttons.append([InlineKeyboardButton("🏆 View Leaderboard", callback_data=f"lb_weekly:{ch_id}:1")])
     else:
         buttons.append([InlineKeyboardButton("📅 Monthly Cumulative Leaderboard", callback_data="lb_monthly:0:1")])
+    buttons.append([InlineKeyboardButton("🔙 Back to Challenge Center", callback_data="ch_hub")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -104,7 +118,26 @@ def get_past_challenge_detail_keyboard(challenge_id: int) -> InlineKeyboardMarku
         [
             [InlineKeyboardButton("🏆 View Final Leaderboard", callback_data=f"lb_weekly:{challenge_id}:1")],
             [InlineKeyboardButton("🧩 Practice Questions", callback_data=f"ch_start:{challenge_id}")],
-            [InlineKeyboardButton("📚 Back to Past Challenges", callback_data="ch_past_list")],
+            [
+                InlineKeyboardButton("📚 Back to Archive", callback_data="ch_past_list"),
+                InlineKeyboardButton("🔙 Challenge Center", callback_data="ch_hub"),
+            ],
+        ]
+    )
+
+
+def get_challenge_hub_inline_keyboard() -> InlineKeyboardMarkup:
+    """Inline shortcuts for Challenge Center hub."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("🚀 Take Active Challenge", callback_data="ch_active_view"),
+                InlineKeyboardButton("🏆 Leaderboards", callback_data="lb_weekly:0:1"),
+            ],
+            [
+                InlineKeyboardButton("📚 Past Challenges", callback_data="ch_past_list"),
+                InlineKeyboardButton("📖 Scoring Rules", callback_data="ch_rules"),
+            ],
         ]
     )
 

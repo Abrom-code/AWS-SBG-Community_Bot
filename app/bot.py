@@ -29,6 +29,7 @@ from app.challenge.handlers import (
     handle_challenge_rules_callback,
     handle_past_challenges_callback,
 )
+from app.challenge.keyboards import get_challenge_hub_inline_keyboard
 from app.challenge.admin import (
     admin_command,
     handle_admin_callback,
@@ -512,6 +513,7 @@ def create_application(token: str = None):
     app.add_handler(CallbackQueryHandler(handle_challenge_start_callback, pattern=r"^ch_start:"))
     app.add_handler(CallbackQueryHandler(handle_challenge_answer_callback, pattern=r"^ch_ans:"))
     app.add_handler(CallbackQueryHandler(handle_challenge_rules_callback, pattern=r"^ch_rules$"))
+    app.add_handler(CallbackQueryHandler(challenge_command, pattern=r"^ch_active_view$"))
     app.add_handler(CallbackQueryHandler(handle_past_challenges_callback, pattern=r"^ch_past"))
     app.add_handler(CallbackQueryHandler(challenge_hub_command, pattern=r"^ch_hub$"))
     app.add_handler(CallbackQueryHandler(handle_leaderboard_callback, pattern=r"^lb_"))
