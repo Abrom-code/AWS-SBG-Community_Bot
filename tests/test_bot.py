@@ -19,9 +19,10 @@ class FakeUser:
 
 
 class FakeMessage:
-    def __init__(self, text="", chat_id=1):
+    def __init__(self, text="", chat_id=1, message_id=50):
         self.text = text
         self.chat_id = chat_id
+        self.message_id = message_id
         self.reply_text_calls = []
         self.reply_photo_calls = []
         self.reply_to_message = None
@@ -177,16 +178,19 @@ def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
     bot.ADMIN_GROUP_ID = original_admin_group_id
 
 
-def test_handle_admin_reply_routes_staff_reply_back_to_original_member():
+def test_handle_admin_reply_routes_multiple_staff_replies_to_original_member():
     asyncio.run(db.reset_db())
     context = FakeContext()
-    update = FakeUpdate(user_id=444, text="Thanks for sharing this.")
-    update.message.reply_to_message = type(
+    
+    # 1. First admin reply to the original message (ID 7)
+    update1 = FakeUpdate(user_id=444, text="Thanks for sharing this.")
+    update1.message.message_id = 50
+    update1.message.reply_to_message = type(
         "ReplyToMessage", (), {"message_id": 7}
     )()
     asyncio.run(db.save_feedback_submission(7, 444, "Original User"))
 
-    asyncio.run(bot.handle_admin_reply(update, context))
+    asyncio.run(bot.handle_admin_reply(update1, context))
 
     assert len(context.bot.sent_messages) == 1
     chat_id, text, _, parse_mode = context.bot.sent_messages[0]
@@ -195,8 +199,33 @@ def test_handle_admin_reply_routes_staff_reply_back_to_original_member():
     assert "💬 <b>Response from the AWS Student Builder Core Team</b>" in text
     assert "<blockquote>Thanks for sharing this.</blockquote>" in text
     
-    submission = asyncio.run(db.get_feedback_submission(7))
-    assert submission is None
+    # 2. Second admin reply to the same original message (ID 7)
+    update2 = FakeUpdate(user_id=444, text="Here is a follow-up answer.")
+    update2.message.message_id = 51
+    update2.message.reply_to_message = type(
+        "ReplyToMessage", (), {"message_id": 7}
+    )()
+
+    asyncio.run(bot.handle_admin_reply(update2, context))
+
+    assert len(context.bot.sent_messages) == 2
+    chat_id2, text2, _, _ = context.bot.sent_messages[1]
+    assert chat_id2 == 444
+    assert "<blockquote>Here is a follow-up answer.</blockquote>" in text2
+
+    # 3. Third admin reply replying to the admin's reply in the thread (ID 50)
+    update3 = FakeUpdate(user_id=444, text="Adding to what my colleague mentioned above.")
+    update3.message.message_id = 52
+    update3.message.reply_to_message = type(
+        "ReplyToMessage", (), {"message_id": 50}
+    )()
+
+    asyncio.run(bot.handle_admin_reply(update3, context))
+
+    assert len(context.bot.sent_messages) == 3
+    chat_id3, text3, _, _ = context.bot.sent_messages[2]
+    assert chat_id3 == 444
+    assert "<blockquote>Adding to what my colleague mentioned above.</blockquote>" in text3
 
 
 def test_start_command_sends_photo_when_logo_exists(monkeypatch):

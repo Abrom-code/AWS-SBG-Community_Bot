@@ -260,8 +260,13 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
         parse_mode=ParseMode.HTML,
     )
 
-    # Clean up after delivering the reply.
-    await delete_feedback_submission(replied_message_id)
+    # Link this admin reply message ID to the ticket so follow-up thread replies also route to the user
+    if getattr(update.message, "message_id", None):
+        await save_feedback_submission(
+            update.message.message_id,
+            sender_chat_id,
+            submission.get("sender_name", ""),
+        )
 
 
 def create_application(token: str = None):
