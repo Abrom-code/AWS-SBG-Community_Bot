@@ -714,6 +714,35 @@ def test_admin_paste_csv_text_import(monkeypatch):
     assert len(questions) == 2
 
 
+def test_clear_command_resets_state_and_triggers_start():
+    asyncio.run(db.reset_db())
+    user_id = 778899
+
+    # Set active state
+    asyncio.run(db.set_user_state(user_id, "WAITING_FOR_FEEDBACK"))
+    assert asyncio.run(db.get_user_state(user_id)) == "WAITING_FOR_FEEDBACK"
+
+    up = FakeUpdate(user_id=user_id, text="/clear")
+    ctx = FakeContext()
+    ctx.user_data["test_key"] = "test_val"
+
+    asyncio.run(bot.clear_command(up, ctx))
+
+    # Verify state and user_data reset
+    assert asyncio.run(db.get_user_state(user_id)) is None
+    assert len(ctx.user_data) == 0
+
+    # Verify start welcome text was sent
+    assert len(up.message.reply_text_calls) > 0 or len(up.message.reply_photo_calls) > 0
+    resp_text = (
+        up.message.reply_photo_calls[0]["caption"]
+        if up.message.reply_photo_calls
+        else up.message.reply_text_calls[0]["text"]
+    )
+    assert "Welcome to the AWS SBG AASTU Community" in resp_text
+
+
+
 
 
 
