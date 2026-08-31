@@ -46,10 +46,10 @@ The main menu presents these quick actions:
 
 - `main.py` — local polling launcher and container entrypoint
 - `app/bot.py` — bot logic, command handlers, keyboard setup, and application factory
-- `app/db.py` — persistence layer supporting Upstash Redis (serverless) with automatic in-memory fallback for local dev
+- `app/db.py` — persistence layer supporting SQLite (automatic default, zero-config) and PostgreSQL (via `DATABASE_URL` for Supabase / Neon / Railway)
 - `api/webhook.py` — Vercel serverless webhook entrypoint
 - `vercel.json` — Vercel serverless routing configuration
-- `.env` — environment configuration (bot token, admin group ID, Upstash Redis credentials)
+- `.env` — environment configuration (bot token, admin group ID, database URL)
 - `requirements.txt` — Python dependency list
 
 ## Setup & Local Development
@@ -73,6 +73,7 @@ ADMIN_GROUP_CHAT_ID=your_admin_group_chat_id
 ```bash
 python main.py
 ```
+*(The bot will automatically create and use `bot.db` via SQLite with zero extra configuration).*
 
 5. Run unit tests:
 
@@ -84,17 +85,15 @@ python -m pytest tests/
 
 Deploying to Vercel ensures instant response times with zero server sleep/cold starts:
 
-1. **Create an Upstash Redis Database**:
-   - Create a free database at [Upstash](https://upstash.com).
-   - Copy `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`.
+1. **Get a Free PostgreSQL Database** (from [Supabase](https://supabase.com), [Neon](https://neon.tech), or Railway):
+   - Create a free project and copy your connection string `DATABASE_URL` (e.g. `postgresql://postgres:...@...pooler.supabase.com:5432/postgres`).
 
 2. **Deploy to Vercel**:
    - Import this repository on Vercel.
    - Configure the following Environment Variables in Vercel project settings:
      - `TELEGRAM_BOT_TOKEN`
      - `ADMIN_GROUP_CHAT_ID`
-     - `UPSTASH_REDIS_REST_URL`
-     - `UPSTASH_REDIS_REST_TOKEN`
+     - `DATABASE_URL`
      - `WEBHOOK_SECRET` (optional, for secure webhook verification)
 
 3. **Register the Webhook with Telegram**:
@@ -110,4 +109,5 @@ Deploying to Vercel ensures instant response times with zero server sleep/cold s
 3. Verify test suite passes (`python -m pytest tests/`).
 4. Commit and push your feature branch.
 5. Open a Pull Request on GitHub.
+
 

@@ -113,7 +113,7 @@ def test_help_command_returns_expected_shortcuts():
 
 
 def test_feedback_command_sets_waiting_state_and_removes_keyboard():
-    db.reset_memory_store()
+    asyncio.run(db.reset_db())
     update = FakeUpdate(user_id=111)
     context = FakeContext()
 
@@ -126,7 +126,7 @@ def test_feedback_command_sets_waiting_state_and_removes_keyboard():
 
 
 def test_cancel_command_clears_feedback_state_and_restores_keyboard():
-    db.reset_memory_store()
+    asyncio.run(db.reset_db())
     update = FakeUpdate(user_id=222)
     context = FakeContext()
     asyncio.run(db.set_user_state(222, bot.WAITING_FOR_FEEDBACK))
@@ -149,7 +149,7 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
 
 
 def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
-    db.reset_memory_store()
+    asyncio.run(db.reset_db())
     original_admin_group_id = bot.ADMIN_GROUP_ID
     bot.ADMIN_GROUP_ID = 999
 
@@ -178,7 +178,7 @@ def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
 
 
 def test_handle_admin_reply_routes_staff_reply_back_to_original_member():
-    db.reset_memory_store()
+    asyncio.run(db.reset_db())
     context = FakeContext()
     update = FakeUpdate(user_id=444, text="Thanks for sharing this.")
     update.message.reply_to_message = type(

@@ -1,121 +1,354 @@
-import json
+import asyncio
 import logging
 import os
 from typing import Any, Dict, Optional
 
 logger = logging.getLogger(__name__)
 
-UPSTASH_URL = os.getenv("UPSTASH_REDIS_REST_URL")
-UPSTASH_TOKEN = os.getenv("UPSTASH_REDIS_REST_TOKEN")
+DATABASE_URL = os.getenv("DATABASE_URL")
+SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "bot.db")
 
-# In-memory storage fallback for local development or when Redis is unconfigured
-_memory_user_states: Dict[int, str] = {}
-_memory_submissions: Dict[int, Dict[str, Any]] = {}
-
-_redis_client = None
+_is_initialized = False
+_db_lock = asyncio.Lock()
 
 
-def get_redis_client():
-    """Initializes and returns the async Upstash Redis client if credentials are configured."""
-    global _redis_client
-    if _redis_client is not None:
-        return _redis_client
+def is_postgres() -> bool:
+    """Checks if a PostgreSQL connection string is configured."""
+    return bool(
+        DATABASE_URL
+        and (
+            DATABASE_URL.startswith("postgres://")
+            or DATABASE_URL.startswith("postgresql://")
+        )
+    )
 
-    if UPSTASH_URL and UPSTASH_TOKEN:
+
+async def init_db(db_path: str = None) -> None:
+    """Initializes tables for SQLite or PostgreSQL if not already created."""
+    global _is_initialized
+    path = db_path or SQLITE_DB_PATH
+
+    if is_postgres():
+        import psycopg
+
+        url = DATABASE_URL
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
+
         try:
-            from upstash_redis.asyncio import Redis
-
-            _redis_client = Redis(url=UPSTASH_URL, token=UPSTASH_TOKEN)
-            logger.info("Connected to Upstash Redis for persistent storage.")
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS user_states (
+                            user_id BIGINT PRIMARY KEY,
+                            state TEXT,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS feedback_submissions (
+                            message_id BIGINT PRIMARY KEY,
+                            sender_chat_id BIGINT NOT NULL,
+                            sender_name TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    await conn.commit()
+            _is_initialized = True
+            logger.info("Initialized PostgreSQL database tables.")
         except Exception as e:
-            logger.error(f"Failed to initialize Upstash Redis client: {e}")
-            _redis_client = None
-
-    return _redis_client
-
-
-async def get_user_state(user_id: int) -> Optional[str]:
-    """Retrieves the active conversation state for a given user."""
-    redis = get_redis_client()
-    if redis:
-        try:
-            val = await redis.get(f"user_state:{user_id}")
-            return val if isinstance(val, str) else (val.decode("utf-8") if val else None)
-        except Exception as e:
-            logger.error(f"Redis get_user_state error: {e}")
-
-    return _memory_user_states.get(user_id)
-
-
-async def set_user_state(user_id: int, state: Optional[str]) -> None:
-    """Sets or clears the conversation state for a given user."""
-    redis = get_redis_client()
-    if redis:
-        try:
-            key = f"user_state:{user_id}"
-            if state is None:
-                await redis.delete(key)
-            else:
-                # State expires after 1 hour (3600 seconds) if inactive
-                await redis.set(key, state, ex=3600)
-            return
-        except Exception as e:
-            logger.error(f"Redis set_user_state error: {e}")
-
-    if state is None:
-        _memory_user_states.pop(user_id, None)
+            logger.error(f"Failed to initialize PostgreSQL database: {e}")
     else:
-        _memory_user_states[user_id] = state
+        import aiosqlite
+
+        try:
+            async with aiosqlite.connect(path) as db:
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS user_states (
+                        user_id INTEGER PRIMARY KEY,
+                        state TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS feedback_submissions (
+                        message_id INTEGER PRIMARY KEY,
+                        sender_chat_id INTEGER NOT NULL,
+                        sender_name TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await db.commit()
+            _is_initialized = True
+            logger.info(f"Initialized SQLite database tables at {path}.")
+        except Exception as e:
+            logger.error(f"Failed to initialize SQLite database: {e}")
+
+
+async def ensure_db(db_path: str = None) -> None:
+    """Ensures database tables are initialized before executing operations."""
+    global _is_initialized
+    if not _is_initialized:
+        async with _db_lock:
+            if not _is_initialized:
+                await init_db(db_path)
+
+
+async def get_user_state(user_id: int, db_path: str = None) -> Optional[str]:
+    """Retrieves the active conversation state for a given user."""
+    await ensure_db(db_path)
+    path = db_path or SQLITE_DB_PATH
+
+    if is_postgres():
+        import psycopg
+
+        url = (
+            DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            if DATABASE_URL.startswith("postgres://")
+            else DATABASE_URL
+        )
+        try:
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT state FROM user_states WHERE user_id = %s", (user_id,)
+                    )
+                    row = await cur.fetchone()
+                    return row[0] if row else None
+        except Exception as e:
+            logger.error(f"Error in get_user_state (Postgres): {e}")
+            return None
+    else:
+        import aiosqlite
+
+        try:
+            async with aiosqlite.connect(path) as db:
+                async with db.execute(
+                    "SELECT state FROM user_states WHERE user_id = ?", (user_id,)
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    return row[0] if row else None
+        except Exception as e:
+            logger.error(f"Error in get_user_state (SQLite): {e}")
+            return None
+
+
+async def set_user_state(
+    user_id: int, state: Optional[str], db_path: str = None
+) -> None:
+    """Sets or clears the conversation state for a given user."""
+    await ensure_db(db_path)
+    path = db_path or SQLITE_DB_PATH
+
+    if is_postgres():
+        import psycopg
+
+        url = (
+            DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            if DATABASE_URL.startswith("postgres://")
+            else DATABASE_URL
+        )
+        try:
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    if state is None:
+                        await cur.execute(
+                            "DELETE FROM user_states WHERE user_id = %s", (user_id,)
+                        )
+                    else:
+                        await cur.execute(
+                            """
+                            INSERT INTO user_states (user_id, state)
+                            VALUES (%s, %s)
+                            ON CONFLICT (user_id) DO UPDATE SET state = EXCLUDED.state, updated_at = CURRENT_TIMESTAMP
+                        """,
+                            (user_id, state),
+                        )
+                    await conn.commit()
+        except Exception as e:
+            logger.error(f"Error in set_user_state (Postgres): {e}")
+    else:
+        import aiosqlite
+
+        try:
+            async with aiosqlite.connect(path) as db:
+                if state is None:
+                    await db.execute(
+                        "DELETE FROM user_states WHERE user_id = ?", (user_id,)
+                    )
+                else:
+                    await db.execute(
+                        """
+                        INSERT INTO user_states (user_id, state)
+                        VALUES (?, ?)
+                        ON CONFLICT(user_id) DO UPDATE SET state = excluded.state, updated_at = CURRENT_TIMESTAMP
+                    """,
+                        (user_id, state),
+                    )
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error in set_user_state (SQLite): {e}")
 
 
 async def save_feedback_submission(
-    message_id: int, sender_chat_id: int, sender_name: str
+    message_id: int, sender_chat_id: int, sender_name: str, db_path: str = None
 ) -> None:
     """Saves a forwarded admin-group message mapping to the original user."""
-    data = {
-        "sender_chat_id": sender_chat_id,
-        "sender_name": sender_name,
-    }
-    redis = get_redis_client()
-    if redis:
+    await ensure_db(db_path)
+    path = db_path or SQLITE_DB_PATH
+
+    if is_postgres():
+        import psycopg
+
+        url = (
+            DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            if DATABASE_URL.startswith("postgres://")
+            else DATABASE_URL
+        )
         try:
-            # Retain feedback mapping for 30 days (2592000 seconds)
-            await redis.set(f"feedback:{message_id}", json.dumps(data), ex=2592000)
-            return
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        INSERT INTO feedback_submissions (message_id, sender_chat_id, sender_name)
+                        VALUES (%s, %s, %s)
+                        ON CONFLICT (message_id) DO UPDATE SET sender_chat_id = EXCLUDED.sender_chat_id, sender_name = EXCLUDED.sender_name
+                    """,
+                        (message_id, sender_chat_id, sender_name),
+                    )
+                    await conn.commit()
         except Exception as e:
-            logger.error(f"Redis save_feedback_submission error: {e}")
+            logger.error(f"Error in save_feedback_submission (Postgres): {e}")
+    else:
+        import aiosqlite
 
-    _memory_submissions[message_id] = data
+        try:
+            async with aiosqlite.connect(path) as db:
+                await db.execute(
+                    """
+                    INSERT INTO feedback_submissions (message_id, sender_chat_id, sender_name)
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(message_id) DO UPDATE SET sender_chat_id = excluded.sender_chat_id, sender_name = excluded.sender_name
+                """,
+                    (message_id, sender_chat_id, sender_name),
+                )
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error in save_feedback_submission (SQLite): {e}")
 
 
-async def get_feedback_submission(message_id: int) -> Optional[Dict[str, Any]]:
+async def get_feedback_submission(
+    message_id: int, db_path: str = None
+) -> Optional[Dict[str, Any]]:
     """Retrieves the original sender data for a forwarded admin-group message."""
-    redis = get_redis_client()
-    if redis:
+    await ensure_db(db_path)
+    path = db_path or SQLITE_DB_PATH
+
+    if is_postgres():
+        import psycopg
+
+        url = (
+            DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            if DATABASE_URL.startswith("postgres://")
+            else DATABASE_URL
+        )
         try:
-            raw = await redis.get(f"feedback:{message_id}")
-            if raw:
-                return json.loads(raw) if isinstance(raw, str) else json.loads(raw.decode("utf-8"))
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "SELECT sender_chat_id, sender_name FROM feedback_submissions WHERE message_id = %s",
+                        (message_id,),
+                    )
+                    row = await cur.fetchone()
+                    if row:
+                        return {"sender_chat_id": row[0], "sender_name": row[1]}
         except Exception as e:
-            logger.error(f"Redis get_feedback_submission error: {e}")
+            logger.error(f"Error in get_feedback_submission (Postgres): {e}")
+            return None
+    else:
+        import aiosqlite
 
-    return _memory_submissions.get(message_id)
+        try:
+            async with aiosqlite.connect(path) as db:
+                async with db.execute(
+                    "SELECT sender_chat_id, sender_name FROM feedback_submissions WHERE message_id = ?",
+                    (message_id,),
+                ) as cursor:
+                    row = await cursor.fetchone()
+                    if row:
+                        return {"sender_chat_id": row[0], "sender_name": row[1]}
+        except Exception as e:
+            logger.error(f"Error in get_feedback_submission (SQLite): {e}")
+            return None
+
+    return None
 
 
-async def delete_feedback_submission(message_id: int) -> None:
+async def delete_feedback_submission(message_id: int, db_path: str = None) -> None:
     """Deletes a feedback submission mapping after the reply is processed."""
-    redis = get_redis_client()
-    if redis:
+    await ensure_db(db_path)
+    path = db_path or SQLITE_DB_PATH
+
+    if is_postgres():
+        import psycopg
+
+        url = (
+            DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            if DATABASE_URL.startswith("postgres://")
+            else DATABASE_URL
+        )
         try:
-            await redis.delete(f"feedback:{message_id}")
-            return
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        "DELETE FROM feedback_submissions WHERE message_id = %s",
+                        (message_id,),
+                    )
+                    await conn.commit()
         except Exception as e:
-            logger.error(f"Redis delete_feedback_submission error: {e}")
+            logger.error(f"Error in delete_feedback_submission (Postgres): {e}")
+    else:
+        import aiosqlite
 
-    _memory_submissions.pop(message_id, None)
+        try:
+            async with aiosqlite.connect(path) as db:
+                await db.execute(
+                    "DELETE FROM feedback_submissions WHERE message_id = ?",
+                    (message_id,),
+                )
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error in delete_feedback_submission (SQLite): {e}")
 
 
-def reset_memory_store():
-    """Helper to reset in-memory storage during automated testing."""
-    _memory_user_states.clear()
-    _memory_submissions.clear()
+async def reset_db(db_path: str = None) -> None:
+    """Helper to clear tables during automated testing."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    if is_postgres():
+        import psycopg
+
+        url = (
+            DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            if DATABASE_URL.startswith("postgres://")
+            else DATABASE_URL
+        )
+        try:
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM user_states;")
+                    await cur.execute("DELETE FROM feedback_submissions;")
+                    await conn.commit()
+        except Exception as e:
+            logger.error(f"Error resetting Postgres: {e}")
+    else:
+        import aiosqlite
+
+        try:
+            async with aiosqlite.connect(path) as db:
+                await db.execute("DELETE FROM user_states;")
+                await db.execute("DELETE FROM feedback_submissions;")
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error resetting SQLite: {e}")
