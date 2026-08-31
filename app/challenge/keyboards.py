@@ -40,7 +40,7 @@ def get_leaderboard_keyboard(
     page: int = 1,
     total_pages: int = 1,
 ) -> InlineKeyboardMarkup:
-    """Navigation for Weekly vs Monthly leaderboards with pagination in column layout."""
+    """Navigation for Weekly vs Monthly leaderboards with pagination (omits the active view's button)."""
     ch_id = challenge_id or 0
     buttons = []
 
@@ -57,10 +57,31 @@ def get_leaderboard_keyboard(
 
         buttons.append(nav_row)
 
-    # 2. Column Mode Switchers
-    buttons.append([InlineKeyboardButton("🏆 Weekly Leaderboard", callback_data=f"lb_weekly:{ch_id}:1")])
-    buttons.append([InlineKeyboardButton("📅 Monthly Cumulative Leaderboard", callback_data="lb_monthly:0:1")])
+    # 2. Switch to alternate leaderboard view (omit current view)
+    if mode == "weekly":
+        buttons.append([InlineKeyboardButton("📅 Switch to Monthly Cumulative", callback_data="lb_monthly:0:1")])
+    else:
+        buttons.append([InlineKeyboardButton("🏆 Switch to Weekly Leaderboard", callback_data=f"lb_weekly:{ch_id}:1")])
 
+    # 3. Action and info shortcuts
+    action_row = []
+    if ch_id > 0:
+        action_row.append(InlineKeyboardButton("🚀 Take Challenge", callback_data=f"ch_start:{ch_id}"))
+    action_row.append(InlineKeyboardButton("📖 How Scoring Works", callback_data="ch_rules"))
+    buttons.append(action_row)
+
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_scoring_rules_keyboard(challenge_id: Optional[int] = None) -> InlineKeyboardMarkup:
+    """Navigation keyboard displayed on the Scoring Rules guide (omits the rules button itself)."""
+    ch_id = challenge_id or 0
+    buttons = []
+    if ch_id > 0:
+        buttons.append([InlineKeyboardButton("🚀 Start Challenge Now", callback_data=f"ch_start:{ch_id}")])
+        buttons.append([InlineKeyboardButton("🏆 View Leaderboard", callback_data=f"lb_weekly:{ch_id}:1")])
+    else:
+        buttons.append([InlineKeyboardButton("📅 Monthly Cumulative Leaderboard", callback_data="lb_monthly:0:1")])
     return InlineKeyboardMarkup(buttons)
 
 

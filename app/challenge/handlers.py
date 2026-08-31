@@ -21,6 +21,7 @@ from app.challenge.keyboards import (
     get_challenge_start_keyboard,
     get_question_options_keyboard,
     get_leaderboard_keyboard,
+    get_scoring_rules_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -371,7 +372,7 @@ async def scoring_rules_command(update: Update, context: ContextTypes.DEFAULT_TY
     await update.message.reply_text(
         get_scoring_rules_text(),
         parse_mode=ParseMode.HTML,
-        reply_markup=get_challenge_start_keyboard(ch_id) if ch_id > 0 else None,
+        reply_markup=get_scoring_rules_keyboard(ch_id),
     )
 
 
@@ -384,6 +385,6 @@ async def handle_challenge_rules_callback(update: Update, context: ContextTypes.
     await query.edit_message_text(
         get_scoring_rules_text(),
         parse_mode=ParseMode.HTML,
-        reply_markup=get_challenge_start_keyboard(ch_id) if ch_id > 0 else None,
+        reply_markup=get_scoring_rules_keyboard(ch_id),
     )
 
