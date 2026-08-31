@@ -43,6 +43,7 @@ from app.challenge.keyboards import (
     get_challenge_questions_view_keyboard,
     get_challenge_schedule_edit_keyboard,
     get_challenge_timer_edit_keyboard,
+    get_question_bank_actions_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -98,7 +99,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         "👑 <b>AWS SBG Challenge Admin Panel</b>\n\n"
         "Welcome to the challenge operations center. You can schedule weekly competitions, "
-        "manage the question bank, and publish live quizzes."
+        "manage questions, and publish live quizzes."
     )
     await update.message.reply_text(
         text,
@@ -169,7 +170,8 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         category = html.escape(ch["category"])
         starts = ch.get("starts_at") or "Unscheduled (Draft)"
         ends = ch.get("ends_at") or "None"
-        time_l = ch["question_time_limit_seconds"]
+        dur_secs = ch.get("duration_seconds") or 600
+        exam_mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
 
         manage_text = (
             f"⚙️ <b>Manage Challenge #{ch_id}</b>\n\n"
@@ -178,7 +180,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             f"🚦 <b>Current Status:</b> <code>{status}</code>\n"
             f"⏳ <b>Starts At:</b> <code>{starts}</code>\n"
             f"🏁 <b>Ends At:</b> <code>{ends}</code>\n"
-            f"⏱️ <b>Time Limit:</b> {time_l}s per question\n"
+            f"⏱️ <b>Exam Time Limit:</b> {exam_mins} minutes\n"
             f"📊 <b>Attached Questions:</b> <code>{len(questions)}</code>\n\n"
             f"<i>Select an action below to update or change status:</i>"
         )
@@ -449,7 +451,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             starts_at=starts_at,
             ends_at=ends_at,
             question_time_limit_seconds=60,
-            duration_seconds=604800 if ends_at else 3600,
+            duration_seconds=600,
             accuracy_weight=0.70,
             speed_weight=0.30,
         )

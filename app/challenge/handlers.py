@@ -27,6 +27,7 @@ from app.challenge.keyboards import (
     get_scoring_rules_keyboard,
     get_past_challenges_keyboard,
     get_past_challenge_detail_keyboard,
+    get_challenge_hub_inline_keyboard,
 )
 from app.db import register_or_update_bot_user
 
@@ -124,11 +125,21 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     challenge = await get_active_challenge()
     if not challenge:
+        from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+        no_ch_kb = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("📚 Past Challenges", callback_data="ch_past_list"),
+                InlineKeyboardButton("🏆 Monthly Leaderboard", callback_data="lb_monthly:0:1"),
+            ],
+            [InlineKeyboardButton("📖 Scoring & Rules", callback_data="ch_rules")],
+        ])
         await sender_func(
             "⚡ <b>AWS Builder Challenges</b>\n\n"
             "There is no live challenge at the moment.\n"
-            "Weekly challenges are scheduled by the core team. Check back soon or stay tuned to @AWSAASTU!",
+            "Weekly challenges are scheduled by the core team. Check back soon or stay tuned to @AWSAASTU!\n\n"
+            "<i>Browse past challenges or check the leaderboard below:</i>",
             parse_mode=ParseMode.HTML,
+            reply_markup=no_ch_kb,
         )
         return
 
@@ -330,15 +341,21 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
         title = html.escape(ch["title"])
         category = html.escape(ch["category"])
         status = ch["status"]
+        desc = html.escape(ch.get("description") or "Test your AWS cloud skills!")
         questions = await get_challenge_questions(ch_id)
         total_q = len(questions)
+        dur_secs = ch.get("duration_seconds") or 600
+        exam_mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
+
+        status_icons = {"ENDED": "🏁 Ended", "LIVE": "🟢 Live", "CANCELLED": "❌ Cancelled"}
+        status_tag = status_icons.get(status, status)
 
         card = (
             f"⚡ <b>{title}</b> <i>[{status_tag}]</i>\n\n"
             f"<blockquote>{desc}</blockquote>\n\n"
             f"🏗️ <b>Category:</b> {category}\n"
             f"📊 <b>Total Questions:</b> {total_q} questions\n"
-            f"⏱️ <b>Time Limit:</b> {ch['question_time_limit_seconds']}s per question\n\n"
+            f"⏱️ <b>Exam Time:</b> {exam_mins} minutes\n\n"
             f"<i>You can inspect the final leaderboard or practice all questions below:</i>"
         )
         await query.edit_message_text(
