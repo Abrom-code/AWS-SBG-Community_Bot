@@ -18,6 +18,7 @@ from app.db import (
     save_admin_reply_mapping,
     get_admin_reply_mapping,
     get_all_broadcast_user_ids,
+    register_or_update_bot_user,
 )
 from app.challenge.handlers import (
     challenge_command,
@@ -103,6 +104,10 @@ def clear_proxy_environment():
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message with the bot logo and a persistent keyboard option."""
+    user = update.effective_user
+    if user:
+        await register_or_update_bot_user(user.id, user.first_name, user.username)
+
     welcome_text = (
         "<b>Welcome to the AWS SBG AASTU Community & Challenge Bot!</b>\n\n"
         "✨ <b>What you can do here:</b>\n"
@@ -270,6 +275,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     user = update.effective_user
     user_id = user.id
+    if user:
+        await register_or_update_bot_user(user.id, user.first_name, user.username)
 
     # Handle Top-Level Navigation
     if text in ("⚡ Challenge Center", "⚡ Challenges"):

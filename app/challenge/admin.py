@@ -339,6 +339,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             return
 
         users = await get_all_broadcast_user_ids()
+        logger.info(f"📢 Initiating broadcast to {len(users)} registered users: {users}")
         sent = 0
         failed = 0
 
@@ -350,8 +351,9 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
                     parse_mode=ParseMode.HTML,
                 )
                 sent += 1
+                logger.info(f"✅ Broadcast delivered to user_id={uid}")
             except Exception as e:
-                logger.debug(f"Broadcast send failed for user {uid}: {e}")
+                logger.warning(f"⚠️ Broadcast send failed for user {uid}: {e}")
                 failed += 1
 
         context.user_data.pop("bcast_text", None)

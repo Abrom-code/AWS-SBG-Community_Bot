@@ -39,6 +39,15 @@ async def init_db(db_path: str = None) -> None:
             async with await psycopg.AsyncConnection.connect(url) as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS bot_users (
+                            user_id BIGINT PRIMARY KEY,
+                            first_name TEXT,
+                            username TEXT,
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    await cur.execute("""
                         CREATE TABLE IF NOT EXISTS user_states (
                             user_id BIGINT PRIMARY KEY,
                             state TEXT,
@@ -175,6 +184,15 @@ async def init_db(db_path: str = None) -> None:
 
         try:
             async with aiosqlite.connect(path) as db:
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS bot_users (
+                        user_id INTEGER PRIMARY KEY,
+                        first_name TEXT,
+                        username TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        last_active_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
                 await db.execute("""
                     CREATE TABLE IF NOT EXISTS user_states (
                         user_id INTEGER PRIMARY KEY,
@@ -725,10 +743,66 @@ async def get_admin_reply_mapping(
     return None
 
 
+async def register_or_update_bot_user(
+    user_id: int, first_name: Optional[str] = None, username: Optional[str] = None
+) -> None:
+    """Saves or updates a Telegram user whenever they interact with the bot."""
+    if not user_id:
+        return
+    await ensure_db()
+    if is_postgres():
+        import psycopg
+
+        url = (
+            DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            if DATABASE_URL.startswith("postgres://")
+            else DATABASE_URL
+        )
+        try:
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(
+                        """
+                        INSERT INTO bot_users (user_id, first_name, username, last_active_at)
+                        VALUES (%s, %s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (user_id) DO UPDATE SET
+                            first_name = COALESCE(EXCLUDED.first_name, bot_users.first_name),
+                            username = COALESCE(EXCLUDED.username, bot_users.username),
+                            last_active_at = CURRENT_TIMESTAMP;
+                        """,
+                        (user_id, first_name, username),
+                    )
+                    await conn.commit()
+        except Exception as e:
+            logger.error(f"Error registering bot user (Postgres): {e}")
+    else:
+        import aiosqlite
+
+        try:
+            async with aiosqlite.connect(SQLITE_DB_PATH) as db:
+                await db.execute(
+                    """
+                    INSERT INTO bot_users (user_id, first_name, username, last_active_at)
+                    VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(user_id) DO UPDATE SET
+                        first_name = COALESCE(excluded.first_name, bot_users.first_name),
+                        username = COALESCE(excluded.username, bot_users.username),
+                        last_active_at = CURRENT_TIMESTAMP;
+                    """,
+                    (user_id, first_name, username),
+                )
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error registering bot user (SQLite): {e}")
+
+
 async def get_all_broadcast_user_ids() -> list[int]:
     """Retrieves all distinct user Telegram IDs who have interacted with the bot."""
+    await ensure_db()
     query = """
         SELECT DISTINCT user_id FROM (
+            SELECT user_id FROM bot_users
+            UNION
             SELECT user_id FROM user_states
             UNION
             SELECT sender_chat_id AS user_id FROM feedback_submissions
@@ -784,6 +858,7 @@ async def reset_db(db_path: str = None) -> None:
         try:
             async with await psycopg.AsyncConnection.connect(url) as conn:
                 async with conn.cursor() as cur:
+                    await cur.execute("DELETE FROM bot_users;")
                     await cur.execute("DELETE FROM user_states;")
                     await cur.execute("DELETE FROM feedback_submissions;")
                     await cur.execute("DELETE FROM admin_reply_mappings;")
@@ -801,6 +876,7 @@ async def reset_db(db_path: str = None) -> None:
 
         try:
             async with aiosqlite.connect(path) as db:
+                await db.execute("DELETE FROM bot_users;")
                 await db.execute("DELETE FROM user_states;")
                 await db.execute("DELETE FROM feedback_submissions;")
                 await db.execute("DELETE FROM admin_reply_mappings;")
