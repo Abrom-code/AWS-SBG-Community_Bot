@@ -239,7 +239,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     help_text = (
         "📘 <b>AWS SBG Community Bot Shortcuts</b>\n\n"
         "• /start — Open the main welcome menu\n"
-        "• /clear — Reset active session & refresh start menu\n"
         "• /challenge — Open the Challenge Center & start quiz\n"
         "• /archive — Browse & practice past challenges\n"
         "• /leaderboard — View weekly & monthly championship rankings\n"
@@ -272,29 +271,6 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cleans up previous bot messages from the chat, resets user state, and displays a fresh /start menu."""
-    user = update.effective_user
-    chat = update.effective_chat
-    if user:
-        await set_user_state(user.id, None)
-    context.user_data.clear()
-
-    if chat and update.message:
-        current_msg_id = update.message.message_id
-        # Range of recent messages to delete
-        msg_ids_to_delete = list(range(max(1, current_msg_id - 25), current_msg_id + 1))
-
-        # Attempt to delete recent bot messages concurrently
-        tasks = [
-            context.bot.delete_message(chat_id=chat.id, message_id=mid)
-            for mid in msg_ids_to_delete
-        ]
-        await asyncio.gather(*tasks, return_exceptions=True)
-
-    await start_command(update, context)
-
-
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Initiates the feedback collection workflow."""
     user_id = update.effective_user.id
@@ -302,7 +278,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(
         "✍️ <b>Please type your feedback, suggestion, or issue below:</b>\n\n"
-        "<i>(Type /clear or /cancel if you change your mind)</i>",
+        "<i>(Type /cancel if you change your mind)</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -850,10 +826,9 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
         f"• /leaderboard — View championship rankings\n"
         f"• /archive — Browse past quizzes & practice\n"
         f"• /rules — Scoring & timing guide\n\n"
-        f"💬 <b>Support & Utility:</b>\n"
+        f"💬 <b>Support & Community:</b>\n"
         f"• /feedback — Submit feedback to core team\n"
         f"• /start — Open main menu\n"
-        f"• /clear — Reset session & restart menu\n"
         f"• /help — Full bot guide\n"
         f"• /cancel — Return to main menu\n\n"
         f"<i>Tap any command above or choose from the menu below:</i>"
@@ -892,7 +867,6 @@ def create_application(token: str = None):
 
     # Core Navigation Commands
     app.add_handler(CommandHandler("start", start_command))
-    app.add_handler(CommandHandler("clear", clear_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(CommandHandler("feedback", feedback_command))
