@@ -531,6 +531,88 @@ def test_custom_date_challenge_creation_flow(monkeypatch):
     assert up_msg.message.reply_text_calls[0]["reply_markup"] is not None
 
 
+def test_admin_interactive_wizard_and_single_question_flow(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+
+    # 1. Start Challenge Wizard
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_create_ch")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    ctx1 = FakeContext()
+
+    asyncio.run(handle_admin_callback(up1, ctx1))
+    assert "Create Challenge Wizard" in q1.edited_text
+
+    # 2. Enter Title & Category
+    up2 = FakeUpdate(user_id=99999, text="AWS Lambda & EventBridge Masterclass | Serverless")
+    ctx2 = FakeContext()
+    asyncio.run(bot.handle_message(up2, ctx2))
+
+    assert len(up2.message.reply_text_calls) == 1
+    assert "AWS Lambda &amp; EventBridge Masterclass" in up2.message.reply_text_calls[0]["text"]
+    assert ctx2.user_data.get("wiz_title") == "AWS Lambda & EventBridge Masterclass"
+    assert ctx2.user_data.get("wiz_category") == "Serverless"
+
+    # 3. Add Single Question Interactively
+    q_single = FakeCallbackQuery(user_id=99999, data="adm_add_single_q")
+    up_s = FakeUpdate(user_id=99999, callback_query=q_single)
+    ctx_s = FakeContext()
+    asyncio.run(handle_admin_callback(up_s, ctx_s))
+
+    question_text = (
+        "What is Amazon EventBridge?\n"
+        "A: A managed relational database\n"
+        "B: A serverless event bus\n"
+        "C: A compute container service\n"
+        "D: A content delivery network\n"
+        "Answer: B\n"
+        "Category: Serverless\n"
+        "Difficulty: EASY\n"
+        "Explanation: EventBridge is a serverless event bus service."
+    )
+    up_q = FakeUpdate(user_id=99999, text=question_text)
+    ctx_q = FakeContext()
+    asyncio.run(bot.handle_message(up_q, ctx_q))
+
+    assert len(up_q.message.reply_text_calls) == 1
+    assert "Added to Question Bank" in up_q.message.reply_text_calls[0]["text"]
+
+
+def test_admin_challenge_edit_and_delete_flow(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import create_challenge, get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+
+    ch_id = asyncio.run(create_challenge(title="Initial Title", category="Compute"))
+
+    # 1. Edit Title
+    q_edit = FakeCallbackQuery(user_id=99999, data=f"adm_edit_title:{ch_id}")
+    up_e = FakeUpdate(user_id=99999, callback_query=q_edit)
+    ctx_e = FakeContext()
+    asyncio.run(handle_admin_callback(up_e, ctx_e))
+
+    up_e_msg = FakeUpdate(user_id=99999, text="Updated Architecture Sprint | Networking")
+    ctx_e_msg = FakeContext()
+    ctx_e_msg.user_data["edit_ch_id"] = ch_id
+    asyncio.run(bot.handle_message(up_e_msg, ctx_e_msg))
+
+    ch_updated = asyncio.run(get_challenge(ch_id))
+    assert ch_updated["title"] == "Updated Architecture Sprint"
+    assert ch_updated["category"] == "Networking"
+
+    # 2. Delete Challenge
+    q_del = FakeCallbackQuery(user_id=99999, data=f"adm_del_conf:{ch_id}")
+    up_d = FakeUpdate(user_id=99999, callback_query=q_del)
+    ctx_d = FakeContext()
+    asyncio.run(handle_admin_callback(up_d, ctx_d))
+
+    assert "permanently deleted" in q_del.edited_text
+    assert asyncio.run(get_challenge(ch_id)) is None
+
+
+
 
 
 

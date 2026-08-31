@@ -17,9 +17,12 @@ from app.challenge.service import (
     update_challenge_status,
     link_questions_to_challenge,
     list_questions,
+    create_question,
     import_questions_from_csv,
     get_challenge_questions,
     get_monthly_analytics_report,
+    delete_challenge,
+    update_challenge_details,
 )
 from app.challenge.keyboards import (
     get_admin_panel_keyboard,
@@ -28,6 +31,9 @@ from app.challenge.keyboards import (
     get_admin_broadcast_presets_keyboard,
     get_admin_broadcast_confirm_keyboard,
     get_admin_report_keyboard,
+    get_question_bank_actions_keyboard,
+    get_wizard_questions_keyboard,
+    get_challenge_delete_confirm_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -204,12 +210,29 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         questions = await list_questions(limit=100)
         count = len(questions)
         await query.edit_message_text(
-            f"❓ <b>Question Bank Status</b>\n\n"
-            f"📊 <b>Total Active Questions:</b> <code>{count}</code>\n\n"
-            f"To add more questions, upload a CSV file with columns:\n"
-            f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>",
+            f"❓ <b>AWS Question Bank Operations</b>\n\n"
+            f"📊 <b>Active Questions Available:</b> <code>{count}</code>\n\n"
+            f"You can add questions interactively one-by-one, or bulk import via CSV.",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_panel_keyboard(),
+            reply_markup=get_question_bank_actions_keyboard(),
+        )
+
+    elif data == "adm_add_single_q":
+        await set_user_state(user.id, "WAITING_FOR_ADMIN_SINGLE_QUESTION")
+        await query.edit_message_text(
+            "✍️ <b>Add Question to Question Bank</b>\n\n"
+            "Please send the question details in the following format:\n\n"
+            "<code>What is Amazon DynamoDB?\n"
+            "A: Relational database\n"
+            "B: Key-value NoSQL database\n"
+            "C: In-memory cache\n"
+            "D: Object storage\n"
+            "Answer: B\n"
+            "Category: Database\n"
+            "Difficulty: EASY\n"
+            "Explanation: DynamoDB is a managed NoSQL key-value store</code>\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
         )
 
     elif data == "adm_import_csv":
@@ -225,11 +248,46 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data == "adm_create_ch":
+        await set_user_state(user.id, "WAITING_FOR_CHALLENGE_TITLE")
         await query.edit_message_text(
-            "⏱️ <b>Schedule Challenge Competition</b>\n\n"
-            "Choose a start schedule and duration for the new AWS Builder Challenge:",
+            "✍️ <b>Create Challenge Wizard (Step 1/2)</b>\n\n"
+            "Please enter the <b>Challenge Title</b> and optional <b>Category</b>:\n\n"
+            "<i>Example:</i> <code>AWS Serverless Microservices | Compute</code>\n"
+            "<i>(Or just send the title: <code>AWS Serverless Microservices</code>)</i>\n\n"
+            "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_schedule_presets_keyboard(),
+        )
+
+    elif data.startswith("adm_del_prompt:"):
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        await query.edit_message_text(
+            f"⚠️ <b>Delete Challenge #{ch_id}?</b>\n\n"
+            f"⚡ <b>Title:</b> {title}\n\n"
+            f"Are you sure you want to permanently delete this challenge and all its participant submissions?",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_delete_confirm_keyboard(ch_id),
+        )
+
+    elif data.startswith("adm_del_conf:"):
+        ch_id = int(data.split(":")[1])
+        await delete_challenge(ch_id)
+        await query.edit_message_text(
+            f"🗑️ <b>Challenge #{ch_id} has been permanently deleted.</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_panel_keyboard(),
+        )
+
+    elif data.startswith("adm_edit_title:"):
+        ch_id = int(data.split(":")[1])
+        context.user_data["edit_ch_id"] = ch_id
+        await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_TITLE")
+        await query.edit_message_text(
+            f"✏️ <b>Edit Challenge #{ch_id}</b>\n\n"
+            f"Please send the new title and category (e.g. <code>AWS Cloud Essentials | General</code>):\n\n"
+            f"<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
         )
 
     elif data.startswith("adm_cr_sched:"):
@@ -261,10 +319,13 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             status = "DRAFT"
             schedule_note = "🛠️ <b>Status:</b> DRAFT (Unscheduled)"
 
+        title = context.user_data.get("wiz_title", "AWS Cloud Architecture Challenge")
+        category = context.user_data.get("wiz_category", "Architecture")
+
         ch_id = await create_challenge(
-            title="AWS Cloud Architecture Challenge",
+            title=title,
             description="Weekly test on AWS core compute, storage, security, and networking services.",
-            category="Architecture",
+            category=category,
             starts_at=starts_at,
             ends_at=ends_at,
             question_time_limit_seconds=60,
@@ -276,9 +337,13 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         if status != "DRAFT":
             await update_challenge_status(ch_id, status)
 
+        context.user_data.pop("wiz_title", None)
+        context.user_data.pop("wiz_category", None)
+
         await query.edit_message_text(
             f"✅ <b>Challenge #{ch_id} Created!</b>\n\n"
-            f"⚡ <b>Title:</b> AWS Cloud Architecture Challenge\n"
+            f"⚡ <b>Title:</b> {html.escape(title)}\n"
+            f"🏗️ <b>Category:</b> {html.escape(category)}\n"
             f"{schedule_note}\n"
             f"📊 <b>Linked Questions:</b> {linked}\n\n"
             f"Participants can now view/access it according to the schedule!",

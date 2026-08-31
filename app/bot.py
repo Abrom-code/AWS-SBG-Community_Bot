@@ -35,11 +35,15 @@ from app.challenge.service import (
     create_challenge,
     link_questions_to_challenge,
     update_challenge_status,
+    update_challenge_details,
+    create_question,
 )
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
     get_admin_broadcast_confirm_keyboard,
     get_challenge_manage_keyboard,
+    get_admin_schedule_presets_keyboard,
+    get_question_bank_actions_keyboard,
 )
 from app.challenge.admin import (
     admin_command,
@@ -266,10 +270,15 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Broadcast cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
-    elif current_state == "WAITING_FOR_ADMIN_SCHEDULE":
+    elif current_state in (
+        "WAITING_FOR_ADMIN_SCHEDULE",
+        "WAITING_FOR_CHALLENGE_TITLE",
+        "WAITING_FOR_EDIT_CHALLENGE_TITLE",
+        "WAITING_FOR_ADMIN_SINGLE_QUESTION",
+    ):
         await set_user_state(user_id, None)
         await update.message.reply_text(
-            "❌ Challenge scheduling cancelled.",
+            "❌ Challenge operation cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
     else:
@@ -319,6 +328,137 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check user state
     current_state = await get_user_state(user_id)
+
+    # Check if admin is entering challenge title/category (Wizard Step 1)
+    if current_state == "WAITING_FOR_CHALLENGE_TITLE":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await set_user_state(user_id, None)
+        raw = text.strip()
+        if "|" in raw:
+            title_part, cat_part = raw.split("|", 1)
+            title = title_part.strip()
+            category = cat_part.strip() or "Architecture"
+        else:
+            title = raw
+            category = "Architecture"
+
+        context.user_data["wiz_title"] = title
+        context.user_data["wiz_category"] = category
+
+        await update.message.reply_text(
+            f"⚡ <b>Challenge:</b> <b>{html.escape(title)}</b>\n"
+            f"🏗️ <b>Category:</b> {html.escape(category)}\n\n"
+            f"📅 <b>Step 2/2: Select Start Schedule & Duration:</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_schedule_presets_keyboard(),
+        )
+        return
+
+    # Check if admin is editing challenge title/category
+    if current_state == "WAITING_FOR_EDIT_CHALLENGE_TITLE":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await set_user_state(user_id, None)
+        ch_id = context.user_data.pop("edit_ch_id", None)
+        if not ch_id:
+            await update.message.reply_text("⚠️ No challenge selected for editing.", reply_markup=get_main_menu_keyboard())
+            return
+
+        raw = text.strip()
+        if "|" in raw:
+            title_part, cat_part = raw.split("|", 1)
+            title = title_part.strip()
+            category = cat_part.strip() or "General"
+        else:
+            title = raw
+            category = "General"
+
+        await update_challenge_details(ch_id, title=title, category=category)
+        await update.message.reply_text(
+            f"✅ <b>Challenge #{ch_id} Updated!</b>\n\n"
+            f"⚡ <b>New Title:</b> {html.escape(title)}\n"
+            f"🏗️ <b>New Category:</b> {html.escape(category)}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(ch_id, "LIVE"),
+        )
+        return
+
+    # Check if admin is adding a single question interactively
+    if current_state == "WAITING_FOR_ADMIN_SINGLE_QUESTION":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await set_user_state(user_id, None)
+        lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
+        q_text, opt_a, opt_b, opt_c, opt_d = "", "", "", "", ""
+        answer, category, difficulty, explanation = "A", "General", "MEDIUM", ""
+
+        for line in lines:
+            lower = line.lower()
+            if lower.startswith("a:") or lower.startswith("a."):
+                opt_a = line.split(":", 1)[-1].split(".", 1)[-1].strip()
+            elif lower.startswith("b:") or lower.startswith("b."):
+                opt_b = line.split(":", 1)[-1].split(".", 1)[-1].strip()
+            elif lower.startswith("c:") or lower.startswith("c."):
+                opt_c = line.split(":", 1)[-1].split(".", 1)[-1].strip()
+            elif lower.startswith("d:") or lower.startswith("d."):
+                opt_d = line.split(":", 1)[-1].split(".", 1)[-1].strip()
+            elif lower.startswith("answer:") or lower.startswith("correct:"):
+                answer = line.split(":", 1)[1].strip().upper()
+            elif lower.startswith("category:") or lower.startswith("cat:"):
+                category = line.split(":", 1)[1].strip()
+            elif lower.startswith("difficulty:") or lower.startswith("diff:"):
+                difficulty = line.split(":", 1)[1].strip().upper()
+            elif lower.startswith("explanation:") or lower.startswith("exp:"):
+                explanation = line.split(":", 1)[1].strip()
+            elif not q_text:
+                q_text = line
+
+        if not q_text or not opt_a or not opt_b or not opt_c or not opt_d:
+            await update.message.reply_text(
+                "⚠️ <b>Could not parse question format.</b>\n\n"
+                "Please make sure to include:\n"
+                "• Question text\n"
+                "• A: Option 1\n"
+                "• B: Option 2\n"
+                "• C: Option 3\n"
+                "• D: Option 4\n"
+                "• Answer: A/B/C/D",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_main_menu_keyboard(),
+            )
+            return
+
+        q_id = await create_question(
+            question_text=q_text,
+            option_a=opt_a,
+            option_b=opt_b,
+            option_c=opt_c,
+            option_d=opt_d,
+            correct_option=answer[0] if answer else "A",
+            category=category,
+            difficulty=difficulty,
+            explanation=explanation,
+        )
+
+        await update.message.reply_text(
+            f"✅ <b>Question #{q_id} Added to Question Bank!</b>\n\n"
+            f"🧩 <b>Question:</b> {html.escape(q_text)}\n"
+            f"🎯 <b>Correct Answer:</b> <code>{answer[0]}</code>\n"
+            f"🏷️ <b>Category:</b> {html.escape(category)} ({difficulty})",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_question_bank_actions_keyboard(),
+        )
+        return
 
     # Check if admin is scheduling a custom date/time for a challenge
     if current_state == "WAITING_FOR_ADMIN_SCHEDULE":

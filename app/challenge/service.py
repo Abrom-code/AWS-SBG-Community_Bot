@@ -294,6 +294,55 @@ async def update_challenge_status(challenge_id: int, new_status: str) -> None:
     await _execute("UPDATE challenges SET status = ? WHERE id = ?", (new_status, challenge_id))
 
 
+async def delete_challenge(challenge_id: int) -> bool:
+    """Permanently deletes a challenge and its associated answers, participants, and linked questions."""
+    await _execute("DELETE FROM challenge_answers WHERE challenge_id = ?", (challenge_id,))
+    await _execute("DELETE FROM challenge_participants WHERE challenge_id = ?", (challenge_id,))
+    await _execute("DELETE FROM challenge_questions WHERE challenge_id = ?", (challenge_id,))
+    await _execute("DELETE FROM challenges WHERE id = ?", (challenge_id,))
+    return True
+
+
+async def update_challenge_details(
+    challenge_id: int,
+    title: Optional[str] = None,
+    category: Optional[str] = None,
+    description: Optional[str] = None,
+    question_time_limit_seconds: Optional[int] = None,
+    starts_at: Optional[str] = None,
+    ends_at: Optional[str] = None,
+) -> bool:
+    """Updates editable fields of a challenge."""
+    fields = []
+    values = []
+    if title is not None:
+        fields.append("title = ?")
+        values.append(title)
+    if category is not None:
+        fields.append("category = ?")
+        values.append(category)
+    if description is not None:
+        fields.append("description = ?")
+        values.append(description)
+    if question_time_limit_seconds is not None:
+        fields.append("question_time_limit_seconds = ?")
+        values.append(question_time_limit_seconds)
+    if starts_at is not None:
+        fields.append("starts_at = ?")
+        values.append(starts_at)
+    if ends_at is not None:
+        fields.append("ends_at = ?")
+        values.append(ends_at)
+
+    if not fields:
+        return False
+
+    values.append(challenge_id)
+    query = f"UPDATE challenges SET {', '.join(fields)} WHERE id = ?"
+    await _execute(query, tuple(values))
+    return True
+
+
 # ---------------------------------------------------------------------------
 # Questions & Question Bank
 # ---------------------------------------------------------------------------
