@@ -173,14 +173,14 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the available visible commands for members."""
     help_text = (
         "📘 <b>AWS SBG Community Bot Shortcuts</b>\n\n"
-        "• <code>/start</code> — Open the main welcome menu\n"
-        "• <code>/challenge</code> — Open the Challenge Center & start quiz\n"
-        "• <code>/leaderboard</code> — View weekly & monthly championship rankings\n"
-        "• <code>/rules</code> — See how speed & accuracy scoring is calculated\n"
-        "• <code>/feedback</code> — Drop a suggestion or issue for the core team\n"
-        "• <code>/about</code> — Learn more about what we do\n"
-        "• <code>/cancel</code> — Return to the main menu\n\n"
-        "💡 <b>Tip:</b> Tap the navigation buttons at the bottom of your screen anytime!"
+        "• /start — Open the main welcome menu\n"
+        "• /challenge — Open the Challenge Center & start quiz\n"
+        "• /leaderboard — View weekly & monthly championship rankings\n"
+        "• /rules — See how speed & accuracy scoring is calculated\n"
+        "• /feedback — Drop a suggestion or issue for the core team\n"
+        "• /about — Learn more about what we do\n"
+        "• /cancel — Return to the main menu\n\n"
+        "💡 <b>Tip:</b> Tap any /command above to send it directly, or use the menu buttons below!"
     )
     await update.message.reply_text(
         help_text,
@@ -195,7 +195,7 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "ℹ️ <b>About AWS SBG AASTU</b>\n\n"
         "The AWS Student Builder Group at AASTU empowers students with practical cloud computing knowledge, "
         "certifications, architectural challenges, and hackathons.\n\n"
-        "Participate in our weekly challenges via <code>/challenge</code> to sharpen your AWS expertise!\n\n"
+        "Participate in our weekly challenges via /challenge to sharpen your AWS expertise!\n\n"
         "📢 <b>Join our community:</b> @AWSAASTU"
     )
     await update.message.reply_text(

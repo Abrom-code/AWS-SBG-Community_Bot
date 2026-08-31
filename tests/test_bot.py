@@ -140,7 +140,8 @@ def test_help_command_returns_expected_shortcuts():
     asyncio.run(bot.help_command(update, context))
 
     assert update.message.reply_text_calls[0]["text"].startswith("📘")
-    assert "<code>/start</code>" in update.message.reply_text_calls[0]["text"]
+    assert "/start" in update.message.reply_text_calls[0]["text"]
+    assert "/challenge" in update.message.reply_text_calls[0]["text"]
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
 
 
