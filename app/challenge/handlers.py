@@ -369,7 +369,11 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     """Displays the community challenge leaderboard."""
     challenge = await get_active_challenge()
     ch_id = challenge["id"] if challenge else 0
-    await send_leaderboard_view(update.message.reply_text, ch_id, mode="weekly", page=1)
+    user = update.effective_user
+    chat = update.effective_chat
+    from app.challenge.admin import is_admin_user
+    is_admin = await is_admin_user(user.id if user else 0, chat.id if chat else None, context.bot)
+    await send_leaderboard_view(update.message.reply_text, ch_id, mode="weekly", page=1, is_admin=is_admin)
 
 
 async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -382,6 +386,10 @@ async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFA
 
     data = query.data.split(":")
     mode_prefix = data[0]
+    user = query.from_user
+    chat = query.message.chat if query.message else None
+    from app.challenge.admin import is_admin_user
+    is_admin = await is_admin_user(user.id if user else 0, chat.id if chat else None, context.bot)
 
     if mode_prefix == "lb_weekly":
         ch_id = int(data[1]) if len(data) > 1 and data[1].isdigit() else 0
@@ -389,10 +397,10 @@ async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFA
         if ch_id == 0:
             active = await get_active_challenge()
             ch_id = active["id"] if active else 0
-        await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page)
+        await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page, is_admin=is_admin)
     elif mode_prefix == "lb_monthly":
         page = int(data[2]) if len(data) > 2 and data[2].isdigit() else (int(data[1]) if len(data) > 1 and data[1].isdigit() else 1)
-        await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page)
+        await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin)
 
 
 def _get_rank_badge(rank: int) -> str:
@@ -407,8 +415,8 @@ def _get_rank_badge(rank: int) -> str:
     return f"#{rank}"
 
 
-async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "weekly", page: int = 1):
-    """Renders formatted leaderboard text with ranks, medals, and clickable Telegram profile links."""
+async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "weekly", page: int = 1, is_admin: bool = False):
+    """Renders formatted leaderboard text. For non-admins shows real names only. For admins shows username."""
     if mode == "weekly" and challenge_id > 0:
         ch = await get_challenge(challenge_id)
         title = html.escape(ch["title"]) if ch else "Challenge"
@@ -430,17 +438,15 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
                 escaped_name = html.escape(row["user_name"])
                 username = row.get("username", "")
 
-                if username:
-                    user_link = f'<a href="https://t.me/{html.escape(username)}">{escaped_name}</a>'
-                    handle_tag = f" (@{html.escape(username)})"
+                if is_admin and username:
+                    name_display = f"<b>{escaped_name}</b> (@{html.escape(username)})"
                 else:
-                    user_link = f'<a href="tg://user?id={row["telegram_user_id"]}">{escaped_name}</a>'
-                    handle_tag = ""
+                    name_display = f"<b>{escaped_name}</b>"
 
                 score = row["score"]
                 correct = row["correct_count"]
                 total = row["answered_count"]
-                lines.append(f"{rank_icon} {user_link}{handle_tag} — <code>{score} pts</code> ({correct}/{total} ✅)")
+                lines.append(f"{rank_icon} {name_display} — <code>{score} pts</code> ({correct}/{total} ✅)")
             text = "\n".join(lines)
     else:
         lb_data = await get_monthly_leaderboard(limit=10, page=page)
@@ -461,16 +467,14 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
                 escaped_name = html.escape(row["user_name"])
                 username = row.get("username", "")
 
-                if username:
-                    user_link = f'<a href="https://t.me/{html.escape(username)}">{escaped_name}</a>'
-                    handle_tag = f" (@{html.escape(username)})"
+                if is_admin and username:
+                    name_display = f"<b>{escaped_name}</b> (@{html.escape(username)})"
                 else:
-                    user_link = f'<a href="tg://user?id={row["telegram_user_id"]}">{escaped_name}</a>'
-                    handle_tag = ""
+                    name_display = f"<b>{escaped_name}</b>"
 
                 total_pts = row["total_score"]
                 completed = row["challenges_completed"]
-                lines.append(f"{rank_icon} {user_link}{handle_tag} — <code>{total_pts} pts</code> ({completed} challenges)")
+                lines.append(f"{rank_icon} {name_display} — <code>{total_pts} pts</code> ({completed} challenges)")
             text = "\n".join(lines)
 
     await sender_func(
