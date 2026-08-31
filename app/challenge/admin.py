@@ -1,6 +1,7 @@
 import html
 import io
 import logging
+import math
 import os
 from typing import Optional
 
@@ -389,7 +390,10 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data.startswith("adm_view_ch_q:"):
-        ch_id = int(data.split(":")[1])
+        parts = data.split(":")
+        ch_id = int(parts[1])
+        page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1
+
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
         questions = await get_challenge_questions(ch_id)
@@ -399,26 +403,60 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 "<i>No questions attached to this challenge yet.</i>\n\n"
                 "Tap <b>➕ Add Question</b> or <b>📥 Import CSV</b> below to add questions!",
                 parse_mode=ParseMode.HTML,
-                reply_markup=get_challenge_questions_view_keyboard(ch_id, []),
+                reply_markup=get_challenge_questions_view_keyboard(ch_id, [], page=1),
             )
             return
 
-        lines = [f"📋 <b>Questions in Challenge #{ch_id} ({title})</b> — <code>{len(questions)} total</code>:\n"]
-        for idx, q in enumerate(questions):
+        page_size = 4
+        total_pages = max(1, math.ceil(len(questions) / page_size))
+        page = max(1, min(page, total_pages))
+        start_idx = (page - 1) * page_size
+        page_q = questions[start_idx : start_idx + page_size]
+
+        lines = [
+            f"📋 <b>Challenge #{ch_id} Questions</b> <i>(Page {page}/{total_pages} • {len(questions)} Total)</i>\n"
+            f"⚡ <b>Title:</b> {title}\n"
+        ]
+
+        for offset, q in enumerate(page_q):
+            idx = start_idx + offset
+            q_id = q.get("id", idx + 1)
             q_t = html.escape(q.get("question_text", "Untitled"))
+            opt_a = html.escape(q.get("option_a", ""))
+            opt_b = html.escape(q.get("option_b", ""))
+            opt_c = html.escape(q.get("option_c", ""))
+            opt_d = html.escape(q.get("option_d", ""))
             c_opt = q.get("correct_option", "A")
-            lines.append(f"<b>Q{idx+1}.</b> {q_t}\n   👉 <b>Answer:</b> Option {c_opt}")
+            cat = html.escape(q.get("category", "General"))
+            diff = html.escape(q.get("difficulty", "MEDIUM"))
+            pts = q.get("base_points", 10.0)
+            exp = html.escape(q.get("explanation", "") or "No explanation provided.")
+
+            lines.append(
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🧩 <b>Question {idx+1}</b> <i>(ID: #{q_id})</i>\n"
+                f"❓ <b>{q_t}</b>\n\n"
+                f"<b>A.</b> {opt_a}\n"
+                f"<b>B.</b> {opt_b}\n"
+                f"<b>C.</b> {opt_c}\n"
+                f"<b>D.</b> {opt_d}\n\n"
+                f"🎯 <b>Correct Answer:</b> Option {c_opt}\n"
+                f"🏷️ <b>Category:</b> {cat} | <b>Difficulty:</b> {diff} | <b>Points:</b> {pts} pts\n"
+                f"💡 <b>Explanation:</b> {exp}\n"
+            )
 
         await query.edit_message_text(
             "\n".join(lines),
             parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_questions_view_keyboard(ch_id, questions),
+            reply_markup=get_challenge_questions_view_keyboard(ch_id, questions, page=page, page_size=page_size),
         )
 
     elif data.startswith("adm_rm_ch_q:"):
         parts = data.split(":")
         ch_id = int(parts[1])
         q_id = int(parts[2])
+        page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 1
+
         await remove_question_from_challenge(ch_id, q_id)
         await query.answer("🗑️ Question removed from challenge.", show_alert=False)
 
@@ -431,20 +469,52 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
                 "<i>No questions attached to this challenge yet.</i>\n\n"
                 "Tap <b>➕ Add Question</b> or <b>📥 Import CSV</b> below to add questions!",
                 parse_mode=ParseMode.HTML,
-                reply_markup=get_challenge_questions_view_keyboard(ch_id, []),
+                reply_markup=get_challenge_questions_view_keyboard(ch_id, [], page=1),
             )
             return
 
-        lines = [f"📋 <b>Questions in Challenge #{ch_id} ({title})</b> — <code>{len(questions)} total</code>:\n"]
-        for idx, q in enumerate(questions):
+        page_size = 4
+        total_pages = max(1, math.ceil(len(questions) / page_size))
+        page = max(1, min(page, total_pages))
+        start_idx = (page - 1) * page_size
+        page_q = questions[start_idx : start_idx + page_size]
+
+        lines = [
+            f"📋 <b>Challenge #{ch_id} Questions</b> <i>(Page {page}/{total_pages} • {len(questions)} Total)</i>\n"
+            f"⚡ <b>Title:</b> {title}\n"
+        ]
+
+        for offset, q in enumerate(page_q):
+            idx = start_idx + offset
+            qid = q.get("id", idx + 1)
             q_t = html.escape(q.get("question_text", "Untitled"))
+            opt_a = html.escape(q.get("option_a", ""))
+            opt_b = html.escape(q.get("option_b", ""))
+            opt_c = html.escape(q.get("option_c", ""))
+            opt_d = html.escape(q.get("option_d", ""))
             c_opt = q.get("correct_option", "A")
-            lines.append(f"<b>Q{idx+1}.</b> {q_t}\n   👉 <b>Answer:</b> Option {c_opt}")
+            cat = html.escape(q.get("category", "General"))
+            diff = html.escape(q.get("difficulty", "MEDIUM"))
+            pts = q.get("base_points", 10.0)
+            exp = html.escape(q.get("explanation", "") or "No explanation provided.")
+
+            lines.append(
+                f"━━━━━━━━━━━━━━━━━━━━\n"
+                f"🧩 <b>Question {idx+1}</b> <i>(ID: #{qid})</i>\n"
+                f"❓ <b>{q_t}</b>\n\n"
+                f"<b>A.</b> {opt_a}\n"
+                f"<b>B.</b> {opt_b}\n"
+                f"<b>C.</b> {opt_c}\n"
+                f"<b>D.</b> {opt_d}\n\n"
+                f"🎯 <b>Correct Answer:</b> Option {c_opt}\n"
+                f"🏷️ <b>Category:</b> {cat} | <b>Difficulty:</b> {diff} | <b>Points:</b> {pts} pts\n"
+                f"💡 <b>Explanation:</b> {exp}\n"
+            )
 
         await query.edit_message_text(
             "\n".join(lines),
             parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_questions_view_keyboard(ch_id, questions),
+            reply_markup=get_challenge_questions_view_keyboard(ch_id, questions, page=page, page_size=page_size),
         )
 
     elif data.startswith("adm_pub:"):

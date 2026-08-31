@@ -1,4 +1,5 @@
-from typing import Dict, Optional, List
+import math
+from typing import Dict, Optional, List, Any
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 
@@ -259,15 +260,35 @@ def get_challenge_delete_confirm_keyboard(challenge_id: int) -> InlineKeyboardMa
     )
 
 
-def get_challenge_questions_view_keyboard(challenge_id: int, questions: list) -> InlineKeyboardMarkup:
+def get_challenge_questions_view_keyboard(challenge_id: int, questions: list, page: int = 1, page_size: int = 4) -> InlineKeyboardMarkup:
     """Action buttons for inspecting and removing individual questions from a challenge."""
     buttons = []
-    # Row of remove buttons if questions exist
-    for idx, q in enumerate(questions[:8]):
+    total = len(questions)
+    total_pages = max(1, math.ceil(total / page_size)) if total > 0 else 1
+    page = max(1, min(page, total_pages))
+
+    start_idx = (page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_questions = questions[start_idx:end_idx]
+
+    # Row of remove buttons for each question on the page
+    for offset, q in enumerate(page_questions):
+        idx = start_idx + offset
         q_id = q.get("id", 0)
+        q_text_short = q.get("question_text", "")[:24]
         buttons.append([
-            InlineKeyboardButton(f"❌ Remove Q{idx+1}: {q.get('question_text', '')[:28]}...", callback_data=f"adm_rm_ch_q:{challenge_id}:{q_id}")
+            InlineKeyboardButton(f"🗑️ Remove Q{idx+1}: {q_text_short}...", callback_data=f"adm_rm_ch_q:{challenge_id}:{q_id}:{page}")
         ])
+
+    # Navigation buttons if multiple pages
+    if total_pages > 1:
+        nav = []
+        if page > 1:
+            nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"adm_view_ch_q:{challenge_id}:{page-1}"))
+        nav.append(InlineKeyboardButton(f"📄 {page}/{total_pages}", callback_data=f"adm_view_ch_q:{challenge_id}:{page}"))
+        if page < total_pages:
+            nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"adm_view_ch_q:{challenge_id}:{page+1}"))
+        buttons.append(nav)
 
     buttons.append([
         InlineKeyboardButton("➕ Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
