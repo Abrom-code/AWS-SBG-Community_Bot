@@ -185,13 +185,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         safe_text = html.escape(text)
 
         admin_notification = (
-            f"📥 <b>New AWS Community Feedback</b>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"📥 <b>New AWS Community Feedback</b>\n\n"
             f"👤 <b>From:</b> {safe_name} ({safe_username})\n"
             f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
             f"💬 <b>Message:</b>\n"
-            f"<blockquote>{safe_text}</blockquote>\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"<blockquote>{safe_text}</blockquote>\n\n"
             f"<i>💡 Reply directly to this message to send an answer to the member.</i>"
         )
 
@@ -247,10 +245,8 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     safe_reply = html.escape(response_text)
 
     reply_message = (
-        f"💬 <b>Response from the AWS Student Builder Core Team</b>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"<blockquote>{safe_reply}</blockquote>\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
+        f"💬 <b>Response from the AWS Student Builder Core Team</b>\n\n"
+        f"<blockquote>{safe_reply}</blockquote>\n\n"
         f"<i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
     )
 
