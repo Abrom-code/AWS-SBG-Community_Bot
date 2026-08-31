@@ -21,9 +21,11 @@ from app.db import (
 from app.challenge.handlers import (
     challenge_command,
     leaderboard_command,
+    scoring_rules_command,
     handle_challenge_start_callback,
     handle_challenge_answer_callback,
     handle_leaderboard_callback,
+    handle_challenge_rules_callback,
 )
 from app.challenge.admin import (
     admin_command,
@@ -48,12 +50,33 @@ WAITING_FOR_FEEDBACK = "WAITING_FOR_FEEDBACK"
 
 
 def get_main_menu_keyboard():
-    """Returns the member-facing menu keyboard with command shortcuts."""
+    """Returns the top-level member menu keyboard."""
     return ReplyKeyboardMarkup(
         [
-            ["⚡ Challenges", "🏆 Leaderboard"],
-            ["📝 Submit Feedback", "ℹ️ About"],
-            ["❓ Help", "❌ Cancel"],
+            ["⚡ Challenge Center", "💬 Feedback & Support"],
+            ["ℹ️ About Us", "❓ Help"],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def get_challenge_menu_keyboard():
+    """Returns the challenge-specific sub-menu keyboard."""
+    return ReplyKeyboardMarkup(
+        [
+            ["🚀 Take Active Challenge", "🏆 Leaderboards"],
+            ["📖 Scoring & Rules", "🔙 Main Menu"],
+        ],
+        resize_keyboard=True,
+    )
+
+
+def get_feedback_menu_keyboard():
+    """Returns the feedback-specific sub-menu keyboard."""
+    return ReplyKeyboardMarkup(
+        [
+            ["📝 Submit Feedback", "ℹ️ About Support"],
+            ["🔙 Main Menu"],
         ],
         resize_keyboard=True,
     )
@@ -74,11 +97,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     welcome_text = (
         "<b>Welcome to the AWS SBG AASTU Community & Challenge Bot!</b>\n\n"
         "✨ <b>What you can do here:</b>\n"
-        "    ⚡ <b>Weekly Challenges:</b> Test your cloud skills and climb the leaderboard\n"
-        "    🏆 <b>Leaderboards:</b> Track weekly & monthly season rankings\n"
-        "    💬 <b>Feedback & Suggestions:</b> Direct channel to core team\n"
-        "    🤝 <b>Community Support:</b> Get answers from student builder leads\n\n"
-        "Use the menu below or type <code>/challenge</code> to begin!\n\n"
+        "    ⚡ <b>Weekly Challenges:</b> Test your cloud skills, earn points, and climb the leaderboard\n"
+        "    🏆 <b>Leaderboards:</b> View weekly and monthly season rankings\n"
+        "    💬 <b>Feedback & Support:</b> Submit suggestions directly to the core team\n"
+        "    🤝 <b>Community Help:</b> Connect with AWS Student Builder leads\n\n"
+        "Tap <b>⚡ Challenge Center</b> or <b>💬 Feedback & Support</b> below to get started!\n\n"
         "📢 <b>Join our community:</b> @AWSAASTU"
     )
 
@@ -113,17 +136,51 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the Challenge Center hub with dedicated sub-menu."""
+    hub_text = (
+        "⚡ <b>AWS Builder Challenge Center</b>\n\n"
+        "Participate in weekly cloud competitions to test your architecture and serverless knowledge.\n\n"
+        "• <b>🚀 Take Active Challenge:</b> Start or resume the current quiz\n"
+        "• <b>🏆 Leaderboards:</b> View Weekly & Monthly championship standings\n"
+        "• <b>📖 Scoring & Rules:</b> Learn how timing and accuracy points work\n\n"
+        "<i>Select an option below:</i>"
+    )
+    await update.message.reply_text(
+        hub_text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_challenge_menu_keyboard(),
+    )
+
+
+async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the Feedback & Support hub with dedicated sub-menu."""
+    hub_text = (
+        "💬 <b>Feedback & Community Support Hub</b>\n\n"
+        "Have an idea for upcoming AWS workshops, a feature suggestion, or an issue to report?\n\n"
+        "• <b>📝 Submit Feedback:</b> Send a direct ticket to our core admin team\n"
+        "• <b>ℹ️ About Support:</b> Learn how our team processes your messages\n\n"
+        "<i>Select an action below:</i>"
+    )
+    await update.message.reply_text(
+        hub_text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_feedback_menu_keyboard(),
+    )
+
+
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the available visible commands for members."""
     help_text = (
         "📘 <b>AWS SBG Community Bot Shortcuts</b>\n\n"
         "• <code>/start</code> — Open the main welcome menu\n"
-        "• <code>/challenge</code> — Take the active weekly AWS cloud quiz\n"
+        "• <code>/challenge</code> — Open the Challenge Center & start quiz\n"
         "• <code>/leaderboard</code> — View weekly & monthly championship rankings\n"
-        "• <code>/feedback</code> — Drop a suggestion, idea, or issue for the core team\n"
+        "• <code>/rules</code> — See how speed & accuracy scoring is calculated\n"
+        "• <code>/feedback</code> — Drop a suggestion or issue for the core team\n"
         "• <code>/about</code> — Learn more about what we do\n"
-        "• <code>/cancel</code> — Stop your current feedback draft\n\n"
-        "💡 <b>Tip:</b> You can also tap the quick-action buttons at the bottom of your screen anytime!"
+        "• <code>/cancel</code> — Return to the main menu\n\n"
+        "💡 <b>Tip:</b> Tap the navigation buttons at the bottom of your screen anytime!"
     )
     await update.message.reply_text(
         help_text,
@@ -138,7 +195,8 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "ℹ️ <b>About AWS SBG AASTU</b>\n\n"
         "The AWS Student Builder Group at AASTU empowers students with practical cloud computing knowledge, "
         "certifications, architectural challenges, and hackathons.\n\n"
-        "Participate in our weekly challenges via <code>/challenge</code> to sharpen your AWS expertise!"
+        "Participate in our weekly challenges via <code>/challenge</code> to sharpen your AWS expertise!\n\n"
+        "📢 <b>Join our community:</b> @AWSAASTU"
     )
     await update.message.reply_text(
         about_text,
@@ -161,7 +219,7 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancels the current feedback session."""
+    """Cancels the current feedback session and returns to the main menu."""
     user_id = update.effective_user.id
     current_state = await get_user_state(user_id)
     if current_state == WAITING_FOR_FEEDBACK:
@@ -172,14 +230,14 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "No active action to cancel. Tap <b>Submit Feedback</b> or type <code>/feedback</code> to start.",
+            "🔙 <b>Main Menu</b>\n\nChoose an option below:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard(),
         )
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes text messages based on the user's current state."""
+    """Processes text messages based on the user's current state and sub-menu navigation."""
     if not update.message or not update.message.text:
         return
 
@@ -187,17 +245,29 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
 
-    # Handle button clicks text aliases
-    if text == "⚡ Challenges":
-        return await challenge_command(update, context)
-    elif text == "🏆 Leaderboard":
-        return await leaderboard_command(update, context)
-    elif text == "📝 Submit Feedback":
-        return await feedback_command(update, context)
-    elif text == "ℹ️ About":
+    # Handle Top-Level Navigation
+    if text in ("⚡ Challenge Center", "⚡ Challenges"):
+        return await challenge_hub_command(update, context)
+    elif text in ("💬 Feedback & Support", "💬 Feedback"):
+        return await feedback_hub_command(update, context)
+    elif text in ("ℹ️ About Us", "ℹ️ About Support", "ℹ️ About"):
         return await about_command(update, context)
     elif text == "❓ Help":
         return await help_command(update, context)
+    elif text in ("🔙 Main Menu", "❌ Cancel"):
+        return await cancel_command(update, context)
+
+    # Handle Challenge Sub-Menu
+    elif text in ("🚀 Take Active Challenge", "🚀 Start Challenge"):
+        return await challenge_command(update, context)
+    elif text in ("🏆 Leaderboards", "🏆 Leaderboard"):
+        return await leaderboard_command(update, context)
+    elif text in ("📖 Scoring & Rules", "📖 Rules", "ℹ️ Scoring Rules"):
+        return await scoring_rules_command(update, context)
+
+    # Handle Feedback Sub-Menu
+    elif text in ("📝 Submit Feedback", "📝 Submit New Feedback"):
+        return await feedback_command(update, context)
 
     # Check if the user is currently in the feedback-writing state
     current_state = await get_user_state(user_id)
@@ -417,11 +487,13 @@ def create_application(token: str = None):
     # Challenge & Leaderboard Commands
     app.add_handler(CommandHandler("challenge", challenge_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
+    app.add_handler(CommandHandler("rules", scoring_rules_command))
     app.add_handler(CommandHandler("admin", admin_command))
 
     # Challenge Callbacks
     app.add_handler(CallbackQueryHandler(handle_challenge_start_callback, pattern=r"^ch_start:"))
     app.add_handler(CallbackQueryHandler(handle_challenge_answer_callback, pattern=r"^ch_ans:"))
+    app.add_handler(CallbackQueryHandler(handle_challenge_rules_callback, pattern=r"^ch_rules$"))
     app.add_handler(CallbackQueryHandler(handle_leaderboard_callback, pattern=r"^lb_"))
     app.add_handler(CallbackQueryHandler(handle_admin_callback, pattern=r"^adm_"))
 

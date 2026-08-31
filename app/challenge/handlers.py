@@ -284,3 +284,60 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
             text = "\n".join(lines)
 
     await sender_func(text, parse_mode=ParseMode.HTML, reply_markup=get_leaderboard_keyboard(challenge_id))
+
+
+# ---------------------------------------------------------------------------
+# Scoring & Informative Rules
+# ---------------------------------------------------------------------------
+def get_scoring_rules_text() -> str:
+    """Returns formatted explanation of server-side timing and continuous decay scoring."""
+    return (
+        "📖 <b>AWS Builder Challenge: Rules & Scoring Guide</b>\n\n"
+        "🎯 <b>1. Continuous Decay Scoring Formula</b>\n"
+        "Your points on every question combine <b>Accuracy (70%)</b> and <b>Speed (30%)</b>:\n\n"
+        "<blockquote><b>Score = Base Points × (0.70 + 0.30 × (1 - t / T))</b></blockquote>\n\n"
+        "• <b>Base Points:</b> Usually 10 points per question\n"
+        "• <b>t:</b> Your exact server-measured response time (seconds)\n"
+        "• <b>T:</b> Question time limit (e.g. 60 seconds)\n\n"
+        "📊 <b>Score Breakdown Example (10-Point Question, 60s limit):</b>\n"
+        "  ⚡ <b>0s (Instant):</b> <code>10.00 pts</code> (100% max)\n"
+        "  ⚡ <b>10s:</b> <code>9.50 pts</code> (95%)\n"
+        "  ⚡ <b>20s:</b> <code>9.00 pts</code> (90%)\n"
+        "  ⚡ <b>30s:</b> <code>8.50 pts</code> (85%)\n"
+        "  ⚡ <b>45s:</b> <code>7.75 pts</code> (77.5%)\n"
+        "  ⚡ <b>60s:</b> <code>7.00 pts</code> (70% base accuracy)\n"
+        "  ❌ <b>Wrong Answer / >60s (Overtime):</b> <code>0.00 pts</code>\n\n"
+        "⏱️ <b>2. Server-Side Timing</b>\n"
+        "The clock starts the exact millisecond the question is delivered and stops when your tap reaches the server. Client time cannot be spoofed.\n\n"
+        "🔀 <b>3. Anti-Cheat Randomization</b>\n"
+        "Every student receives a unique randomized question order and randomized answer option buttons (A, B, C, D).\n\n"
+        "🏆 <b>4. Championship Leaderboards</b>\n"
+        "• <b>Weekly Leaderboard:</b> Instant rankings for the active quiz.\n"
+        "• <b>Monthly Cumulative Championship:</b> Sum of all weekly challenge scores for the month.\n\n"
+        "<i>Compete weekly, build your streak, and become an AWS Student Builder Champion!</i>"
+    )
+
+
+async def scoring_rules_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays the scoring rules to the user."""
+    challenge = await get_active_challenge()
+    ch_id = challenge["id"] if challenge else 0
+    await update.message.reply_text(
+        get_scoring_rules_text(),
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_challenge_start_keyboard(ch_id) if ch_id > 0 else None,
+    )
+
+
+async def handle_challenge_rules_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inline callback handler to view scoring rules."""
+    query = update.callback_query
+    await query.answer()
+    challenge = await get_active_challenge()
+    ch_id = challenge["id"] if challenge else 0
+    await query.edit_message_text(
+        get_scoring_rules_text(),
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_challenge_start_keyboard(ch_id) if ch_id > 0 else None,
+    )
+

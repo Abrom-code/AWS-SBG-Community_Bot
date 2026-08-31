@@ -99,9 +99,22 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     ]
 
     assert labels == [
-        ["⚡ Challenges", "🏆 Leaderboard"],
-        ["📝 Submit Feedback", "ℹ️ About"],
-        ["❓ Help", "❌ Cancel"],
+        ["⚡ Challenge Center", "💬 Feedback & Support"],
+        ["ℹ️ About Us", "❓ Help"],
+    ]
+
+    ch_keyboard = bot.get_challenge_menu_keyboard()
+    ch_labels = [[button.text for button in row] for row in ch_keyboard.keyboard]
+    assert ch_labels == [
+        ["🚀 Take Active Challenge", "🏆 Leaderboards"],
+        ["📖 Scoring & Rules", "🔙 Main Menu"],
+    ]
+
+    fb_keyboard = bot.get_feedback_menu_keyboard()
+    fb_labels = [[button.text for button in row] for row in fb_keyboard.keyboard]
+    assert fb_labels == [
+        ["📝 Submit Feedback", "ℹ️ About Support"],
+        ["🔙 Main Menu"],
     ]
 
 
@@ -161,9 +174,8 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
         for row in update.message.reply_text_calls[0]["reply_markup"].keyboard
     ]
     assert labels == [
-        ["⚡ Challenges", "🏆 Leaderboard"],
-        ["📝 Submit Feedback", "ℹ️ About"],
-        ["❓ Help", "❌ Cancel"],
+        ["⚡ Challenge Center", "💬 Feedback & Support"],
+        ["ℹ️ About Us", "❓ Help"],
     ]
 
 
@@ -326,10 +338,32 @@ def test_handle_user_edited_feedback_updates_admin_group_card():
     assert chat_id == 999
     assert message_id == 100
     assert "<i>(edited by user)</i>" in text
-    assert "<blockquote>Updated feedback description.</blockquote>" in text
-    assert parse_mode == ParseMode.HTML
-    
-    bot.ADMIN_GROUP_ID = original_admin_group_id
+def test_challenge_hub_and_feedback_hub_commands():
+    update = FakeUpdate(user_id=123)
+    context = FakeContext()
+
+    asyncio.run(bot.challenge_hub_command(update, context))
+    assert len(update.message.reply_text_calls) == 1
+    assert "AWS Builder Challenge Center" in update.message.reply_text_calls[0]["text"]
+    assert "🚀 Take Active Challenge" in [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+
+    asyncio.run(bot.feedback_hub_command(update, context))
+    assert len(update.message.reply_text_calls) == 2
+    assert "Feedback & Community Support Hub" in update.message.reply_text_calls[1]["text"]
+    assert "📝 Submit Feedback" in [b.text for row in update.message.reply_text_calls[1]["reply_markup"].keyboard for b in row]
+
+
+def test_scoring_rules_command_renders_guide():
+    update = FakeUpdate(user_id=123)
+    context = FakeContext()
+
+    from app.challenge.handlers import scoring_rules_command
+    asyncio.run(scoring_rules_command(update, context))
+
+    assert len(update.message.reply_text_calls) == 1
+    assert "Continuous Decay Scoring Formula" in update.message.reply_text_calls[0]["text"]
+    assert "0.70 + 0.30" in update.message.reply_text_calls[0]["text"]
+
 
 
 

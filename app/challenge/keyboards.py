@@ -3,9 +3,15 @@ from telegram import InlineKeyboardMarkup, InlineKeyboardButton
 
 
 def get_challenge_start_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
-    """Button to initiate an active challenge."""
+    """Button to initiate an active challenge with info and leaderboard shortcuts."""
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton("🚀 Start Challenge Now", callback_data=f"ch_start:{challenge_id}")]]
+        [
+            [InlineKeyboardButton("🚀 Start Challenge Now", callback_data=f"ch_start:{challenge_id}")],
+            [
+                InlineKeyboardButton("🏆 Leaderboard", callback_data=f"lb_weekly:{challenge_id}"),
+                InlineKeyboardButton("📖 How Scoring Works", callback_data="ch_rules"),
+            ],
+        ]
     )
 
 
