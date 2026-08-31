@@ -279,7 +279,13 @@ def create_application(token: str = None):
         filters,
     )
 
-    request = HTTPXRequest(connect_timeout=20.0, read_timeout=20.0)
+    request = HTTPXRequest(
+        connect_timeout=30.0,
+        read_timeout=30.0,
+        write_timeout=30.0,
+        pool_timeout=30.0,
+        http_version="1.1",
+    )
     app = ApplicationBuilder().token(bot_token).request(request).build()
 
     app.add_handler(CommandHandler("start", start_command))

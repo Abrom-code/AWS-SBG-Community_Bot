@@ -32,7 +32,11 @@ def main():
         )
     else:
         logger.info("AWS Student Builder Feedback Bot is up and running...")
-        app.run_polling(drop_pending_updates=True)
+        app.run_polling(
+            drop_pending_updates=True,
+            bootstrap_retries=10,
+            timeout=30,
+        )
 
 
 if __name__ == "__main__":
