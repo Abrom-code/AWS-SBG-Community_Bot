@@ -715,12 +715,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         safe_text = html.escape(text)
 
         admin_notification = (
-            f"📥 <b>New AWS Community Feedback</b>\n\n"
             f"👤 <b>From:</b> {safe_name} ({safe_username})\n"
-            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
             f"💬 <b>Message:</b>\n"
-            f"<blockquote>{safe_text}</blockquote>\n\n"
-            f"<i>💡 Reply directly to this message to send an answer to the member.</i>"
+            f"<blockquote>{safe_text}</blockquote>"
         )
 
         try:
@@ -866,12 +863,9 @@ async def handle_user_edited_feedback(update: Update, context: ContextTypes.DEFA
     safe_text = html.escape(text)
 
     admin_notification = (
-        f"📥 <b>New AWS Community Feedback</b> <i>(edited by user)</i>\n\n"
-        f"👤 <b>From:</b> {safe_name} ({safe_username})\n"
-        f"🆔 <b>User ID:</b> <code>{user.id}</code>\n\n"
+        f"👤 <b>From:</b> {safe_name} ({safe_username}) <i>(edited)</i>\n"
         f"💬 <b>Message:</b>\n"
-        f"<blockquote>{safe_text}</blockquote>\n\n"
-        f"<i>💡 Reply directly to this message to send an answer to the member.</i>"
+        f"<blockquote>{safe_text}</blockquote>"
     )
 
     try:

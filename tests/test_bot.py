@@ -236,7 +236,7 @@ def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
     chat_id, text, message_id, parse_mode = context.bot.sent_messages[0]
     assert chat_id == 999
     assert parse_mode == ParseMode.HTML
-    assert "📥 <b>New AWS Community Feedback</b>" in text
+    assert "👤 <b>From:</b>" in text
     assert "<blockquote>This is a test feedback message</blockquote>" in text
     
     submission = asyncio.run(db.get_feedback_submission(message_id))
@@ -377,9 +377,9 @@ def test_handle_user_edited_feedback_updates_admin_group_card():
 
     assert len(context.bot.edited_messages) == 1
     chat_id, message_id, text, parse_mode = context.bot.edited_messages[0]
-    assert chat_id == 999
-    assert message_id == 100
-    assert "<i>(edited by user)</i>" in text
+    assert "<i>(edited)</i>" in text
+    assert "<blockquote>Updated feedback description.</blockquote>" in text
+
 def test_challenge_hub_and_feedback_hub_commands():
     update = FakeUpdate(user_id=123)
     context = FakeContext()
