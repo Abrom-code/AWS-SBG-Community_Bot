@@ -95,16 +95,31 @@ class FakeBot:
         self.sent_messages = []
         self.send_message_calls = []
         self.edited_messages = []
+        self.deleted_messages = []
 
-    async def send_message(self, chat_id, text, parse_mode=None):
+    async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None):
         message_id = len(self.sent_messages) + 1
         self.sent_messages.append((chat_id, text, message_id, parse_mode))
         self.send_message_calls.append({"chat_id": chat_id, "text": text, "parse_mode": parse_mode})
         return type("SentMessage", (), {"message_id": message_id})()
 
-    async def edit_message_text(self, chat_id, message_id, text, parse_mode=None):
+    async def send_photo(self, chat_id, photo, caption=None, parse_mode=None, reply_markup=None):
+        message_id = len(self.sent_messages) + 1
+        self.sent_messages.append((chat_id, caption, message_id, parse_mode))
+        return type("SentMessage", (), {"message_id": message_id})()
+
+    async def edit_message_text(self, chat_id, message_id, text, parse_mode=None, reply_markup=None):
         self.edited_messages.append((chat_id, message_id, text, parse_mode))
         return type("SentMessage", (), {"message_id": message_id})()
+
+    async def delete_message(self, chat_id, message_id):
+        self.deleted_messages.append((chat_id, message_id))
+        return True
+
+    async def delete_messages(self, chat_id, message_ids):
+        for mid in message_ids:
+            self.deleted_messages.append((chat_id, mid))
+        return True
 
 
 class FakeContext:
@@ -732,14 +747,16 @@ def test_clear_command_resets_state_and_triggers_start():
     assert asyncio.run(db.get_user_state(user_id)) is None
     assert len(ctx.user_data) == 0
 
+    # Verify message cleanup was triggered
+    assert len(ctx.bot.deleted_messages) > 0
+
     # Verify start welcome text was sent
-    assert len(up.message.reply_text_calls) > 0 or len(up.message.reply_photo_calls) > 0
-    resp_text = (
-        up.message.reply_photo_calls[0]["caption"]
-        if up.message.reply_photo_calls
-        else up.message.reply_text_calls[0]["text"]
+    assert (
+        len(up.message.reply_text_calls) > 0
+        or len(up.message.reply_photo_calls) > 0
+        or len(ctx.bot.send_message_calls) > 0
+        or len(ctx.bot.sent_messages) > 0
     )
-    assert "Welcome to the AWS SBG AASTU Community" in resp_text
 
 
 

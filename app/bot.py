@@ -1,3 +1,4 @@
+import asyncio
 import html
 import os
 import logging
@@ -58,7 +59,9 @@ from datetime import datetime, timezone, timedelta
 load_dotenv()
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
-ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_CHAT_ID", "0"))
+ADMIN_USER_ID = int(os.getenv("ADMIN_USER_ID", "0"))
+ADMIN_GROUP_CHAT_ID = int(os.getenv("ADMIN_GROUP_CHAT_ID", "0"))
+ADMIN_GROUP_ID = ADMIN_GROUP_CHAT_ID
 
 # Enable logging to track activity and debug issues
 logging.basicConfig(
@@ -70,8 +73,8 @@ logger = logging.getLogger(__name__)
 WAITING_FOR_FEEDBACK = "WAITING_FOR_FEEDBACK"
 
 
-def get_main_menu_keyboard():
-    """Returns the top-level member menu keyboard."""
+def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Returns persistent bottom menu buttons for primary member actions."""
     return ReplyKeyboardMarkup(
         [
             ["⚡ Challenge Center", "💬 Feedback & Support"],
@@ -81,8 +84,8 @@ def get_main_menu_keyboard():
     )
 
 
-def get_challenge_menu_keyboard():
-    """Returns the challenge-specific sub-menu keyboard."""
+def get_challenge_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Returns persistent sub-menu keyboard for the Challenge Center."""
     return ReplyKeyboardMarkup(
         [
             ["🚀 Take Active Challenge", "🏆 Leaderboards"],
@@ -93,8 +96,8 @@ def get_challenge_menu_keyboard():
     )
 
 
-def get_feedback_menu_keyboard():
-    """Returns the feedback-specific sub-menu keyboard."""
+def get_feedback_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Returns persistent sub-menu keyboard for Feedback & Support."""
     return ReplyKeyboardMarkup(
         [
             ["📝 Submit Feedback", "ℹ️ About Support"],
@@ -117,6 +120,7 @@ def clear_proxy_environment():
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Sends a welcome message with the bot logo and a persistent keyboard option."""
     user = update.effective_user
+    chat = update.effective_chat
     if user:
         await register_or_update_bot_user(user.id, user.first_name, user.username)
 
@@ -137,26 +141,51 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "logo.jpg",
     )
 
+    chat_id = chat.id if chat else (user.id if user else None)
+    if not chat_id:
+        return
+
     if os.path.exists(logo_path):
         try:
             with open(logo_path, "rb") as photo:
-                await update.message.reply_photo(
-                    photo=photo,
-                    caption=welcome_text,
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=get_main_menu_keyboard(),
-                )
+                if update.message:
+                    try:
+                        await update.message.reply_photo(
+                            photo=photo,
+                            caption=welcome_text,
+                            parse_mode=ParseMode.HTML,
+                            reply_markup=get_main_menu_keyboard(),
+                        )
+                        return
+                    except Exception:
+                        pass
+                if context.bot:
+                    await context.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=photo,
+                        caption=welcome_text,
+                        parse_mode=ParseMode.HTML,
+                        reply_markup=get_main_menu_keyboard(),
+                    )
+                    return
         except Exception as e:
             logger.error(f"Failed to send logo photo: {e}")
+
+    if update.message:
+        try:
             await update.message.reply_text(
                 welcome_text,
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_main_menu_keyboard(),
             )
-    else:
-        logger.warning(f"Logo photo not found at: {logo_path}")
-        await update.message.reply_text(
-            welcome_text,
+            return
+        except Exception:
+            pass
+
+    if context.bot:
+        await context.bot.send_message(
+            chat_id=chat_id,
+            text=welcome_text,
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard(),
         )
@@ -244,17 +273,28 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Resets user state, user_data context, deletes the trigger message if possible, and restarts with /start."""
+    """Cleans up previous messages from the chat, resets user state, and displays a fresh /start menu."""
     user = update.effective_user
+    chat = update.effective_chat
     if user:
         await set_user_state(user.id, None)
     context.user_data.clear()
 
-    if update.message:
+    if chat and update.message:
+        current_msg_id = update.message.message_id
+        # Delete up to 50 previous messages in this chat
+        msg_ids_to_delete = list(range(max(1, current_msg_id - 50), current_msg_id + 1))
+
+        # Try bulk delete first (fastest)
         try:
-            await update.message.delete()
+            await context.bot.delete_messages(chat_id=chat.id, message_ids=msg_ids_to_delete)
         except Exception:
-            pass
+            # Fallback to concurrent individual message deletion
+            tasks = [
+                context.bot.delete_message(chat_id=chat.id, message_id=mid)
+                for mid in msg_ids_to_delete
+            ]
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     await start_command(update, context)
 
