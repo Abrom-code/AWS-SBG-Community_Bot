@@ -29,14 +29,12 @@ def get_question_options_keyboard(
 
 
 def get_leaderboard_keyboard(challenge_id: Optional[int] = None) -> InlineKeyboardMarkup:
-    """Navigation for Weekly vs Monthly leaderboards."""
+    """Navigation for Weekly vs Monthly leaderboards in column layout."""
     ch_id = challenge_id or 0
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton("🏆 Weekly Leaderboard", callback_data=f"lb_weekly:{ch_id}"),
-                InlineKeyboardButton("📅 Monthly Cumulative", callback_data="lb_monthly"),
-            ]
+            [InlineKeyboardButton("🏆 Weekly Leaderboard", callback_data=f"lb_weekly:{ch_id}")],
+            [InlineKeyboardButton("📅 Monthly Cumulative Leaderboard", callback_data="lb_monthly")],
         ]
     )
 
