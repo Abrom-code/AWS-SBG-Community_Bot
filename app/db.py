@@ -725,6 +725,49 @@ async def get_admin_reply_mapping(
     return None
 
 
+async def get_all_broadcast_user_ids() -> list[int]:
+    """Retrieves all distinct user Telegram IDs who have interacted with the bot."""
+    query = """
+        SELECT DISTINCT user_id FROM (
+            SELECT user_id FROM user_states
+            UNION
+            SELECT sender_chat_id AS user_id FROM feedback_submissions
+            UNION
+            SELECT telegram_user_id AS user_id FROM challenge_participants
+            UNION
+            SELECT user_chat_id AS user_id FROM admin_reply_mappings
+        ) WHERE user_id IS NOT NULL AND user_id > 0
+    """
+    if is_postgres():
+        import psycopg
+
+        url = (
+            DATABASE_URL.replace("postgres://", "postgresql://", 1)
+            if DATABASE_URL.startswith("postgres://")
+            else DATABASE_URL
+        )
+        try:
+            async with await psycopg.AsyncConnection.connect(url) as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(query)
+                    rows = await cur.fetchall()
+                    return [r[0] for r in rows]
+        except Exception as e:
+            logger.error(f"Error fetching broadcast user IDs (Postgres): {e}")
+            return []
+    else:
+        import aiosqlite
+
+        try:
+            async with aiosqlite.connect(SQLITE_DB_PATH) as db:
+                async with db.execute(query) as cur:
+                    rows = await cur.fetchall()
+                    return [r[0] for r in rows]
+        except Exception as e:
+            logger.error(f"Error fetching broadcast user IDs (SQLite): {e}")
+            return []
+
+
 async def reset_db(db_path: str = None) -> None:
     """Helper to clear tables during automated testing."""
     path = db_path or SQLITE_DB_PATH

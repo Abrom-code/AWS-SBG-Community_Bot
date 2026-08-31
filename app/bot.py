@@ -17,6 +17,7 @@ from app.db import (
     delete_feedback_submission,
     save_admin_reply_mapping,
     get_admin_reply_mapping,
+    get_all_broadcast_user_ids,
 )
 from app.challenge.handlers import (
     challenge_command,
@@ -29,11 +30,15 @@ from app.challenge.handlers import (
     handle_challenge_rules_callback,
     handle_past_challenges_callback,
 )
-from app.challenge.keyboards import get_challenge_hub_inline_keyboard
+from app.challenge.keyboards import (
+    get_challenge_hub_inline_keyboard,
+    get_admin_broadcast_confirm_keyboard,
+)
 from app.challenge.admin import (
     admin_command,
     handle_admin_callback,
     handle_admin_csv_document,
+    is_admin_user,
 )
 
 # Load environment variables from .env file
@@ -234,13 +239,19 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cancels the current feedback session and returns to the main menu."""
+    """Cancels the current feedback or broadcast session and returns to the main menu."""
     user_id = update.effective_user.id
     current_state = await get_user_state(user_id)
     if current_state == WAITING_FOR_FEEDBACK:
         await set_user_state(user_id, None)
         await update.message.reply_text(
             "❌ Feedback submission cancelled.",
+            reply_markup=get_main_menu_keyboard(),
+        )
+    elif current_state == "WAITING_FOR_ADMIN_BROADCAST":
+        await set_user_state(user_id, None)
+        await update.message.reply_text(
+            "❌ Broadcast cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
     else:
@@ -286,8 +297,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text in ("📝 Submit Feedback", "📝 Submit New Feedback"):
         return await feedback_command(update, context)
 
-    # Check if the user is currently in the feedback-writing state
+    # Check user state
     current_state = await get_user_state(user_id)
+
+    # Check if admin is sending a custom broadcast announcement
+    if current_state == "WAITING_FOR_ADMIN_BROADCAST":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await set_user_state(user_id, None)
+        context.user_data["bcast_text"] = text
+        users = await get_all_broadcast_user_ids()
+        count = len(users)
+
+        preview_text = (
+            f"📢 <b>BROADCAST PREVIEW (Custom Message)</b>\n"
+            f"👥 <b>Target Audience:</b> <code>{count}</code> members\n\n"
+            f"<blockquote>{text}</blockquote>\n\n"
+            f"<i>Confirm to deliver this announcement to all community members:</i>"
+        )
+        await update.message.reply_text(
+            preview_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_broadcast_confirm_keyboard("custom"),
+        )
+        return
+
+    # Check if the user is currently in the feedback-writing state
     if current_state == WAITING_FOR_FEEDBACK:
         # Reset state back to normal
         await set_user_state(user_id, None)

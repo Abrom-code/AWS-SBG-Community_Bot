@@ -167,6 +167,31 @@ def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("📥 Import Questions (CSV)", callback_data="adm_import_csv"),
                 InlineKeyboardButton("❓ Question Bank", callback_data="adm_qbank"),
             ],
+            [
+                InlineKeyboardButton("📢 Broadcast Notification", callback_data="adm_broadcast"),
+            ],
+        ]
+    )
+
+
+def get_admin_broadcast_presets_keyboard() -> InlineKeyboardMarkup:
+    """Options for broadcasting to community members."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🚀 Announce Live Challenge", callback_data="adm_bcast_preset:challenge")],
+            [InlineKeyboardButton("🏆 Announce Leaderboard Standings", callback_data="adm_bcast_preset:leaderboard")],
+            [InlineKeyboardButton("✍️ Custom Announcement Message", callback_data="adm_bcast_custom")],
+            [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
+        ]
+    )
+
+
+def get_admin_broadcast_confirm_keyboard(target_action: str = "custom") -> InlineKeyboardMarkup:
+    """Confirmation button before sending broadcast."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🚀 Confirm & Send to All", callback_data=f"adm_bcast_send:{target_action}")],
+            [InlineKeyboardButton("❌ Cancel", callback_data="adm_panel")],
         ]
     )
 

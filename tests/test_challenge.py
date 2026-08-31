@@ -343,3 +343,21 @@ def test_challenge_start_end_time_transitions_and_past_challenges():
     assert q_data["question_number"] == 1
 
 
+def test_get_all_broadcast_user_ids():
+    asyncio.run(db.reset_db())
+    # User 1: from user_states
+    asyncio.run(db.set_user_state(1001, "ACTIVE"))
+    # User 2: from feedback_submissions
+    asyncio.run(db.save_feedback_submission(message_id=901, sender_chat_id=1002, sender_name="User2"))
+    # User 3: from challenge_participants
+    ch_id = asyncio.run(service.create_challenge(title="Test Quiz"))
+    asyncio.run(service.register_or_get_participant(ch_id, 1003, "User3"))
+
+    uids = asyncio.run(db.get_all_broadcast_user_ids())
+    assert 1001 in uids
+    assert 1002 in uids
+    assert 1003 in uids
+    assert len(uids) >= 3
+
+
+

@@ -53,10 +53,30 @@ class FakeChat:
         self.type = chat_type
 
 
+class FakeCallbackQuery:
+    def __init__(self, user_id=42, data="", message=None):
+        self.from_user = FakeUser(user_id=user_id)
+        self.data = data
+        self.message = message or FakeMessage(chat_id=1, message_id=1)
+        self.answered = False
+        self.answered_text = None
+        self.edited_text = None
+        self.reply_markup = None
+
+    async def answer(self, text=None, show_alert=False):
+        self.answered = True
+        self.answered_text = text
+
+    async def edit_message_text(self, text, parse_mode=None, reply_markup=None):
+        self.edited_text = text
+        self.reply_markup = reply_markup
+
+
 class FakeUpdate:
-    def __init__(self, user_id=42, text="", chat_id=1, reply_to_message_id=None, is_edited=False, chat_type="private"):
+    def __init__(self, user_id=42, text="", chat_id=1, reply_to_message_id=None, is_edited=False, chat_type="private", callback_query=None):
         self.effective_user = FakeUser(user_id=user_id)
         self.effective_chat = FakeChat(chat_id=chat_id, chat_type=chat_type)
+        self.callback_query = callback_query
         msg = FakeMessage(text=text, chat_id=chat_id)
         if reply_to_message_id is not None:
             msg.reply_to_message = type(
@@ -73,11 +93,13 @@ class FakeUpdate:
 class FakeBot:
     def __init__(self):
         self.sent_messages = []
+        self.send_message_calls = []
         self.edited_messages = []
 
     async def send_message(self, chat_id, text, parse_mode=None):
         message_id = len(self.sent_messages) + 1
         self.sent_messages.append((chat_id, text, message_id, parse_mode))
+        self.send_message_calls.append({"chat_id": chat_id, "text": text, "parse_mode": parse_mode})
         return type("SentMessage", (), {"message_id": message_id})()
 
     async def edit_message_text(self, chat_id, message_id, text, parse_mode=None):
@@ -88,6 +110,7 @@ class FakeBot:
 class FakeContext:
     def __init__(self):
         self.bot = FakeBot()
+        self.user_data = {}
 
 
 def test_get_main_menu_keyboard_contains_expected_actions():
@@ -399,6 +422,46 @@ def test_past_challenges_command_and_shortcuts():
     assert len(update.message.reply_text_calls) == 1
     assert "AWS Builder Challenge Archive" in update.message.reply_text_calls[0]["text"]
     assert update.message.reply_text_calls[0]["reply_markup"] is not None
+
+
+def test_admin_broadcast_presets_and_workflow(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import create_challenge, update_challenge_status
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+
+    # 1. Populate community audience
+    asyncio.run(db.set_user_state(501, "ACTIVE"))
+    asyncio.run(db.set_user_state(502, "ACTIVE"))
+
+    # 2. Open broadcast menu
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_broadcast")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    ctx1 = FakeContext()
+
+    asyncio.run(handle_admin_callback(up1, ctx1))
+    assert "Community Broadcast System" in q1.edited_text
+    assert q1.reply_markup is not None
+
+    # 3. Choose leaderboard preset
+    q2 = FakeCallbackQuery(user_id=99999, data="adm_bcast_preset:leaderboard")
+    up2 = FakeUpdate(user_id=99999, callback_query=q2)
+    ctx2 = FakeContext()
+
+    asyncio.run(handle_admin_callback(up2, ctx2))
+    assert "BROADCAST PREVIEW" in q2.edited_text
+    assert "bcast_text" in ctx2.user_data
+
+    # 4. Confirm & Send to all
+    q3 = FakeCallbackQuery(user_id=99999, data="adm_bcast_send:preset_leaderboard")
+    up3 = FakeUpdate(user_id=99999, callback_query=q3)
+    ctx3 = FakeContext()
+    ctx3.user_data["bcast_text"] = "🏆 AWS Builder Standings Updated!"
+
+    asyncio.run(handle_admin_callback(up3, ctx3))
+    assert "Broadcast Complete" in q3.edited_text
+    assert len(ctx3.bot.send_message_calls) >= 2
+
 
 
 
