@@ -230,6 +230,38 @@ def get_question_bank_actions_keyboard() -> InlineKeyboardMarkup:
     )
 
 
+def get_challenge_schedule_edit_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
+    """Options for editing a challenge's start/end dates and schedule."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🟢 Start Now (Live for 7 Days)", callback_data=f"adm_sched_set:{challenge_id}:now:7d")],
+            [InlineKeyboardButton("⏳ Start in 1 Hour (Ends in 7 Days)", callback_data=f"adm_sched_set:{challenge_id}:1h:7d")],
+            [InlineKeyboardButton("📅 Start Tomorrow (Ends in 7 Days)", callback_data=f"adm_sched_set:{challenge_id}:24h:7d")],
+            [InlineKeyboardButton("✍️ Custom Start & End Date/Time", callback_data=f"adm_sched_custom:{challenge_id}")],
+            [InlineKeyboardButton("🛠️ Save as Draft (Unscheduled)", callback_data=f"adm_sched_set:{challenge_id}:draft:0")],
+            [InlineKeyboardButton("🔙 Back to Manage Challenge", callback_data=f"adm_manage:{challenge_id}")],
+        ]
+    )
+
+
+def get_challenge_timer_edit_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
+    """Options for editing a challenge's allowed exam time limit."""
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton("⚡ 5 Minutes", callback_data=f"adm_timer_set:{challenge_id}:5"),
+                InlineKeyboardButton("⚡ 10 Minutes", callback_data=f"adm_timer_set:{challenge_id}:10"),
+            ],
+            [
+                InlineKeyboardButton("⚡ 15 Minutes", callback_data=f"adm_timer_set:{challenge_id}:15"),
+                InlineKeyboardButton("⚡ 20 Minutes", callback_data=f"adm_timer_set:{challenge_id}:20"),
+            ],
+            [InlineKeyboardButton("✍️ Custom Exam Minutes", callback_data=f"adm_timer_custom:{challenge_id}")],
+            [InlineKeyboardButton("🔙 Back to Manage Challenge", callback_data=f"adm_manage:{challenge_id}")],
+        ]
+    )
+
+
 def get_wizard_questions_keyboard(challenge_id: int = 0) -> InlineKeyboardMarkup:
     """Step 2 question selection options for Challenge Creation Wizard."""
     buttons = []
@@ -239,13 +271,11 @@ def get_wizard_questions_keyboard(challenge_id: int = 0) -> InlineKeyboardMarkup
             InlineKeyboardButton("📥 Import CSV to Challenge", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
         ])
         buttons.append([
-            InlineKeyboardButton("🎲 Auto-Link from Question Bank", callback_data="adm_wiz_q:all"),
+            InlineKeyboardButton("📋 View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
             InlineKeyboardButton("🚀 Publish (Go LIVE)", callback_data=f"adm_pub:{challenge_id}"),
         ])
         buttons.append([InlineKeyboardButton("⚙️ Manage Challenge", callback_data=f"adm_manage:{challenge_id}")])
     else:
-        buttons.append([InlineKeyboardButton("🎲 Auto-Link All Questions from Bank", callback_data="adm_wiz_q:all")])
-        buttons.append([InlineKeyboardButton("🎲 Auto-Link 5 Questions from Bank", callback_data="adm_wiz_q:5")])
         buttons.append([InlineKeyboardButton("❌ Cancel Creation", callback_data="adm_panel")])
     return InlineKeyboardMarkup(buttons)
 
@@ -313,14 +343,15 @@ def get_challenge_manage_keyboard(challenge_id: int, status: str) -> InlineKeybo
         ])
         buttons.append([
             InlineKeyboardButton("📋 View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
-            InlineKeyboardButton("🎲 Link from Bank", callback_data=f"adm_link_q:{challenge_id}"),
+            InlineKeyboardButton("✏️ Edit Title", callback_data=f"adm_edit_title:{challenge_id}"),
         ])
         buttons.append([
-            InlineKeyboardButton("✏️ Edit Title", callback_data=f"adm_edit_title:{challenge_id}"),
-            InlineKeyboardButton("🗑️ Delete", callback_data=f"adm_del_prompt:{challenge_id}"),
+            InlineKeyboardButton("⏰ Edit Schedule", callback_data=f"adm_edit_sched:{challenge_id}"),
+            InlineKeyboardButton("⏱️ Edit Time Limit", callback_data=f"adm_edit_timer:{challenge_id}"),
         ])
         buttons.append([
             InlineKeyboardButton("❌ Cancel Challenge", callback_data=f"adm_can:{challenge_id}"),
+            InlineKeyboardButton("🗑️ Delete Challenge", callback_data=f"adm_del_prompt:{challenge_id}"),
         ])
     else:
         buttons.append([
@@ -329,7 +360,7 @@ def get_challenge_manage_keyboard(challenge_id: int, status: str) -> InlineKeybo
         ])
 
     buttons.append([
-        InlineKeyboardButton("📋 View All Challenges", callback_data="adm_list_ch"),
+        InlineKeyboardButton("📋 Manage Challenges", callback_data="adm_list_ch"),
         InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel"),
     ])
     return InlineKeyboardMarkup(buttons)

@@ -37,11 +37,12 @@ from app.challenge.keyboards import (
     get_admin_broadcast_presets_keyboard,
     get_admin_broadcast_confirm_keyboard,
     get_admin_report_keyboard,
-    get_question_bank_actions_keyboard,
     get_wizard_questions_keyboard,
     get_challenge_delete_confirm_keyboard,
     get_admin_leaderboard_keyboard,
     get_challenge_questions_view_keyboard,
+    get_challenge_schedule_edit_keyboard,
+    get_challenge_timer_edit_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -284,6 +285,128 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             f"✏️ <b>Edit Challenge #{ch_id}</b>\n\n"
             f"Please send the new title and category (e.g. <code>AWS Cloud Essentials | General</code>):\n\n"
             f"<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data.startswith("adm_edit_sched:"):
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        starts_str = ch.get("starts_at") or "Not scheduled"
+        ends_str = ch.get("ends_at") or "Not scheduled"
+        status = ch.get("status", "DRAFT")
+
+        await query.edit_message_text(
+            f"⏰ <b>Edit Schedule for Challenge #{ch_id} ({title})</b>\n\n"
+            f"🚦 <b>Current Status:</b> {status}\n"
+            f"🟢 <b>Starts At:</b> <code>{starts_str}</code>\n"
+            f"🏁 <b>Ends At:</b> <code>{ends_str}</code>\n\n"
+            f"Select a preset schedule below or enter custom start & end dates:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_schedule_edit_keyboard(ch_id),
+        )
+
+    elif data.startswith("adm_sched_set:"):
+        parts = data.split(":")
+        ch_id = int(parts[1])
+        start_opt = parts[2]
+        from datetime import datetime, timezone, timedelta
+        now_dt = datetime.now(timezone.utc)
+
+        if start_opt == "now":
+            starts_at = now_dt.isoformat()
+            ends_at = (now_dt + timedelta(days=7)).isoformat()
+            status = "LIVE"
+        elif start_opt == "1h":
+            s_dt = now_dt + timedelta(hours=1)
+            starts_at = s_dt.isoformat()
+            ends_at = (s_dt + timedelta(days=7)).isoformat()
+            status = "SCHEDULED"
+        elif start_opt == "24h":
+            s_dt = now_dt + timedelta(days=1)
+            starts_at = s_dt.isoformat()
+            ends_at = (s_dt + timedelta(days=7)).isoformat()
+            status = "SCHEDULED"
+        else:
+            starts_at = None
+            ends_at = None
+            status = "DRAFT"
+
+        await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
+        await update_challenge_status(ch_id, status)
+        await query.answer("✅ Schedule updated successfully!", show_alert=False)
+
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        await query.edit_message_text(
+            f"⚙️ <b>Manage Challenge #{ch_id}</b>\n\n"
+            f"⚡ <b>Title:</b> {title}\n"
+            f"🏗️ <b>Category:</b> {html.escape(ch.get('category', 'Architecture'))}\n"
+            f"🚦 <b>Status:</b> {status}\n"
+            f"🟢 <b>Starts:</b> <code>{starts_at or 'Unscheduled'}</code>\n"
+            f"🏁 <b>Ends:</b> <code>{ends_at or 'Unscheduled'}</code>\n\n"
+            f"Schedule has been updated.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
+        )
+
+    elif data.startswith("adm_sched_custom:"):
+        ch_id = int(data.split(":")[1])
+        context.user_data["edit_ch_id"] = ch_id
+        await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE")
+        await query.edit_message_text(
+            f"✍️ <b>Custom Schedule for Challenge #{ch_id}</b>\n\n"
+            "Please send the <b>Start Date/Time to End Date/Time</b>:\n\n"
+            "<code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data.startswith("adm_edit_timer:"):
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        dur_secs = ch.get("duration_seconds") or 600
+        mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
+
+        await query.edit_message_text(
+            f"⏱️ <b>Edit Exam Time Limit for Challenge #{ch_id} ({title})</b>\n\n"
+            f"⏳ <b>Current Allowed Time:</b> <code>{mins} minutes total</code>\n\n"
+            f"Select a preset duration or enter custom minutes:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_timer_edit_keyboard(ch_id),
+        )
+
+    elif data.startswith("adm_timer_set:"):
+        parts = data.split(":")
+        ch_id = int(parts[1])
+        mins = int(parts[2])
+        dur_secs = mins * 60
+
+        await update_challenge_details(ch_id, duration_seconds=dur_secs)
+        await query.answer(f"✅ Exam time limit set to {mins} minutes!", show_alert=False)
+
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        status = ch.get("status", "DRAFT")
+        await query.edit_message_text(
+            f"⚙️ <b>Manage Challenge #{ch_id}</b>\n\n"
+            f"⚡ <b>Title:</b> {title}\n"
+            f"⏱️ <b>Exam Time Limit:</b> <code>{mins} minutes total</code>\n"
+            f"🚦 <b>Status:</b> {status}\n\n"
+            f"Exam duration updated successfully.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
+        )
+
+    elif data.startswith("adm_timer_custom:"):
+        ch_id = int(data.split(":")[1])
+        context.user_data["edit_ch_id"] = ch_id
+        await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_TIMER")
+        await query.edit_message_text(
+            f"✍️ <b>Custom Exam Time Limit for Challenge #{ch_id}</b>\n\n"
+            "Please send the total allowed exam time in minutes (e.g. <code>12</code> or <code>25</code>):\n\n"
+            "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
         )
 

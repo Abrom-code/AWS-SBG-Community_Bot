@@ -448,6 +448,7 @@ async def update_challenge_details(
     category: Optional[str] = None,
     description: Optional[str] = None,
     question_time_limit_seconds: Optional[int] = None,
+    duration_seconds: Optional[int] = None,
     starts_at: Optional[str] = None,
     ends_at: Optional[str] = None,
 ) -> bool:
@@ -466,6 +467,9 @@ async def update_challenge_details(
     if question_time_limit_seconds is not None:
         fields.append("question_time_limit_seconds = ?")
         values.append(question_time_limit_seconds)
+    if duration_seconds is not None:
+        fields.append("duration_seconds = ?")
+        values.append(duration_seconds)
     if starts_at is not None:
         fields.append("starts_at = ?")
         values.append(starts_at)

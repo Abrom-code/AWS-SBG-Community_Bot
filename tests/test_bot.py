@@ -650,6 +650,60 @@ def test_admin_challenge_edit_and_delete_flow(monkeypatch):
     assert asyncio.run(get_challenge(ch_id)) is None
 
 
+def test_admin_challenge_schedule_and_timer_edit_flow(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import create_challenge, get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    asyncio.run(db.reset_db())
+
+    ch_id = asyncio.run(create_challenge(title="Schedule & Timer Test", category="Testing"))
+
+    # 1. Edit Schedule via Preset
+    q_s1 = FakeCallbackQuery(user_id=99999, data=f"adm_sched_set:{ch_id}:now:7d")
+    up_s1 = FakeUpdate(user_id=99999, callback_query=q_s1)
+    ctx = FakeContext()
+    asyncio.run(handle_admin_callback(up_s1, ctx))
+    ch1 = asyncio.run(get_challenge(ch_id))
+    assert ch1["status"] == "LIVE"
+    assert ch1["starts_at"] is not None
+
+    # 2. Edit Schedule via Custom Input
+    q_s2 = FakeCallbackQuery(user_id=99999, data=f"adm_sched_custom:{ch_id}")
+    up_s2 = FakeUpdate(user_id=99999, callback_query=q_s2)
+    asyncio.run(handle_admin_callback(up_s2, ctx))
+    assert "Custom Schedule" in q_s2.edited_text
+
+    up_msg_s = FakeUpdate(user_id=99999, text="2026-10-01 10:00 to 2026-10-08 10:00")
+    asyncio.run(bot.handle_message(up_msg_s, ctx))
+    assert "Schedule Updated" in up_msg_s.message.reply_text_calls[0]["text"]
+
+    ch2 = asyncio.run(get_challenge(ch_id))
+    assert "2026-10-01" in ch2["starts_at"]
+    assert "2026-10-08" in ch2["ends_at"]
+
+    # 3. Edit Timer via Preset (15 mins)
+    q_t1 = FakeCallbackQuery(user_id=99999, data=f"adm_timer_set:{ch_id}:15")
+    up_t1 = FakeUpdate(user_id=99999, callback_query=q_t1)
+    asyncio.run(handle_admin_callback(up_t1, ctx))
+    ch3 = asyncio.run(get_challenge(ch_id))
+    assert ch3["duration_seconds"] == 900
+
+    # 4. Edit Timer via Custom Minutes
+    q_t2 = FakeCallbackQuery(user_id=99999, data=f"adm_timer_custom:{ch_id}")
+    up_t2 = FakeUpdate(user_id=99999, callback_query=q_t2)
+    asyncio.run(handle_admin_callback(up_t2, ctx))
+    assert "Custom Exam Time Limit" in q_t2.edited_text
+
+    up_msg_t = FakeUpdate(user_id=99999, text="25")
+    asyncio.run(bot.handle_message(up_msg_t, ctx))
+    assert "25 minutes" in up_msg_t.message.reply_text_calls[0]["text"]
+
+    ch4 = asyncio.run(get_challenge(ch_id))
+    assert ch4["duration_seconds"] == 1500
+
+
+
 def test_admin_leaderboard_view_and_monthly_report_top3_builders(monkeypatch):
     from app.challenge.admin import handle_admin_callback
     from app.challenge import service

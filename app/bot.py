@@ -308,6 +308,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "WAITING_FOR_ADMIN_SCHEDULE",
         "WAITING_FOR_CHALLENGE_TITLE",
         "WAITING_FOR_EDIT_CHALLENGE_TITLE",
+        "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE",
+        "WAITING_FOR_EDIT_CHALLENGE_TIMER",
         "WAITING_FOR_ADMIN_SINGLE_QUESTION",
         "WAITING_FOR_ADMIN_CSV",
         "WAITING_FOR_CHALLENGE_SINGLE_QUESTION",
@@ -315,6 +317,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ):
         await set_user_state(user_id, None)
         context.user_data.pop("target_ch_id", None)
+        context.user_data.pop("edit_ch_id", None)
         await update.message.reply_text(
             "❌ Operation cancelled.",
             reply_markup=get_main_menu_keyboard(),
@@ -421,6 +424,106 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🏗️ <b>New Category:</b> {html.escape(category)}",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, "LIVE"),
+        )
+        return
+
+    # Check if admin is updating schedule with custom dates
+    if current_state == "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        ch_id = context.user_data.pop("edit_ch_id", None)
+        if not ch_id:
+            await set_user_state(user_id, None)
+            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            return
+
+        raw = text.strip()
+        parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+        now_dt = datetime.now(timezone.utc)
+        starts_at = None
+        ends_at = None
+
+        try:
+            if len(parts) >= 2:
+                s_str = parts[0]
+                e_str = parts[1]
+                s_dt = datetime.fromisoformat(s_str.replace(" ", "T"))
+                e_dt = datetime.fromisoformat(e_str.replace(" ", "T"))
+                if s_dt.tzinfo is None:
+                    s_dt = s_dt.replace(tzinfo=timezone.utc)
+                if e_dt.tzinfo is None:
+                    e_dt = e_dt.replace(tzinfo=timezone.utc)
+                starts_at = s_dt.isoformat()
+                ends_at = e_dt.isoformat()
+            else:
+                s_dt = datetime.fromisoformat(parts[0].replace(" ", "T"))
+                if s_dt.tzinfo is None:
+                    s_dt = s_dt.replace(tzinfo=timezone.utc)
+                starts_at = s_dt.isoformat()
+                ends_at = (s_dt + timedelta(days=7)).isoformat()
+        except Exception:
+            await update.message.reply_text(
+                "⚠️ <b>Invalid Date/Time Format.</b>\n\n"
+                "Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code>\n"
+                "<i>Example:</i> <code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
+                "<i>(Or send /cancel to abort)</i>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        await set_user_state(user_id, None)
+        status = "LIVE" if s_dt <= now_dt else "SCHEDULED"
+        await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
+        await update_challenge_status(ch_id, status)
+
+        await update.message.reply_text(
+            f"✅ <b>Schedule Updated for Challenge #{ch_id}!</b>\n\n"
+            f"🟢 <b>Starts:</b> <code>{starts_at}</code>\n"
+            f"🏁 <b>Ends:</b> <code>{ends_at}</code>\n"
+            f"🚦 <b>Status:</b> {status}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
+        )
+        return
+
+    # Check if admin is updating allowed exam time limit
+    if current_state == "WAITING_FOR_EDIT_CHALLENGE_TIMER":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        ch_id = context.user_data.pop("edit_ch_id", None)
+        if not ch_id:
+            await set_user_state(user_id, None)
+            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            return
+
+        try:
+            mins = int(text.strip())
+            if mins < 1 or mins > 300:
+                raise ValueError("Minutes out of range")
+        except Exception:
+            await update.message.reply_text(
+                "⚠️ <b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
+                "<i>Example:</i> <code>15</code>\n\n"
+                "<i>(Or send /cancel to abort)</i>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        await set_user_state(user_id, None)
+        dur_secs = mins * 60
+        await update_challenge_details(ch_id, duration_seconds=dur_secs)
+
+        await update.message.reply_text(
+            f"✅ <b>Exam Time Limit Updated for Challenge #{ch_id}!</b>\n\n"
+            f"⏱️ <b>Allowed Test Duration:</b> <code>{mins} minutes total</code>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(ch_id, "DRAFT"),
         )
         return
 
