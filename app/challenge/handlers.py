@@ -26,6 +26,7 @@ from app.challenge.keyboards import (
     get_past_challenges_keyboard,
     get_past_challenge_detail_keyboard,
 )
+from app.db import register_or_update_bot_user
 
 logger = logging.getLogger(__name__)
 
@@ -96,9 +97,12 @@ def _format_question_card(q_data: dict) -> str:
 async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Initiates or displays active community challenges."""
     user = update.effective_user
+    if not user:
+        return
     user_id = user.id
     user_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = user.username or ""
+    await register_or_update_bot_user(user_id, user_name, username)
 
     cb_query = getattr(update, "callback_query", None)
     if cb_query:
@@ -188,6 +192,7 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
     user_id = user.id
     user_name = f"{user.first_name} {user.last_name or ''}".strip()
     username = user.username or ""
+    await register_or_update_bot_user(user_id, user_name, username)
 
     challenge = await get_challenge(ch_id)
     if not challenge or challenge.get("status") == "CANCELLED":

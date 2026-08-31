@@ -614,6 +614,12 @@ async def register_or_get_participant(
     challenge_id: int, telegram_user_id: int, user_name: str = "", username: str = ""
 ) -> Dict[str, Any]:
     """Registers a participant or retrieves existing registration with username tracking."""
+    # Ensure user is registered in global bot users directory
+    try:
+        await db.register_or_update_bot_user(telegram_user_id, user_name, username)
+    except Exception as e:
+        logger.debug(f"Failed to update bot user in register_or_get_participant: {e}")
+
     row = await _execute(
         """
         SELECT id, challenge_id, telegram_user_id, user_name, started_at, completed_at,

@@ -642,8 +642,20 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
         users = await get_all_broadcast_user_ids()
         logger.info(f"📢 Initiating broadcast to {len(users)} registered users: {users}")
+
+        if not users:
+            await query.edit_message_text(
+                "⚠️ <b>No Registered Bot Members Found</b>\n\n"
+                "Telegram requires members to send /start to the bot at least once before the bot can message them.\n\n"
+                "Once members interact with the bot, they will be reachable via broadcast.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_panel_keyboard(),
+            )
+            return
+
         sent = 0
         failed = 0
+        fail_reasons = []
 
         for uid in users:
             try:
@@ -657,14 +669,20 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             except Exception as e:
                 logger.warning(f"⚠️ Broadcast send failed for user {uid}: {e}")
                 failed += 1
+                fail_reasons.append(f"• ID <code>{uid}</code>: {html.escape(str(e))}")
 
         context.user_data.pop("bcast_text", None)
 
+        err_block = ""
+        if fail_reasons:
+            preview_errs = "\n".join(fail_reasons[:3])
+            err_block = f"\n\n⚠️ <b>Delivery Issues ({failed}):</b>\n{preview_errs}"
+
         await query.edit_message_text(
             f"📢 <b>Broadcast Complete!</b>\n\n"
-            f"✅ <b>Delivered Successfully:</b> <code>{sent}</code>\n"
-            f"⚠️ <b>Failed / Blocked:</b> <code>{failed}</code>\n\n"
-            f"<i>The announcement has been broadcast to all community members.</i>",
+            f"✅ <b>Delivered Successfully:</b> <code>{sent}</code> members\n"
+            f"⚠️ <b>Failed / Blocked:</b> <code>{failed}</code>{err_block}\n\n"
+            f"<i>The announcement has been broadcast to all reachable community members.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_panel_keyboard(),
         )

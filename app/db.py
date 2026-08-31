@@ -810,7 +810,7 @@ async def get_all_broadcast_user_ids() -> list[int]:
             SELECT telegram_user_id AS user_id FROM challenge_participants
             UNION
             SELECT user_chat_id AS user_id FROM admin_reply_mappings
-        ) WHERE user_id IS NOT NULL AND user_id > 0
+        ) AS combined_users WHERE user_id IS NOT NULL AND user_id > 0
     """
     if is_postgres():
         import psycopg
