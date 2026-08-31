@@ -273,7 +273,7 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Cleans up previous messages from the chat, resets user state, and displays a fresh /start menu."""
+    """Cleans up previous bot messages from the chat, resets user state, and displays a fresh /start menu."""
     user = update.effective_user
     chat = update.effective_chat
     if user:
@@ -282,19 +282,15 @@ async def clear_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if chat and update.message:
         current_msg_id = update.message.message_id
-        # Delete up to 50 previous messages in this chat
-        msg_ids_to_delete = list(range(max(1, current_msg_id - 50), current_msg_id + 1))
+        # Range of recent messages to delete
+        msg_ids_to_delete = list(range(max(1, current_msg_id - 25), current_msg_id + 1))
 
-        # Try bulk delete first (fastest)
-        try:
-            await context.bot.delete_messages(chat_id=chat.id, message_ids=msg_ids_to_delete)
-        except Exception:
-            # Fallback to concurrent individual message deletion
-            tasks = [
-                context.bot.delete_message(chat_id=chat.id, message_id=mid)
-                for mid in msg_ids_to_delete
-            ]
-            await asyncio.gather(*tasks, return_exceptions=True)
+        # Attempt to delete recent bot messages concurrently
+        tasks = [
+            context.bot.delete_message(chat_id=chat.id, message_id=mid)
+            for mid in msg_ids_to_delete
+        ]
+        await asyncio.gather(*tasks, return_exceptions=True)
 
     await start_command(update, context)
 
