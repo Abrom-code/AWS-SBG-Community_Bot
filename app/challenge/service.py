@@ -2,6 +2,7 @@ import csv
 import io
 import json
 import logging
+import math
 import random
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -908,4 +909,65 @@ async def get_monthly_leaderboard(
         "total_pages": total_pages,
         "has_next": page < total_pages,
         "has_prev": page > 1,
+    }
+
+
+async def get_monthly_analytics_report(season_id: Optional[int] = None) -> Dict[str, Any]:
+    """Compiles an executive monthly report covering engagement, challenges, accuracy, and champions."""
+    now = datetime.now(timezone.utc)
+    month_name = now.strftime("%B %Y")
+
+    # 1. User engagement
+    users_row = await _execute("SELECT COUNT(*) FROM bot_users", fetch="one")
+    total_users = users_row[0] if users_row else 0
+
+    # 2. Challenge statistics
+    ch_row = await _execute("SELECT COUNT(*) FROM challenges", fetch="one")
+    total_challenges = ch_row[0] if ch_row else 0
+
+    part_row = await _execute(
+        """
+        SELECT COUNT(*), COALESCE(SUM(score), 0), COALESCE(AVG(score), 0),
+               COALESCE(SUM(correct_count), 0), COALESCE(SUM(answered_count), 0)
+        FROM challenge_participants
+        WHERE status = 'COMPLETED'
+        """,
+        fetch="one",
+    )
+    total_attempts = part_row[0] if part_row else 0
+    total_score = round(float(part_row[1]), 1) if part_row else 0.0
+    avg_score = round(float(part_row[2]), 1) if part_row else 0.0
+    total_correct = part_row[3] if part_row else 0
+    total_answered = part_row[4] if part_row else 0
+    accuracy_pct = round((total_correct / total_answered * 100), 1) if total_answered > 0 else 0.0
+
+    # 3. Community Feedback & Support
+    fb_row = await _execute("SELECT COUNT(*) FROM feedback_submissions", fetch="one")
+    feedback_count = fb_row[0] if fb_row else 0
+
+    reply_row = await _execute("SELECT COUNT(*) FROM admin_reply_mappings", fetch="one")
+    reply_count = reply_row[0] if reply_row else 0
+
+    # 4. Question Bank
+    q_row = await _execute("SELECT COUNT(*) FROM questions WHERE is_active = 1 OR is_active = TRUE", fetch="one")
+    question_count = q_row[0] if q_row else 0
+
+    # 5. Top Champions
+    monthly_lb = await get_monthly_leaderboard(season_id=season_id, limit=3)
+    champions = monthly_lb.get("entries", [])
+
+    return {
+        "month_name": month_name,
+        "total_users": total_users,
+        "total_challenges": total_challenges,
+        "total_attempts": total_attempts,
+        "total_score": total_score,
+        "avg_score": avg_score,
+        "total_correct": total_correct,
+        "total_answered": total_answered,
+        "accuracy_pct": accuracy_pct,
+        "feedback_count": feedback_count,
+        "reply_count": reply_count,
+        "question_count": question_count,
+        "champions": champions,
     }

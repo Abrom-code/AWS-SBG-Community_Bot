@@ -19,6 +19,7 @@ from app.challenge.service import (
     list_questions,
     import_questions_from_csv,
     get_challenge_questions,
+    get_monthly_analytics_report,
 )
 from app.challenge.keyboards import (
     get_admin_panel_keyboard,
@@ -26,6 +27,7 @@ from app.challenge.keyboards import (
     get_admin_schedule_presets_keyboard,
     get_admin_broadcast_presets_keyboard,
     get_admin_broadcast_confirm_keyboard,
+    get_admin_report_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -251,6 +253,55 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             reply_markup=get_challenge_manage_keyboard(ch_id, "CANCELLED"),
         )
 
+    elif data == "adm_report":
+        rep = await get_monthly_analytics_report()
+        month = rep["month_name"]
+        users = rep["total_users"]
+        challenges = rep["total_challenges"]
+        attempts = rep["total_attempts"]
+        total_score = rep["total_score"]
+        avg_score = rep["avg_score"]
+        accuracy = rep["accuracy_pct"]
+        correct = rep["total_correct"]
+        answered = rep["total_answered"]
+        feedbacks = rep["feedback_count"]
+        replies = rep["reply_count"]
+        questions = rep["question_count"]
+        champions = rep["champions"]
+
+        champs_text = ""
+        if champions:
+            medals = ["🥇", "🥈", "🥉"]
+            for idx, c in enumerate(champions[:3]):
+                uname = f"@{html.escape(c['username'])}" if c.get("username") else html.escape(c["user_name"])
+                champs_text += f"• {medals[idx]} <b>{uname}</b> — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
+        else:
+            champs_text = "• <i>No completed challenge attempts recorded yet this month.</i>\n"
+
+        report_card = (
+            f"📊 <b>AWS Student Builder Monthly Activity Report</b>\n"
+            f"📅 <b>Period:</b> {month}\n\n"
+            f"👥 <b>Community Engagement:</b>\n"
+            f"• Registered Bot Members: <code>{users}</code>\n"
+            f"• Feedback Tickets Received: <code>{feedbacks}</code>\n"
+            f"• Staff Replies Delivered: <code>{replies}</code>\n\n"
+            f"⚡ <b>Challenges & Competitions:</b>\n"
+            f"• Total Challenges: <code>{challenges}</code>\n"
+            f"• Total Submissions: <code>{attempts}</code>\n"
+            f"• Community Accuracy: <code>{accuracy}%</code> ({correct}/{answered})\n"
+            f"• Average Score: <code>{avg_score} pts</code>\n"
+            f"• Total Points Earned: <code>{total_score} pts</code>\n"
+            f"• Active Questions in Bank: <code>{questions}</code>\n\n"
+            f"🏆 <b>Top Champions of the Month:</b>\n"
+            f"{champs_text}\n"
+            f"<i>AWS Student Builder Group • AASTU</i>"
+        )
+        await query.edit_message_text(
+            report_card,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_report_keyboard(),
+        )
+
     elif data == "adm_broadcast":
         users = await get_all_broadcast_user_ids()
         count = len(users)
@@ -330,6 +381,45 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             preview_text,
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_broadcast_confirm_keyboard("preset_leaderboard"),
+        )
+
+    elif data == "adm_bcast_preset:report":
+        rep = await get_monthly_analytics_report()
+        month = rep["month_name"]
+        champions = rep["champions"]
+        champs_text = ""
+        if champions:
+            medals = ["🥇", "🥈", "🥉"]
+            for idx, c in enumerate(champions[:3]):
+                uname = f"@{c['username']}" if c.get("username") else c["user_name"]
+                champs_text += f"{medals[idx]} <b>{uname}</b> — <code>{c['total_score']} pts</code>\n"
+        else:
+            champs_text = "• <i>Check /leaderboard for latest championship rankings!</i>\n"
+
+        bcast_text = (
+            f"📊 <b>AWS SBG Monthly Season Wrap-Up ({month})</b>\n\n"
+            f"Awesome work builders! Here is what our community achieved this month:\n\n"
+            f"👥 <b>Active Members:</b> <code>{rep['total_users']}</code>\n"
+            f"⚡ <b>Challenges Completed:</b> <code>{rep['total_attempts']}</code>\n"
+            f"🎯 <b>Community Accuracy:</b> <code>{rep['accuracy_pct']}%</code>\n"
+            f"🏆 <b>Total Points Earned:</b> <code>{rep['total_score']} pts</code>\n\n"
+            f"🌟 <b>Top Champions of the Month:</b>\n"
+            f"{champs_text}\n"
+            f"👉 Tap <b>/challenge</b> and <b>/leaderboard</b> to participate in upcoming events!\n\n"
+            f"📢 @AWSAASTU"
+        )
+        context.user_data["bcast_text"] = bcast_text
+        users = await get_all_broadcast_user_ids()
+        preview_text = (
+            f"📢 <b>BROADCAST PREVIEW (Monthly Report)</b>\n"
+            f"👥 <b>Target Audience:</b> <code>{len(users)}</code> members\n\n"
+            f"<blockquote>{bcast_text}</blockquote>\n\n"
+            f"Ready to deliver this report announcement to the community?"
+        )
+        await query.edit_message_text(
+            preview_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_broadcast_confirm_keyboard("preset_report"),
         )
 
     elif data.startswith("adm_bcast_send:"):

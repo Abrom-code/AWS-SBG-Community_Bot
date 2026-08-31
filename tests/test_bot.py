@@ -463,6 +463,31 @@ def test_admin_broadcast_presets_and_workflow(monkeypatch):
     assert len(ctx3.bot.send_message_calls) >= 2
 
 
+def test_admin_monthly_report_callback_and_broadcast(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+
+    # 1. Open monthly report
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_report")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    ctx1 = FakeContext()
+
+    asyncio.run(handle_admin_callback(up1, ctx1))
+    assert "AWS Student Builder Monthly Activity Report" in q1.edited_text
+    assert q1.reply_markup is not None
+
+    # 2. Select broadcast report preset
+    q2 = FakeCallbackQuery(user_id=99999, data="adm_bcast_preset:report")
+    up2 = FakeUpdate(user_id=99999, callback_query=q2)
+    ctx2 = FakeContext()
+
+    asyncio.run(handle_admin_callback(up2, ctx2))
+    assert "BROADCAST PREVIEW (Monthly Report)" in q2.edited_text
+    assert "bcast_text" in ctx2.user_data
+
+
+
 
 
 

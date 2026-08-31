@@ -168,8 +168,19 @@ def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("❓ Question Bank", callback_data="adm_qbank"),
             ],
             [
+                InlineKeyboardButton("📊 Monthly Report", callback_data="adm_report"),
                 InlineKeyboardButton("📢 Broadcast Notification", callback_data="adm_broadcast"),
             ],
+        ]
+    )
+
+
+def get_admin_report_keyboard() -> InlineKeyboardMarkup:
+    """Action buttons for the Monthly Report view."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("📢 Broadcast Summary to Community", callback_data="adm_bcast_preset:report")],
+            [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
         ]
     )
 
@@ -180,6 +191,7 @@ def get_admin_broadcast_presets_keyboard() -> InlineKeyboardMarkup:
         [
             [InlineKeyboardButton("🚀 Announce Live Challenge", callback_data="adm_bcast_preset:challenge")],
             [InlineKeyboardButton("🏆 Announce Leaderboard Standings", callback_data="adm_bcast_preset:leaderboard")],
+            [InlineKeyboardButton("📊 Announce Monthly Season Wrap-Up", callback_data="adm_bcast_preset:report")],
             [InlineKeyboardButton("✍️ Custom Announcement Message", callback_data="adm_bcast_custom")],
             [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
         ]

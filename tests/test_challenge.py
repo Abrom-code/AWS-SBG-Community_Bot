@@ -343,21 +343,41 @@ def test_challenge_start_end_time_transitions_and_past_challenges():
     assert q_data["question_number"] == 1
 
 
-def test_get_all_broadcast_user_ids():
+def test_monthly_analytics_report_compilation():
     asyncio.run(db.reset_db())
-    # User 1: from user_states
-    asyncio.run(db.set_user_state(1001, "ACTIVE"))
-    # User 2: from feedback_submissions
-    asyncio.run(db.save_feedback_submission(message_id=901, sender_chat_id=1002, sender_name="User2"))
-    # User 3: from challenge_participants
-    ch_id = asyncio.run(service.create_challenge(title="Test Quiz"))
-    asyncio.run(service.register_or_get_participant(ch_id, 1003, "User3"))
+    asyncio.run(service.import_questions_from_csv(SAMPLE_CSV))
 
-    uids = asyncio.run(db.get_all_broadcast_user_ids())
-    assert 1001 in uids
-    assert 1002 in uids
-    assert 1003 in uids
-    assert len(uids) >= 3
+    # 1. Register a user
+    asyncio.run(db.register_or_update_bot_user(101, "Builder 1", "builder_one"))
+
+    # 2. Create and complete a challenge
+    ch_id = asyncio.run(service.create_challenge(title="Monthly Test Challenge"))
+    asyncio.run(service.link_questions_to_challenge(ch_id))
+    asyncio.run(service.register_or_get_participant(ch_id, 101, "Builder 1", "builder_one"))
+    asyncio.run(service.start_participant_quiz(ch_id, 101))
+    for q_idx in range(3):
+        asyncio.run(service.get_next_question_for_participant(ch_id, 101))
+        p_info = asyncio.run(service.register_or_get_participant(ch_id, 101))
+        corr_key = p_info["current_option_order"]["_display_correct"]
+        asyncio.run(service.record_answer_and_advance(ch_id, 101, corr_key, q_idx))
+
+    # 3. Add feedback and admin reply
+    asyncio.run(db.save_feedback_submission(message_id=999, sender_chat_id=101, sender_name="Builder 1"))
+    asyncio.run(db.save_admin_reply_mapping(admin_message_id=888, user_chat_id=101, delivered_message_id=777))
+
+    # 4. Generate report
+    report = asyncio.run(service.get_monthly_analytics_report())
+    assert report["total_users"] >= 1
+    assert report["total_challenges"] >= 1
+    assert report["total_attempts"] == 1
+    assert report["total_score"] > 0
+    assert report["accuracy_pct"] == 100.0
+    assert report["feedback_count"] == 1
+    assert report["reply_count"] == 1
+    assert report["question_count"] == 3
+    assert len(report["champions"]) == 1
+    assert report["champions"][0]["telegram_user_id"] == 101
+
 
 
 
