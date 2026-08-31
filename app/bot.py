@@ -514,6 +514,40 @@ async def handle_user_edited_feedback(update: Update, context: ContextTypes.DEFA
         logger.error(f"Failed to update edited feedback card in admin group: {e}")
 
 
+async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Gracefully handles any unrecognized slash commands (e.g. /noti, /unknown)."""
+    if not update.message or not update.message.text:
+        return
+
+    user = update.effective_user
+    if user:
+        await register_or_update_bot_user(user.id, user.first_name, user.username)
+
+    raw_text = update.message.text.strip()
+    cmd = html.escape(raw_text.split()[0])
+
+    response_text = (
+        f"❓ <b>Unrecognized Command:</b> <code>{cmd}</code>\n\n"
+        f"I didn't recognize that command. Here are the commands you can use:\n\n"
+        f"⚡ <b>Challenges:</b>\n"
+        f"• /challenge — Take active competition\n"
+        f"• /leaderboard — View championship rankings\n"
+        f"• /archive — Browse past quizzes & practice\n"
+        f"• /rules — Scoring & timing guide\n\n"
+        f"💬 <b>Support & Community:</b>\n"
+        f"• /feedback — Submit feedback to core team\n"
+        f"• /start — Open main menu\n"
+        f"• /help — Full bot guide\n"
+        f"• /cancel — Return to main menu\n\n"
+        f"<i>Tap any command above or choose from the menu below:</i>"
+    )
+    await update.message.reply_text(
+        response_text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_menu_keyboard(),
+    )
+
+
 def create_application(token: str = None):
     """Factory function to build and configure the Telegram application instance."""
     bot_token = token or TELEGRAM_TOKEN
@@ -596,6 +630,14 @@ def create_application(token: str = None):
         MessageHandler(
             filters.TEXT & filters.ChatType.PRIVATE & (~filters.COMMAND),
             handle_message,
+        )
+    )
+
+    # Fallback Unrecognized Commands
+    app.add_handler(
+        MessageHandler(
+            filters.COMMAND & filters.ChatType.PRIVATE,
+            unknown_command_handler,
         )
     )
 

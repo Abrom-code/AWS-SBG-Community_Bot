@@ -487,6 +487,22 @@ def test_admin_monthly_report_callback_and_broadcast(monkeypatch):
     assert "bcast_text" in ctx2.user_data
 
 
+def test_unknown_command_fallback_replies_gracefully():
+    update = FakeUpdate(user_id=12345, text="/notification")
+    context = FakeContext()
+
+    asyncio.run(bot.unknown_command_handler(update, context))
+
+    assert len(update.message.reply_text_calls) == 1
+    resp = update.message.reply_text_calls[0]["text"]
+    assert "Unrecognized Command" in resp
+    assert "/notification" in resp
+    assert "/challenge" in resp
+    assert "/feedback" in resp
+    assert update.message.reply_text_calls[0]["reply_markup"] is not None
+
+
+
 
 
 
