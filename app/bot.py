@@ -39,6 +39,7 @@ from app.challenge.service import (
     update_challenge_details,
     create_question,
     import_questions_from_csv,
+    parse_single_question_text,
 )
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
@@ -428,64 +429,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await set_user_state(user_id, None)
             return
 
-        await set_user_state(user_id, None)
-        lines = [line.strip() for line in text.strip().split("\n") if line.strip()]
-        q_text, opt_a, opt_b, opt_c, opt_d = "", "", "", "", ""
-        answer, category, difficulty, explanation = "A", "General", "MEDIUM", ""
-
-        for line in lines:
-            lower = line.lower()
-            if lower.startswith("a:") or lower.startswith("a."):
-                opt_a = line.split(":", 1)[-1].split(".", 1)[-1].strip()
-            elif lower.startswith("b:") or lower.startswith("b."):
-                opt_b = line.split(":", 1)[-1].split(".", 1)[-1].strip()
-            elif lower.startswith("c:") or lower.startswith("c."):
-                opt_c = line.split(":", 1)[-1].split(".", 1)[-1].strip()
-            elif lower.startswith("d:") or lower.startswith("d."):
-                opt_d = line.split(":", 1)[-1].split(".", 1)[-1].strip()
-            elif lower.startswith("answer:") or lower.startswith("correct:"):
-                answer = line.split(":", 1)[1].strip().upper()
-            elif lower.startswith("category:") or lower.startswith("cat:"):
-                category = line.split(":", 1)[1].strip()
-            elif lower.startswith("difficulty:") or lower.startswith("diff:"):
-                difficulty = line.split(":", 1)[1].strip().upper()
-            elif lower.startswith("explanation:") or lower.startswith("exp:"):
-                explanation = line.split(":", 1)[1].strip()
-            elif not q_text:
-                q_text = line
-
-        if not q_text or not opt_a or not opt_b or not opt_c or not opt_d:
+        parsed = parse_single_question_text(text)
+        if not parsed:
             await update.message.reply_text(
                 "⚠️ <b>Could not parse question format.</b>\n\n"
-                "Please make sure to include:\n"
-                "• Question text\n"
-                "• A: Option 1\n"
-                "• B: Option 2\n"
-                "• C: Option 3\n"
-                "• D: Option 4\n"
-                "• Answer: A/B/C/D",
+                "Please make sure your message includes the question and 4 options:\n\n"
+                "<code>What is Amazon DynamoDB?\n"
+                "A: Relational database\n"
+                "B: Key-value NoSQL database\n"
+                "C: In-memory cache\n"
+                "D: Object storage\n"
+                "Answer: B\n"
+                "Category: Database\n"
+                "Difficulty: EASY\n"
+                "Explanation: DynamoDB is a managed NoSQL key-value store</code>\n\n"
+                "<i>(Or send /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
-                reply_markup=get_main_menu_keyboard(),
+                reply_markup=get_question_bank_actions_keyboard(),
             )
             return
 
+        await set_user_state(user_id, None)
         q_id = await create_question(
-            question_text=q_text,
-            option_a=opt_a,
-            option_b=opt_b,
-            option_c=opt_c,
-            option_d=opt_d,
-            correct_option=answer[0] if answer else "A",
-            category=category,
-            difficulty=difficulty,
-            explanation=explanation,
+            question_text=parsed["question_text"],
+            option_a=parsed["option_a"],
+            option_b=parsed["option_b"],
+            option_c=parsed["option_c"],
+            option_d=parsed["option_d"],
+            correct_option=parsed["correct_option"],
+            category=parsed.get("category", "General"),
+            difficulty=parsed.get("difficulty", "MEDIUM"),
+            base_points=parsed.get("base_points", 10.0),
+            explanation=parsed.get("explanation", ""),
         )
 
         await update.message.reply_text(
             f"✅ <b>Question #{q_id} Added to Question Bank!</b>\n\n"
-            f"🧩 <b>Question:</b> {html.escape(q_text)}\n"
-            f"🎯 <b>Correct Answer:</b> <code>{answer[0]}</code>\n"
-            f"🏷️ <b>Category:</b> {html.escape(category)} ({difficulty})",
+            f"❓ <b>Question:</b> {html.escape(parsed['question_text'])}\n"
+            f"🎯 <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
+            f"🏷️ <b>Category:</b> {html.escape(parsed.get('category', 'General'))} | <b>Difficulty:</b> {parsed.get('difficulty', 'MEDIUM')}\n\n"
+            f"<i>This question is now available in your Question Bank to be linked to challenges.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_question_bank_actions_keyboard(),
         )

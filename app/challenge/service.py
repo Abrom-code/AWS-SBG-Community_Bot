@@ -10,7 +10,122 @@ from typing import Any, Dict, List, Optional, Tuple
 import app.db as db
 from app.challenge.scoring import calculate_score, calculate_exam_score
 
+import re
+
 logger = logging.getLogger(__name__)
+
+
+def parse_single_question_text(raw_text: str) -> Optional[Dict[str, Any]]:
+    """Robustly parses a single question from various user input formats.
+
+    Supports:
+    - Standard multiline (Question, A/B/C/D, Answer, Category, Difficulty, Explanation)
+    - Option prefixes: A:, A., A), Option A:, 1., 1), etc.
+    - Answer prefixes: Answer: B, Correct: B, Ans: B, etc.
+    - Single-line comma-separated CSV format
+    """
+    text = raw_text.strip()
+    if not text:
+        return None
+
+    # 1. Try single-line CSV parse if commas are present and text is short
+    if "," in text and text.count("\n") < 2:
+        try:
+            reader = csv.reader(io.StringIO(text))
+            row = next(reader, None)
+            if row and len(row) >= 6:
+                correct = row[5].strip().upper()
+                if correct in ("A", "B", "C", "D"):
+                    return {
+                        "question_text": row[0].strip(),
+                        "option_a": row[1].strip(),
+                        "option_b": row[2].strip(),
+                        "option_c": row[3].strip(),
+                        "option_d": row[4].strip(),
+                        "correct_option": correct,
+                        "difficulty": row[6].strip().upper() if len(row) > 6 and row[6].strip() else "MEDIUM",
+                        "category": row[7].strip() if len(row) > 7 and row[7].strip() else "General",
+                        "base_points": float(row[8].strip()) if len(row) > 8 and row[8].strip().replace(".", "", 1).isdigit() else 10.0,
+                        "explanation": row[9].strip() if len(row) > 9 else "",
+                    }
+        except Exception:
+            pass
+
+    # 2. Parse multiline format
+    lines = [line.strip() for line in text.split("\n") if line.strip()]
+    q_text = ""
+    opt_a, opt_b, opt_c, opt_d = "", "", "", ""
+    answer = ""
+    category = "General"
+    difficulty = "MEDIUM"
+    explanation = ""
+
+    for line in lines:
+        # Check Option A / 1
+        m_a = re.match(r"^(?:option\s+)?(?:a|1)[\.\:\)\-]\s*(.*)$", line, re.IGNORECASE)
+        # Check Option B / 2
+        m_b = re.match(r"^(?:option\s+)?(?:b|2)[\.\:\)\-]\s*(.*)$", line, re.IGNORECASE)
+        # Check Option C / 3
+        m_c = re.match(r"^(?:option\s+)?(?:c|3)[\.\:\)\-]\s*(.*)$", line, re.IGNORECASE)
+        # Check Option D / 4
+        m_d = re.match(r"^(?:option\s+)?(?:d|4)[\.\:\)\-]\s*(.*)$", line, re.IGNORECASE)
+
+        m_ans = re.match(r"^(?:answer|correct(?:\s*option)?|ans)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
+        m_cat = re.match(r"^(?:category|cat)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
+        m_diff = re.match(r"^(?:difficulty|diff)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
+        m_exp = re.match(r"^(?:explanation|exp|reason)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
+        m_q = re.match(r"^(?:question|q)[\.\:\-]?\s*(.*)$", line, re.IGNORECASE)
+
+        if m_a:
+            opt_a = m_a.group(1).strip()
+        elif m_b:
+            opt_b = m_b.group(1).strip()
+        elif m_c:
+            opt_c = m_c.group(1).strip()
+        elif m_d:
+            opt_d = m_d.group(1).strip()
+        elif m_ans:
+            val = m_ans.group(1).strip().upper()
+            if val:
+                num_map = {"1": "A", "2": "B", "3": "C", "4": "D"}
+                for k, v in num_map.items():
+                    if val.startswith(k):
+                        answer = v
+                        break
+                if not answer:
+                    found = re.search(r"[ABCD]", val)
+                    if found:
+                        answer = found.group(0)
+        elif m_cat:
+            category = m_cat.group(1).strip() or "General"
+        elif m_diff:
+            d_val = m_diff.group(1).strip().upper()
+            if d_val in ("EASY", "MEDIUM", "HARD"):
+                difficulty = d_val
+        elif m_exp:
+            explanation = m_exp.group(1).strip()
+        elif m_q:
+            if not q_text:
+                q_text = m_q.group(1).strip()
+        else:
+            if not q_text and not line.startswith("```") and not line.startswith("#"):
+                q_text = line
+
+    if q_text and opt_a and opt_b and opt_c and opt_d:
+        return {
+            "question_text": q_text,
+            "option_a": opt_a,
+            "option_b": opt_b,
+            "option_c": opt_c,
+            "option_d": opt_d,
+            "correct_option": answer if answer in ("A", "B", "C", "D") else "A",
+            "category": category,
+            "difficulty": difficulty,
+            "base_points": 10.0,
+            "explanation": explanation,
+        }
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -28,22 +143,23 @@ async def _execute(query: str, params: tuple = (), fetch: str = "none") -> Any:
             if db.DATABASE_URL.startswith("postgres://")
             else db.DATABASE_URL
         )
-        # Convert ? placeholders to %s for PostgreSQL
-        pg_query = query.replace("?", "%s")
         try:
             async with await psycopg.AsyncConnection.connect(url) as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute(pg_query, params)
+                    await cur.execute(query.replace("?", "%s"), params)
                     if fetch == "one":
                         return await cur.fetchone()
                     elif fetch == "all":
                         return await cur.fetchall()
                     elif fetch == "id":
-                        return cur.lastrowid
+                        res = await cur.fetchone()
+                        last_id = res[0] if res else None
+                        await conn.commit()
+                        return last_id
                     await conn.commit()
         except Exception as e:
-            logger.error(f"Postgres execution error on query [{pg_query}]: {e}")
-            raise
+            logger.error(f"Postgres execution error on query '{query}': {e}")
+            raise e
     else:
         import aiosqlite
 
@@ -55,12 +171,13 @@ async def _execute(query: str, params: tuple = (), fetch: str = "none") -> Any:
                     elif fetch == "all":
                         return await cur.fetchall()
                     elif fetch == "id":
+                        last_id = cur.lastrowid
                         await conn.commit()
-                        return cur.lastrowid
+                        return last_id
                     await conn.commit()
         except Exception as e:
-            logger.error(f"SQLite execution error on query [{query}]: {e}")
-            raise
+            logger.error(f"SQLite execution error on query '{query}': {e}")
+            raise e
 
 
 # ---------------------------------------------------------------------------
@@ -488,6 +605,23 @@ async def import_questions_from_csv(csv_text: str) -> Dict[str, Any]:
                 imported += 1
             except Exception as e:
                 errors.append(f"Row {line_num}: {str(e)}")
+
+    if imported == 0:
+        single = parse_single_question_text(text_clean)
+        if single:
+            await create_question(
+                question_text=single["question_text"],
+                option_a=single["option_a"],
+                option_b=single["option_b"],
+                option_c=single["option_c"],
+                option_d=single["option_d"],
+                correct_option=single["correct_option"],
+                category=single.get("category", "General"),
+                difficulty=single.get("difficulty", "MEDIUM"),
+                base_points=single.get("base_points", 10.0),
+                explanation=single.get("explanation", ""),
+            )
+            return {"imported": 1, "errors": []}
 
     return {"imported": imported, "errors": errors}
 

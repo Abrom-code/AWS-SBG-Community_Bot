@@ -379,5 +379,48 @@ def test_monthly_analytics_report_compilation():
     assert report["champions"][0]["telegram_user_id"] == 101
 
 
+def test_parse_single_question_text_formats():
+    sample1 = """What is Amazon DynamoDB?
+A: Relational database
+B: Key-value NoSQL database
+C: In-memory cache
+D: Object storage
+Answer: B
+Category: Database
+Difficulty: EASY
+Explanation: DynamoDB is a managed NoSQL key-value store"""
+
+    res1 = service.parse_single_question_text(sample1)
+    assert res1 is not None
+    assert res1["question_text"] == "What is Amazon DynamoDB?"
+    assert res1["option_a"] == "Relational database"
+    assert res1["option_b"] == "Key-value NoSQL database"
+    assert res1["option_c"] == "In-memory cache"
+    assert res1["option_d"] == "Object storage"
+    assert res1["correct_option"] == "B"
+    assert res1["category"] == "Database"
+    assert res1["difficulty"] == "EASY"
+    assert res1["explanation"] == "DynamoDB is a managed NoSQL key-value store"
+
+    sample2 = """Question: What service provides object storage?
+Option A. AWS Lambda
+Option B. Amazon EC2
+Option C. Amazon S3
+Option D. Amazon RDS
+Correct: C"""
+
+    res2 = service.parse_single_question_text(sample2)
+    assert res2 is not None
+    assert res2["correct_option"] == "C"
+    assert res2["option_c"] == "Amazon S3"
+
+    sample3 = "What is S3?,Object Storage,Block Storage,Compute,Database,A,EASY,Storage,10,S3 is scalable object storage"
+    res3 = service.parse_single_question_text(sample3)
+    assert res3 is not None
+    assert res3["correct_option"] == "A"
+    assert res3["option_a"] == "Object Storage"
+
+
+
 
 
