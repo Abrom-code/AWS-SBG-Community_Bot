@@ -397,6 +397,19 @@ def test_challenge_hub_and_feedback_hub_commands():
     assert "📝 Submit Feedback" in [b.text for row in update.message.reply_text_calls[1]["reply_markup"].keyboard for b in row]
 
 
+def test_direct_feedback_and_support_navigation():
+    asyncio.run(db.reset_db())
+    update = FakeUpdate(user_id=777, text="💬 Feedback & Support")
+    context = FakeContext()
+
+    asyncio.run(bot.handle_message(update, context))
+    assert len(update.message.reply_text_calls) == 1
+    assert "Please type your feedback, suggestion, or issue below" in update.message.reply_text_calls[0]["text"]
+    
+    state = asyncio.run(db.get_user_state(777))
+    assert state == bot.WAITING_FOR_FEEDBACK
+
+
 def test_scoring_rules_command_renders_guide():
     update = FakeUpdate(user_id=123)
     context = FakeContext()

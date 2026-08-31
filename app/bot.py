@@ -341,8 +341,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle Top-Level Navigation
     if text in ("⚡ Challenge Center", "⚡ Challenges"):
         return await challenge_hub_command(update, context)
-    elif text in ("💬 Feedback & Support", "💬 Feedback"):
-        return await feedback_hub_command(update, context)
+    elif text in ("💬 Feedback & Support", "💬 Feedback", "💬 Support", "Support", "Feedback", "📝 Submit Feedback", "📝 Submit New Feedback"):
+        return await feedback_command(update, context)
     elif text in ("ℹ️ About Us", "ℹ️ About Support", "ℹ️ About"):
         return await about_command(update, context)
     elif text == "❓ Help":
@@ -359,10 +359,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await past_challenges_command(update, context)
     elif text in ("📖 Scoring & Rules", "📖 Rules", "ℹ️ Scoring Rules"):
         return await scoring_rules_command(update, context)
-
-    # Handle Feedback Sub-Menu
-    elif text in ("📝 Submit Feedback", "📝 Submit New Feedback"):
-        return await feedback_command(update, context)
 
     # Check user state
     current_state = await get_user_state(user_id)
@@ -945,6 +941,7 @@ def create_application(token: str = None):
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
     app.add_handler(CommandHandler("feedback", feedback_command))
+    app.add_handler(CommandHandler("support", feedback_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
     # Challenge & Leaderboard Commands
