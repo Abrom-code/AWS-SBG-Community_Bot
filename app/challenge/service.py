@@ -387,54 +387,107 @@ async def create_question(
 async def import_questions_from_csv(csv_text: str) -> Dict[str, Any]:
     """Parses a CSV string and inserts questions into the question bank.
 
-    Expected CSV columns:
+    Supports both CSV with headers and raw headerless CSV lines:
     question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation
     """
     imported = 0
     errors = []
-    f = io.StringIO(csv_text.strip())
-    reader = csv.DictReader(f)
+    text_clean = csv_text.strip()
+    if not text_clean:
+        return {"imported": 0, "errors": ["Empty CSV text provided."]}
 
-    for line_num, row in enumerate(reader, start=2):
-        try:
-            # Normalize column keys
-            normalized = {k.strip().lower(): v for k, v in row.items() if k}
-            q_text = normalized.get("question") or normalized.get("question_text")
-            opt_a = normalized.get("option_a") or normalized.get("a")
-            opt_b = normalized.get("option_b") or normalized.get("b")
-            opt_c = normalized.get("option_c") or normalized.get("c")
-            opt_d = normalized.get("option_d") or normalized.get("d")
-            correct = normalized.get("correct") or normalized.get("correct_option") or normalized.get("answer")
+    # Check if first line contains header keywords
+    first_line = text_clean.split("\n")[0].lower()
+    has_header = "question" in first_line or "option_a" in first_line
 
-            if not all([q_text, opt_a, opt_b, opt_c, opt_d, correct]):
-                errors.append(f"Row {line_num}: Missing required question or option fields")
+    if has_header:
+        f = io.StringIO(text_clean)
+        reader = csv.DictReader(f)
+        for line_num, row in enumerate(reader, start=2):
+            try:
+                normalized = {k.strip().lower(): v for k, v in row.items() if k}
+                q_text = normalized.get("question") or normalized.get("question_text")
+                opt_a = normalized.get("option_a") or normalized.get("a")
+                opt_b = normalized.get("option_b") or normalized.get("b")
+                opt_c = normalized.get("option_c") or normalized.get("c")
+                opt_d = normalized.get("option_d") or normalized.get("d")
+                correct = normalized.get("correct") or normalized.get("correct_option") or normalized.get("answer")
+
+                if not all([q_text, opt_a, opt_b, opt_c, opt_d, correct]):
+                    errors.append(f"Row {line_num}: Missing required question or option fields")
+                    continue
+
+                correct_clean = correct.strip().upper()
+                if correct_clean not in ("A", "B", "C", "D"):
+                    errors.append(f"Row {line_num}: Invalid correct option '{correct}' (must be A, B, C, or D)")
+                    continue
+
+                diff = (normalized.get("difficulty") or "MEDIUM").strip().upper()
+                cat = (normalized.get("category") or "General").strip()
+                pts = float(normalized.get("points") or normalized.get("base_points") or 10.0)
+                exp = (normalized.get("explanation") or "").strip()
+
+                await create_question(
+                    question_text=q_text,
+                    option_a=opt_a,
+                    option_b=opt_b,
+                    option_c=opt_c,
+                    option_d=opt_d,
+                    correct_option=correct_clean,
+                    category=cat,
+                    difficulty=diff,
+                    base_points=pts,
+                    explanation=exp,
+                )
+                imported += 1
+            except Exception as e:
+                errors.append(f"Row {line_num}: {str(e)}")
+    else:
+        # Headerless positional CSV
+        f = io.StringIO(text_clean)
+        reader = csv.reader(f)
+        for line_num, row in enumerate(reader, start=1):
+            if not row or not any(field.strip() for field in row):
                 continue
-
-            correct_clean = correct.strip().upper()
-            if correct_clean not in ("A", "B", "C", "D"):
-                errors.append(f"Row {line_num}: Invalid correct option '{correct}' (must be A, B, C, or D)")
+            if len(row) < 6:
+                errors.append(f"Row {line_num}: Expected at least 6 columns (question, A, B, C, D, answer), got {len(row)}")
                 continue
+            try:
+                q_text = row[0].strip()
+                opt_a = row[1].strip()
+                opt_b = row[2].strip()
+                opt_c = row[3].strip()
+                opt_d = row[4].strip()
+                correct_clean = row[5].strip().upper()
 
-            diff = (normalized.get("difficulty") or "MEDIUM").strip().upper()
-            cat = (normalized.get("category") or "General").strip()
-            pts = float(normalized.get("points") or normalized.get("base_points") or 10.0)
-            exp = (normalized.get("explanation") or "").strip()
+                if not all([q_text, opt_a, opt_b, opt_c, opt_d, correct_clean]):
+                    errors.append(f"Row {line_num}: Missing required question or option fields")
+                    continue
 
-            await create_question(
-                question_text=q_text,
-                option_a=opt_a,
-                option_b=opt_b,
-                option_c=opt_c,
-                option_d=opt_d,
-                correct_option=correct_clean,
-                category=cat,
-                difficulty=diff,
-                base_points=pts,
-                explanation=exp,
-            )
-            imported += 1
-        except Exception as e:
-            errors.append(f"Row {line_num}: {str(e)}")
+                if correct_clean not in ("A", "B", "C", "D"):
+                    errors.append(f"Row {line_num}: Invalid correct option '{row[5]}' (must be A, B, C, or D)")
+                    continue
+
+                diff = row[6].strip().upper() if len(row) > 6 and row[6].strip() else "MEDIUM"
+                cat = row[7].strip() if len(row) > 7 and row[7].strip() else "General"
+                pts = float(row[8].strip()) if len(row) > 8 and row[8].strip().replace(".", "", 1).isdigit() else 10.0
+                exp = row[9].strip() if len(row) > 9 else ""
+
+                await create_question(
+                    question_text=q_text,
+                    option_a=opt_a,
+                    option_b=opt_b,
+                    option_c=opt_c,
+                    option_d=opt_d,
+                    correct_option=correct_clean,
+                    category=cat,
+                    difficulty=diff,
+                    base_points=pts,
+                    explanation=exp,
+                )
+                imported += 1
+            except Exception as e:
+                errors.append(f"Row {line_num}: {str(e)}")
 
     return {"imported": imported, "errors": errors}
 

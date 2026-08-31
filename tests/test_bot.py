@@ -682,6 +682,39 @@ def test_admin_leaderboard_view_and_monthly_report_top3_builders(monkeypatch):
     assert "[<code>101</code>]" in q_weekly.edited_text
 
 
+def test_admin_paste_csv_text_import(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import list_questions
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    asyncio.run(db.reset_db())
+
+    # 1. Tap Import CSV button
+    q_csv = FakeCallbackQuery(user_id=99999, data="adm_import_csv")
+    up_csv = FakeUpdate(user_id=99999, callback_query=q_csv)
+    ctx_csv = FakeContext()
+    asyncio.run(handle_admin_callback(up_csv, ctx_csv))
+    assert "Import Question Bank via CSV" in q_csv.edited_text
+
+    # 2. Paste raw CSV lines
+    csv_payload = (
+        "What is DynamoDB?,NoSQL Database,Relational DB,Object Storage,Queue,A,MEDIUM,Database,10,Managed NoSQL\n"
+        "What is SQS?,Message Queue,Compute,Cache,DNS,A,EASY,Application,10,Decoupled queue"
+    )
+    up_msg = FakeUpdate(user_id=99999, text=csv_payload)
+    ctx_msg = FakeContext()
+    asyncio.run(bot.handle_message(up_msg, ctx_msg))
+
+    assert len(up_msg.message.reply_text_calls) > 0
+    resp_text = up_msg.message.reply_text_calls[0]["text"]
+    assert "Questions Imported Successfully!" in resp_text
+    assert "<code>2</code>" in resp_text
+
+    questions = asyncio.run(list_questions())
+    assert len(questions) == 2
+
+
+
 
 
 

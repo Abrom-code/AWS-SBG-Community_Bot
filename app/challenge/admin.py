@@ -239,15 +239,18 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data == "adm_import_csv":
+        await set_user_state(user.id, "WAITING_FOR_ADMIN_CSV")
         await query.edit_message_text(
             "📥 <b>Import Question Bank via CSV</b>\n\n"
-            "Please send a <b>.csv file</b> as a Telegram document, or reply with raw CSV text.\n\n"
-            "<b>Required Columns:</b>\n"
+            "You can:\n"
+            "1. <b>Paste raw CSV lines</b> directly as a message.\n"
+            "2. Or <b>upload a .csv file</b> as a Telegram document.\n\n"
+            "<b>Format:</b>\n"
             "<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>\n\n"
             "<i>Example:</i>\n"
-            "<code>What is S3?,Object Storage,Block Storage,Compute,Database,A,EASY,Storage,10,S3 is scalable object storage</code>",
+            "<code>What is S3?,Object Storage,Block Storage,Compute,Database,A,EASY,Storage,10,S3 is scalable object storage</code>\n\n"
+            "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_panel_keyboard(),
         )
 
     elif data == "adm_create_ch":

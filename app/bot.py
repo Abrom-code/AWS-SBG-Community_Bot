@@ -37,6 +37,7 @@ from app.challenge.service import (
     update_challenge_status,
     update_challenge_details,
     create_question,
+    import_questions_from_csv,
 )
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
@@ -275,10 +276,11 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "WAITING_FOR_CHALLENGE_TITLE",
         "WAITING_FOR_EDIT_CHALLENGE_TITLE",
         "WAITING_FOR_ADMIN_SINGLE_QUESTION",
+        "WAITING_FOR_ADMIN_CSV",
     ):
         await set_user_state(user_id, None)
         await update.message.reply_text(
-            "❌ Challenge operation cancelled.",
+            "❌ Operation cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
     else:
@@ -458,6 +460,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode=ParseMode.HTML,
             reply_markup=get_question_bank_actions_keyboard(),
         )
+        return
+
+    # Check if admin is importing questions via CSV text
+    if current_state == "WAITING_FOR_ADMIN_CSV":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await set_user_state(user_id, None)
+        result = await import_questions_from_csv(text)
+        imported = result["imported"]
+        errors = result["errors"]
+
+        err_text = ""
+        if errors:
+            err_list = "\n".join(errors[:5])
+            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+
+        if imported > 0:
+            await update.message.reply_text(
+                f"📥 <b>Questions Imported Successfully!</b>\n\n"
+                f"✅ <b>Imported:</b> <code>{imported}</code> questions into the Question Bank.{err_text}\n\n"
+                f"These questions are now active and available for challenges.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_question_bank_actions_keyboard(),
+            )
+        else:
+            await update.message.reply_text(
+                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"Please ensure your text follows the CSV format:\n"
+                f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_question_bank_actions_keyboard(),
+            )
         return
 
     # Check if admin is scheduling a custom date/time for a challenge
