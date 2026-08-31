@@ -502,6 +502,36 @@ def test_unknown_command_fallback_replies_gracefully():
     assert update.message.reply_text_calls[0]["reply_markup"] is not None
 
 
+def test_custom_date_challenge_creation_flow(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+
+    # 1. Trigger custom date schedule callback
+    q = FakeCallbackQuery(user_id=99999, data="adm_cr_custom_date")
+    up = FakeUpdate(user_id=99999, callback_query=q)
+    ctx = FakeContext()
+
+    asyncio.run(handle_admin_callback(up, ctx))
+    assert "Set Custom Challenge Schedule" in q.edited_text
+
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == "WAITING_FOR_ADMIN_SCHEDULE"
+
+    # 2. Send custom date range
+    up_msg = FakeUpdate(user_id=99999, text="2026-09-10 14:00 to 2026-09-17 18:00")
+    ctx_msg = FakeContext()
+
+    asyncio.run(bot.handle_message(up_msg, ctx_msg))
+
+    assert len(up_msg.message.reply_text_calls) == 1
+    resp = up_msg.message.reply_text_calls[0]["text"]
+    assert "Created with Custom Schedule" in resp
+    assert "2026-09-10" in resp
+    assert up_msg.message.reply_text_calls[0]["reply_markup"] is not None
+
+
+
 
 
 

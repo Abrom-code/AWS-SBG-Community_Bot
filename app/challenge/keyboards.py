@@ -149,6 +149,7 @@ def get_admin_schedule_presets_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("🟢 Go LIVE Now (Ends in 7 Days)", callback_data="adm_cr_sched:now:7d")],
             [InlineKeyboardButton("⏳ Start in 1 Hour (Ends in 7 Days)", callback_data="adm_cr_sched:1h:7d")],
             [InlineKeyboardButton("📅 Start Tomorrow (Ends in 7 Days)", callback_data="adm_cr_sched:24h:7d")],
+            [InlineKeyboardButton("✍️ Custom Start & End Date/Time", callback_data="adm_cr_custom_date")],
             [InlineKeyboardButton("🛠️ Save as Draft (No Schedule)", callback_data="adm_cr_sched:draft:0")],
             [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
         ]
@@ -209,15 +210,21 @@ def get_admin_broadcast_confirm_keyboard(target_action: str = "custom") -> Inlin
 
 
 def get_challenge_manage_keyboard(challenge_id: int, status: str) -> InlineKeyboardMarkup:
-    """Status transition buttons for admins."""
+    """Action buttons for challenge management."""
     buttons = []
-    if status == "DRAFT":
+    if status in ("DRAFT", "SCHEDULED"):
         buttons.append([InlineKeyboardButton("🚀 Publish Challenge (Go LIVE)", callback_data=f"adm_pub:{challenge_id}")])
     elif status == "LIVE":
         buttons.append([InlineKeyboardButton("🏁 End Challenge Now", callback_data=f"adm_end:{challenge_id}")])
-    
+
     if status not in ("ENDED", "CANCELLED"):
-        buttons.append([InlineKeyboardButton("❌ Cancel Challenge", callback_data=f"adm_can:{challenge_id}")])
-        
-    buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
+        buttons.append([
+            InlineKeyboardButton("➕ Link More Questions", callback_data=f"adm_link_q:{challenge_id}"),
+            InlineKeyboardButton("❌ Cancel Challenge", callback_data=f"adm_can:{challenge_id}"),
+        ])
+
+    buttons.append([
+        InlineKeyboardButton("📋 View All Challenges", callback_data="adm_list_ch"),
+        InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel"),
+    ])
     return InlineKeyboardMarkup(buttons)

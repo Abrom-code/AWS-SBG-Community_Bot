@@ -115,6 +115,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data == "adm_list_ch":
+        from telegram import InlineKeyboardMarkup
         challenges = await list_challenges(limit=10)
         if not challenges:
             await query.edit_message_text(
@@ -124,18 +125,79 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return
 
-        lines = ["📋 <b>Recent Challenges:</b>\n"]
+        lines = ["📋 <b>Active & Recent Challenges:</b>\n"]
+        buttons = []
         for ch in challenges:
-            status_icon = "🟢" if ch["status"] == "LIVE" else "🟡" if ch["status"] == "SCHEDULED" else "⚪"
+            status_icon = "🟢" if ch["status"] == "LIVE" else "⏳" if ch["status"] == "SCHEDULED" else "🏁" if ch["status"] == "ENDED" else "🛠️"
             title = html.escape(ch["title"])
             lines.append(f"{status_icon} <b>#{ch['id']} {title}</b> — <i>{ch['status']}</i>")
-            lines.append(f"   /manage_{ch['id']}\n")
+            buttons.append([InlineKeyboardButton(f"{status_icon} Manage #{ch['id']} {title[:20]}", callback_data=f"adm_manage:{ch['id']}")])
 
-        lines.append("<i>Type /manage_&lt;id&gt; or click below to return.</i>")
+        buttons.append([InlineKeyboardButton("➕ Create New Challenge", callback_data="adm_create_ch")])
+        buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
         await query.edit_message_text(
             "\n".join(lines),
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_panel_keyboard(),
+            reply_markup=InlineKeyboardMarkup(buttons),
+        )
+
+    elif data.startswith("adm_manage:"):
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        if not ch:
+            await query.answer("⚠️ Challenge not found.", show_alert=True)
+            return
+
+        questions = await get_challenge_questions(ch_id)
+        status = ch["status"]
+        title = html.escape(ch["title"])
+        category = html.escape(ch["category"])
+        starts = ch.get("starts_at") or "Unscheduled (Draft)"
+        ends = ch.get("ends_at") or "None"
+        time_l = ch["question_time_limit_seconds"]
+
+        manage_text = (
+            f"⚙️ <b>Manage Challenge #{ch_id}</b>\n\n"
+            f"⚡ <b>Title:</b> {title}\n"
+            f"🏗️ <b>Category:</b> {category}\n"
+            f"🚦 <b>Current Status:</b> <code>{status}</code>\n"
+            f"⏳ <b>Starts At:</b> <code>{starts}</code>\n"
+            f"🏁 <b>Ends At:</b> <code>{ends}</code>\n"
+            f"⏱️ <b>Time Limit:</b> {time_l}s per question\n"
+            f"📊 <b>Attached Questions:</b> <code>{len(questions)}</code>\n\n"
+            f"<i>Select an action below to update or change status:</i>"
+        )
+        await query.edit_message_text(
+            manage_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
+        )
+
+    elif data.startswith("adm_link_q:"):
+        ch_id = int(data.split(":")[1])
+        linked = await link_questions_to_challenge(ch_id)
+        ch = await get_challenge(ch_id)
+        status = ch["status"] if ch else "LIVE"
+        await query.answer(f"✅ Linked questions! Total: {linked}", show_alert=True)
+        questions = await get_challenge_questions(ch_id)
+        await query.edit_message_text(
+            f"✅ <b>Question Bank Linked to Challenge #{ch_id}!</b>\n\n"
+            f"📊 <b>Total Questions Now Attached:</b> <code>{len(questions)}</code>\n\n"
+            f"Participants will be tested on these randomized questions.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
+        )
+
+    elif data == "adm_cr_custom_date":
+        await set_user_state(user.id, "WAITING_FOR_ADMIN_SCHEDULE")
+        await query.edit_message_text(
+            "📅 <b>Set Custom Challenge Schedule</b>\n\n"
+            "Please type and send the start and end date/time in one of these formats:\n\n"
+            "• <code>2026-09-05 14:00 to 2026-09-12 18:00</code>\n"
+            "• <code>2026-09-05 to 2026-09-12</code>\n"
+            "• <code>2026-09-05T14:00:00 to 2026-09-12T18:00:00</code>\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
         )
 
     elif data == "adm_qbank":

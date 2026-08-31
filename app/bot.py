@@ -31,9 +31,15 @@ from app.challenge.handlers import (
     handle_challenge_rules_callback,
     handle_past_challenges_callback,
 )
+from app.challenge.service import (
+    create_challenge,
+    link_questions_to_challenge,
+    update_challenge_status,
+)
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
     get_admin_broadcast_confirm_keyboard,
+    get_challenge_manage_keyboard,
 )
 from app.challenge.admin import (
     admin_command,
@@ -41,6 +47,7 @@ from app.challenge.admin import (
     handle_admin_csv_document,
     is_admin_user,
 )
+from datetime import datetime, timezone, timedelta
 
 # Load environment variables from .env file
 load_dotenv()
@@ -259,6 +266,12 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Broadcast cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
+    elif current_state == "WAITING_FOR_ADMIN_SCHEDULE":
+        await set_user_state(user_id, None)
+        await update.message.reply_text(
+            "❌ Challenge scheduling cancelled.",
+            reply_markup=get_main_menu_keyboard(),
+        )
     else:
         await update.message.reply_text(
             "🔙 <b>Main Menu</b>\n\nChoose an option below:",
@@ -306,6 +319,79 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Check user state
     current_state = await get_user_state(user_id)
+
+    # Check if admin is scheduling a custom date/time for a challenge
+    if current_state == "WAITING_FOR_ADMIN_SCHEDULE":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await set_user_state(user_id, None)
+        raw = text.strip()
+        parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+        now_dt = datetime.now(timezone.utc)
+        starts_at = None
+        ends_at = None
+
+        try:
+            if len(parts) >= 2:
+                s_str = parts[0]
+                e_str = parts[1]
+                s_dt = datetime.fromisoformat(s_str.replace(" ", "T"))
+                e_dt = datetime.fromisoformat(e_str.replace(" ", "T"))
+                if s_dt.tzinfo is None:
+                    s_dt = s_dt.replace(tzinfo=timezone.utc)
+                if e_dt.tzinfo is None:
+                    e_dt = e_dt.replace(tzinfo=timezone.utc)
+                starts_at = s_dt.isoformat()
+                ends_at = e_dt.isoformat()
+            elif len(parts) == 1:
+                s_dt = datetime.fromisoformat(parts[0].replace(" ", "T"))
+                if s_dt.tzinfo is None:
+                    s_dt = s_dt.replace(tzinfo=timezone.utc)
+                starts_at = s_dt.isoformat()
+                ends_at = (s_dt + timedelta(days=7)).isoformat()
+        except Exception:
+            await update.message.reply_text(
+                "⚠️ <b>Invalid date/time format.</b>\n\n"
+                "Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code>\n"
+                "Example: <code>2026-09-05 14:00 to 2026-09-12 18:00</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_main_menu_keyboard(),
+            )
+            return
+
+        status = "LIVE" if datetime.fromisoformat(starts_at.replace("Z", "+00:00")) <= now_dt else "SCHEDULED"
+
+        ch_id = await create_challenge(
+            title="AWS Cloud Architecture Challenge",
+            description="Weekly test on AWS core services and cloud architecture patterns.",
+            category="Architecture",
+            starts_at=starts_at,
+            ends_at=ends_at,
+            question_time_limit_seconds=60,
+            duration_seconds=604800,
+            accuracy_weight=0.70,
+            speed_weight=0.30,
+        )
+        linked = await link_questions_to_challenge(ch_id)
+        await update_challenge_status(ch_id, status)
+
+        status_text = "🟢 <b>LIVE</b>" if status == "LIVE" else "⏳ <b>SCHEDULED</b>"
+
+        await update.message.reply_text(
+            f"✅ <b>Challenge #{ch_id} Created with Custom Schedule!</b>\n\n"
+            f"⚡ <b>Title:</b> AWS Cloud Architecture Challenge\n"
+            f"🚦 <b>Status:</b> {status_text}\n"
+            f"⏳ <b>Starts:</b> <code>{starts_at}</code>\n"
+            f"🏁 <b>Ends:</b> <code>{ends_at}</code>\n"
+            f"📊 <b>Questions Attached:</b> <code>{linked}</code>\n\n"
+            f"Participants can now access the challenge according to the schedule!",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
+        )
+        return
 
     # Check if admin is sending a custom broadcast announcement
     if current_state == "WAITING_FOR_ADMIN_BROADCAST":
