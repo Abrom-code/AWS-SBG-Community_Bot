@@ -289,3 +289,57 @@ def test_leaderboard_pagination_and_navigation_controls():
     assert "📄 2/2" in kb2_texts
     assert "Next ➡️" not in kb2_texts
 
+
+def test_challenge_start_end_time_transitions_and_past_challenges():
+    from datetime import datetime, timezone, timedelta
+    asyncio.run(db.reset_db())
+    asyncio.run(service.import_questions_from_csv(SAMPLE_CSV))
+
+    now = datetime.now(timezone.utc)
+    past_start = (now - timedelta(days=8)).isoformat()
+    past_end = (now - timedelta(days=1)).isoformat()
+
+    future_start = (now + timedelta(hours=2)).isoformat()
+    future_end = (now + timedelta(days=7)).isoformat()
+
+    # 1. Create an ended past challenge
+    ch1_id = asyncio.run(service.create_challenge(
+        title="Past Cloud Quiz",
+        starts_at=past_start,
+        ends_at=past_end,
+    ))
+    asyncio.run(service.link_questions_to_challenge(ch1_id))
+    asyncio.run(service.update_challenge_status(ch1_id, "LIVE"))
+
+    # 2. Create a future scheduled challenge
+    ch2_id = asyncio.run(service.create_challenge(
+        title="Upcoming Cloud Sprint",
+        starts_at=future_start,
+        ends_at=future_end,
+    ))
+    asyncio.run(service.link_questions_to_challenge(ch2_id))
+    asyncio.run(service.update_challenge_status(ch2_id, "SCHEDULED"))
+
+    # 3. Trigger time transition in get_active_challenge()
+    active = asyncio.run(service.get_active_challenge())
+    assert active is not None
+    assert active["id"] == ch2_id
+    assert active["status"] == "SCHEDULED"
+
+    # Verify ch1 was automatically transitioned from LIVE -> ENDED because past_end < now
+    ch1_updated = asyncio.run(service.get_challenge(ch1_id))
+    assert ch1_updated["status"] == "ENDED"
+
+    # 4. Verify list_past_challenges returns ch1
+    past_list = asyncio.run(service.list_past_challenges())
+    assert len(past_list) >= 1
+    assert any(c["id"] == ch1_id for c in past_list)
+
+    # 5. User can practice questions on the ended past challenge
+    asyncio.run(service.register_or_get_participant(ch1_id, 888, "Practice Student"))
+    asyncio.run(service.start_participant_quiz(ch1_id, 888))
+    q_data = asyncio.run(service.get_next_question_for_participant(ch1_id, 888))
+    assert q_data is not None
+    assert q_data["question_number"] == 1
+
+

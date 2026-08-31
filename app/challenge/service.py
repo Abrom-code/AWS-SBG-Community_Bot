@@ -162,7 +162,37 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
 
 
 async def get_active_challenge() -> Optional[Dict[str, Any]]:
-    """Retrieves the latest LIVE challenge, or next SCHEDULED challenge."""
+    """Retrieves the latest LIVE challenge, or next SCHEDULED challenge, with time-based transitions."""
+    now_dt = datetime.now(timezone.utc)
+
+    # 1. Transition SCHEDULED challenges to LIVE if start time has arrived
+    scheduled = await _execute(
+        "SELECT id, starts_at FROM challenges WHERE status = 'SCHEDULED'",
+        fetch="all",
+    )
+    for ch in scheduled:
+        if ch[1]:
+            try:
+                s_dt = datetime.fromisoformat(str(ch[1]).replace("Z", "+00:00"))
+                if now_dt >= s_dt:
+                    await _execute("UPDATE challenges SET status = 'LIVE' WHERE id = ?", (ch[0],))
+            except Exception:
+                pass
+
+    # 2. Transition LIVE challenges to ENDED if end time has passed
+    live = await _execute(
+        "SELECT id, ends_at FROM challenges WHERE status = 'LIVE'",
+        fetch="all",
+    )
+    for ch in live:
+        if ch[1]:
+            try:
+                e_dt = datetime.fromisoformat(str(ch[1]).replace("Z", "+00:00"))
+                if now_dt >= e_dt:
+                    await _execute("UPDATE challenges SET status = 'ENDED' WHERE id = ?", (ch[0],))
+            except Exception:
+                pass
+
     row = await _execute(
         """
         SELECT id, season_id, title, description, category, starts_at, ends_at,
@@ -193,6 +223,35 @@ async def get_active_challenge() -> Optional[Dict[str, Any]]:
     }
 
 
+async def list_past_challenges(limit: int = 20) -> List[Dict[str, Any]]:
+    """Retrieves all past or available challenges for leaderboard review and practice questions."""
+    rows = await _execute(
+        """
+        SELECT id, season_id, title, description, category, starts_at, ends_at,
+               question_time_limit_seconds, status
+        FROM challenges
+        WHERE status IN ('ENDED', 'LIVE')
+        ORDER BY id DESC LIMIT ?
+        """,
+        (limit,),
+        fetch="all",
+    )
+    results = []
+    for r in rows:
+        results.append({
+            "id": r[0],
+            "season_id": r[1],
+            "title": r[2],
+            "description": r[3],
+            "category": r[4],
+            "starts_at": r[5],
+            "ends_at": r[6],
+            "question_time_limit_seconds": r[7],
+            "status": r[8],
+        })
+    return results
+
+
 async def list_challenges(status: Optional[str] = None, limit: int = 10) -> List[Dict[str, Any]]:
     """Lists challenges optionally filtered by status."""
     if status:
@@ -210,7 +269,7 @@ async def list_challenges(status: Optional[str] = None, limit: int = 10) -> List
             SELECT id, season_id, title, category, status, starts_at, ends_at, question_time_limit_seconds
             FROM challenges ORDER BY id DESC LIMIT ?
             """,
-            (limit),
+            (limit,),
             fetch="all",
         )
 

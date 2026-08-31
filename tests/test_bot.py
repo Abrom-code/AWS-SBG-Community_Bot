@@ -107,7 +107,8 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     ch_labels = [[button.text for button in row] for row in ch_keyboard.keyboard]
     assert ch_labels == [
         ["🚀 Take Active Challenge", "🏆 Leaderboards"],
-        ["📖 Scoring & Rules", "🔙 Main Menu"],
+        ["📚 Past Challenges", "📖 Scoring & Rules"],
+        ["🔙 Main Menu"],
     ]
 
     fb_keyboard = bot.get_feedback_menu_keyboard()
@@ -380,6 +381,25 @@ def test_admin_command_security_restrictions(monkeypatch):
     assert len(admin_update.message.reply_text_calls) == 1
     assert "AWS SBG Challenge Admin Panel" in admin_update.message.reply_text_calls[0]["text"]
     assert admin_update.message.reply_text_calls[0]["reply_markup"] is not None
+
+
+def test_past_challenges_command_and_shortcuts():
+    from app.challenge.handlers import past_challenges_command
+    from app.challenge.service import create_challenge, update_challenge_status
+
+    update = FakeUpdate(user_id=123)
+    context = FakeContext()
+
+    # Create an ended past challenge
+    ch_id = asyncio.run(create_challenge(title="Archived Cloud Challenge"))
+    asyncio.run(update_challenge_status(ch_id, "ENDED"))
+
+    asyncio.run(past_challenges_command(update, context))
+
+    assert len(update.message.reply_text_calls) == 1
+    assert "AWS Builder Challenge Archive" in update.message.reply_text_calls[0]["text"]
+    assert update.message.reply_text_calls[0]["reply_markup"] is not None
+
 
 
 

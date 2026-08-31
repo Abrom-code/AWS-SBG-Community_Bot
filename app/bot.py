@@ -22,10 +22,12 @@ from app.challenge.handlers import (
     challenge_command,
     leaderboard_command,
     scoring_rules_command,
+    past_challenges_command,
     handle_challenge_start_callback,
     handle_challenge_answer_callback,
     handle_leaderboard_callback,
     handle_challenge_rules_callback,
+    handle_past_challenges_callback,
 )
 from app.challenge.admin import (
     admin_command,
@@ -65,7 +67,8 @@ def get_challenge_menu_keyboard():
     return ReplyKeyboardMarkup(
         [
             ["🚀 Take Active Challenge", "🏆 Leaderboards"],
-            ["📖 Scoring & Rules", "🔙 Main Menu"],
+            ["📚 Past Challenges", "📖 Scoring & Rules"],
+            ["🔙 Main Menu"],
         ],
         resize_keyboard=True,
     )
@@ -143,14 +146,24 @@ async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TY
         "Participate in weekly cloud competitions to test your architecture and serverless knowledge.\n\n"
         "• <b>🚀 Take Active Challenge:</b> Start or resume the current quiz\n"
         "• <b>🏆 Leaderboards:</b> View Weekly & Monthly championship standings\n"
+        "• <b>📚 Past Challenges:</b> Practice archived quizzes & inspect final standings\n"
         "• <b>📖 Scoring & Rules:</b> Learn how timing and accuracy points work\n\n"
         "<i>Select an option below:</i>"
     )
-    await update.message.reply_text(
-        hub_text,
-        parse_mode=ParseMode.HTML,
-        reply_markup=get_challenge_menu_keyboard(),
-    )
+    cb_query = getattr(update, "callback_query", None)
+    if cb_query:
+        await cb_query.answer()
+        await cb_query.message.reply_text(
+            hub_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_menu_keyboard(),
+        )
+    elif update.message:
+        await update.message.reply_text(
+            hub_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_menu_keyboard(),
+        )
 
 
 async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -175,6 +188,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "📘 <b>AWS SBG Community Bot Shortcuts</b>\n\n"
         "• /start — Open the main welcome menu\n"
         "• /challenge — Open the Challenge Center & start quiz\n"
+        "• /archive — Browse & practice past challenges\n"
         "• /leaderboard — View weekly & monthly championship rankings\n"
         "• /rules — See how speed & accuracy scoring is calculated\n"
         "• /feedback — Drop a suggestion or issue for the core team\n"
@@ -262,6 +276,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await challenge_command(update, context)
     elif text in ("🏆 Leaderboards", "🏆 Leaderboard"):
         return await leaderboard_command(update, context)
+    elif text in ("📚 Past Challenges", "📚 Archive", "📚 Past Quizzes", "/archive"):
+        return await past_challenges_command(update, context)
     elif text in ("📖 Scoring & Rules", "📖 Rules", "ℹ️ Scoring Rules"):
         return await scoring_rules_command(update, context)
 
@@ -486,6 +502,8 @@ def create_application(token: str = None):
 
     # Challenge & Leaderboard Commands
     app.add_handler(CommandHandler("challenge", challenge_command))
+    app.add_handler(CommandHandler("archive", past_challenges_command))
+    app.add_handler(CommandHandler("past", past_challenges_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CommandHandler("rules", scoring_rules_command))
     app.add_handler(CommandHandler("admin", admin_command))
@@ -494,6 +512,8 @@ def create_application(token: str = None):
     app.add_handler(CallbackQueryHandler(handle_challenge_start_callback, pattern=r"^ch_start:"))
     app.add_handler(CallbackQueryHandler(handle_challenge_answer_callback, pattern=r"^ch_ans:"))
     app.add_handler(CallbackQueryHandler(handle_challenge_rules_callback, pattern=r"^ch_rules$"))
+    app.add_handler(CallbackQueryHandler(handle_past_challenges_callback, pattern=r"^ch_past"))
+    app.add_handler(CallbackQueryHandler(challenge_hub_command, pattern=r"^ch_hub$"))
     app.add_handler(CallbackQueryHandler(handle_leaderboard_callback, pattern=r"^lb_"))
     app.add_handler(CallbackQueryHandler(handle_admin_callback, pattern=r"^adm_"))
 

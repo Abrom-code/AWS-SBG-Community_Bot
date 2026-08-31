@@ -16,12 +16,15 @@ from app.challenge.service import (
     get_weekly_leaderboard,
     get_monthly_leaderboard,
     get_challenge_questions,
+    list_past_challenges,
 )
 from app.challenge.keyboards import (
     get_challenge_start_keyboard,
     get_question_options_keyboard,
     get_leaderboard_keyboard,
     get_scoring_rules_keyboard,
+    get_past_challenges_keyboard,
+    get_past_challenge_detail_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -181,9 +184,6 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
         time_until = _format_time_until(challenge.get("starts_at"))
         await query.answer(f"⏳ Not yet! Challenge starts {time_until}.", show_alert=True)
         return
-    elif ch_status == "ENDED":
-        await query.answer("🏁 This challenge has ended. Check the leaderboard for standings!", show_alert=True)
-        return
     elif ch_status == "DRAFT":
         await query.answer("🛠️ This challenge is in draft mode and not yet published.", show_alert=True)
         return
@@ -204,6 +204,90 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
     text = _format_question_card(q_data)
     kb = get_question_options_keyboard(ch_id, q_data["question_number"] - 1, q_data["display_keys"])
     await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
+# ---------------------------------------------------------------------------
+# Past Challenges & Archive
+# ---------------------------------------------------------------------------
+async def past_challenges_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays previous challenges for leaderboard inspection and question practice."""
+    challenges = await list_past_challenges(limit=15)
+    if not challenges:
+        await update.message.reply_text(
+            "📚 <b>Past Challenges Archive</b>\n\n"
+            "No archived challenges available yet. Check back once weekly competitions conclude!",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    text = (
+        "📚 <b>AWS Builder Challenge Archive</b>\n\n"
+        "Browse previous competitions to inspect final leaderboards or practice quiz questions:\n\n"
+        "<i>Select a challenge below:</i>"
+    )
+    await update.message.reply_text(
+        text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_past_challenges_keyboard(challenges),
+    )
+
+
+async def handle_past_challenges_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles interaction with past challenges archive."""
+    query = update.callback_query
+    await query.answer()
+
+    data = query.data
+
+    if data == "ch_past_list":
+        challenges = await list_past_challenges(limit=15)
+        if not challenges:
+            await query.edit_message_text(
+                "📚 <b>Past Challenges Archive</b>\n\nNo archived challenges found.",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        text = (
+            "📚 <b>AWS Builder Challenge Archive</b>\n\n"
+            "Browse previous competitions to inspect final leaderboards or practice quiz questions:\n\n"
+            "<i>Select a challenge below:</i>"
+        )
+        await query.edit_message_text(
+            text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_past_challenges_keyboard(challenges),
+        )
+
+    elif data.startswith("ch_past:"):
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        if not ch:
+            await query.edit_message_text("⚠️ Challenge not found.")
+            return
+
+        title = html.escape(ch["title"])
+        desc = html.escape(ch["description"] or "AWS Cloud Architecture Competition")
+        category = html.escape(ch["category"])
+        status = ch["status"]
+        status_tag = "🏁 ENDED" if status == "ENDED" else f"🟢 {status}"
+
+        questions = await get_challenge_questions(ch_id)
+        total_q = len(questions)
+
+        card = (
+            f"⚡ <b>{title}</b> <i>[{status_tag}]</i>\n\n"
+            f"<blockquote>{desc}</blockquote>\n\n"
+            f"🏗️ <b>Category:</b> {category}\n"
+            f"📊 <b>Total Questions:</b> {total_q} questions\n"
+            f"⏱️ <b>Time Limit:</b> {ch['question_time_limit_seconds']}s per question\n\n"
+            f"<i>You can inspect the final leaderboard or practice all questions below:</i>"
+        )
+        await query.edit_message_text(
+            card,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_past_challenge_detail_keyboard(ch_id),
+        )
 
 
 async def handle_challenge_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):

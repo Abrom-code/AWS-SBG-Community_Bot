@@ -156,27 +156,65 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data == "adm_create_ch":
-        # Create a new challenge and link available questions
+        await query.edit_message_text(
+            "⏱️ <b>Schedule Challenge Competition</b>\n\n"
+            "Choose a start schedule and duration for the new AWS Builder Challenge:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_schedule_presets_keyboard(),
+        )
+
+    elif data.startswith("adm_cr_sched:"):
+        parts = data.split(":")
+        start_opt = parts[1]
+        from datetime import datetime, timezone, timedelta
+        now_dt = datetime.now(timezone.utc)
+
+        if start_opt == "now":
+            starts_at = now_dt.isoformat()
+            ends_at = (now_dt + timedelta(days=7)).isoformat()
+            status = "LIVE"
+            schedule_note = "🟢 <b>Status:</b> LIVE immediately (Ends in 7 days)"
+        elif start_opt == "1h":
+            s_dt = now_dt + timedelta(hours=1)
+            starts_at = s_dt.isoformat()
+            ends_at = (s_dt + timedelta(days=7)).isoformat()
+            status = "SCHEDULED"
+            schedule_note = "⏳ <b>Status:</b> SCHEDULED (Starts in 1 hour)"
+        elif start_opt == "24h":
+            s_dt = now_dt + timedelta(days=1)
+            starts_at = s_dt.isoformat()
+            ends_at = (s_dt + timedelta(days=7)).isoformat()
+            status = "SCHEDULED"
+            schedule_note = "📅 <b>Status:</b> SCHEDULED (Starts in 24 hours)"
+        else:
+            starts_at = None
+            ends_at = None
+            status = "DRAFT"
+            schedule_note = "🛠️ <b>Status:</b> DRAFT (Unscheduled)"
+
         ch_id = await create_challenge(
             title="AWS Cloud Architecture Challenge",
             description="Weekly test on AWS core compute, storage, security, and networking services.",
             category="Architecture",
+            starts_at=starts_at,
+            ends_at=ends_at,
             question_time_limit_seconds=60,
-            duration_seconds=3600,
+            duration_seconds=604800 if ends_at else 3600,
             accuracy_weight=0.70,
             speed_weight=0.30,
         )
-        # Link questions and create snapshot
         linked = await link_questions_to_challenge(ch_id)
+        if status != "DRAFT":
+            await update_challenge_status(ch_id, status)
 
         await query.edit_message_text(
-            f"✅ <b>Challenge Created (DRAFT)!</b>\n\n"
-            f"🆔 <b>ID:</b> <code>{ch_id}</code>\n"
+            f"✅ <b>Challenge #{ch_id} Created!</b>\n\n"
             f"⚡ <b>Title:</b> AWS Cloud Architecture Challenge\n"
+            f"{schedule_note}\n"
             f"📊 <b>Linked Questions:</b> {linked}\n\n"
-            f"When ready, click <b>Publish Challenge</b> to make it LIVE for participants!",
+            f"Participants can now view/access it according to the schedule!",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_manage_keyboard(ch_id, "DRAFT"),
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
 
     elif data.startswith("adm_pub:"):

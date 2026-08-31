@@ -85,6 +85,43 @@ def get_scoring_rules_keyboard(challenge_id: Optional[int] = None) -> InlineKeyb
     return InlineKeyboardMarkup(buttons)
 
 
+def get_past_challenges_keyboard(challenges: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Inline keyboard listing previous challenges for review/practice."""
+    buttons = []
+    for ch in challenges:
+        ch_id = ch["id"]
+        title = ch["title"]
+        status_icon = "🟢" if ch["status"] == "LIVE" else "🏁"
+        buttons.append([InlineKeyboardButton(f"{status_icon} #{ch_id} {title}", callback_data=f"ch_past:{ch_id}")])
+
+    buttons.append([InlineKeyboardButton("🔙 Back to Challenge Center", callback_data="ch_hub")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_past_challenge_detail_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
+    """Options for an inspected past challenge: View Leaderboard or Practice Questions."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🏆 View Final Leaderboard", callback_data=f"lb_weekly:{challenge_id}:1")],
+            [InlineKeyboardButton("🧩 Practice Questions", callback_data=f"ch_start:{challenge_id}")],
+            [InlineKeyboardButton("📚 Back to Past Challenges", callback_data="ch_past_list")],
+        ]
+    )
+
+
+def get_admin_schedule_presets_keyboard() -> InlineKeyboardMarkup:
+    """Preset scheduling intervals for challenge creation."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🟢 Go LIVE Now (Ends in 7 Days)", callback_data="adm_cr_sched:now:7d")],
+            [InlineKeyboardButton("⏳ Start in 1 Hour (Ends in 7 Days)", callback_data="adm_cr_sched:1h:7d")],
+            [InlineKeyboardButton("📅 Start Tomorrow (Ends in 7 Days)", callback_data="adm_cr_sched:24h:7d")],
+            [InlineKeyboardButton("🛠️ Save as Draft (No Schedule)", callback_data="adm_cr_sched:draft:0")],
+            [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
+        ]
+    )
+
+
 def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
     """Admin dashboard navigation."""
     return InlineKeyboardMarkup(
