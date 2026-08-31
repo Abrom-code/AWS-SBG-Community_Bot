@@ -716,8 +716,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         admin_notification = (
             f"👤 <b>From:</b> {safe_name} ({safe_username})\n"
+            f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
             f"💬 <b>Message:</b>\n"
-            f"<blockquote>{safe_text}</blockquote>"
+            f"{safe_text}"
         )
 
         try:
@@ -864,8 +865,9 @@ async def handle_user_edited_feedback(update: Update, context: ContextTypes.DEFA
 
     admin_notification = (
         f"👤 <b>From:</b> {safe_name} ({safe_username}) <i>(edited)</i>\n"
+        f"🆔 <b>User ID:</b> <code>{user.id}</code>\n\n"
         f"💬 <b>Message:</b>\n"
-        f"<blockquote>{safe_text}</blockquote>"
+        f"{safe_text}"
     )
 
     try:
