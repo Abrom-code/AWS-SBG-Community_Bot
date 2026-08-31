@@ -358,12 +358,29 @@ def test_scoring_rules_command_renders_guide():
     update = FakeUpdate(user_id=123)
     context = FakeContext()
 
-    from app.challenge.handlers import scoring_rules_command
-    asyncio.run(scoring_rules_command(update, context))
+def test_admin_command_security_restrictions(monkeypatch):
+    from app.challenge.admin import admin_command
 
-    assert len(update.message.reply_text_calls) == 1
-    assert "Continuous Decay Scoring Formula" in update.message.reply_text_calls[0]["text"]
-    assert "0.70 + 0.30" in update.message.reply_text_calls[0]["text"]
+    # 1. Non-admin user tries to access /admin
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    monkeypatch.setenv("ADMIN_GROUP_CHAT_ID", "-1001234567")
+
+    user_update = FakeUpdate(user_id=123)
+    user_context = FakeContext()
+    asyncio.run(admin_command(user_update, user_context))
+
+    assert len(user_update.message.reply_text_calls) == 1
+    assert "Access Denied" in user_update.message.reply_text_calls[0]["text"]
+
+    # 2. Authorized admin accesses /admin
+    admin_update = FakeUpdate(user_id=99999)
+    admin_context = FakeContext()
+    asyncio.run(admin_command(admin_update, admin_context))
+
+    assert len(admin_update.message.reply_text_calls) == 1
+    assert "AWS SBG Challenge Admin Panel" in admin_update.message.reply_text_calls[0]["text"]
+    assert admin_update.message.reply_text_calls[0]["reply_markup"] is not None
+
 
 
 

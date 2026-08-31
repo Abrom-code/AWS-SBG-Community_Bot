@@ -28,8 +28,50 @@ logger = logging.getLogger(__name__)
 ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_CHAT_ID", "0"))
 
 
+def get_configured_admin_ids() -> set:
+    """Returns the set of explicitly configured admin Telegram user IDs."""
+    admin_ids = set()
+    raw_ids = os.getenv("ADMIN_USER_IDS", "") or os.getenv("ADMIN_IDS", "")
+    for part in raw_ids.replace(";", ",").split(","):
+        part = part.strip()
+        if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
+            admin_ids.add(int(part))
+    return admin_ids
+
+
+async def is_admin_user(user_id: int, chat_id: Optional[int] = None, bot=None) -> bool:
+    """Verifies whether a user has administrative permissions."""
+    # 1. Check explicitly configured admin user IDs
+    if user_id in get_configured_admin_ids():
+        return True
+
+    # 2. Check if executed directly inside the admin staff group
+    if chat_id and ADMIN_GROUP_ID != 0 and chat_id == ADMIN_GROUP_ID:
+        return True
+
+    # 3. Check if user is a creator, administrator, or member of the staff group
+    if ADMIN_GROUP_ID != 0 and bot:
+        try:
+            member = await bot.get_chat_member(chat_id=ADMIN_GROUP_ID, user_id=user_id)
+            if member.status in ("creator", "administrator", "member"):
+                return True
+        except Exception as e:
+            logger.debug(f"Admin verification check failed for user {user_id}: {e}")
+
+    return False
+
+
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Entrypoint for the Challenge Administration Panel."""
+    """Entrypoint for the Challenge Administration Panel (restricted to administrators)."""
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or not await is_admin_user(user.id, chat.id if chat else None, context.bot):
+        await update.message.reply_text(
+            "⛔ <b>Access Denied:</b> This command is restricted to AWS SBG administrators.",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
     # Render admin dashboard
     text = (
         "👑 <b>AWS SBG Challenge Admin Panel</b>\n\n"
@@ -44,8 +86,15 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes admin dashboard button actions."""
+    """Processes admin dashboard button actions with permission checks."""
     query = update.callback_query
+    user = query.from_user
+    chat_id = query.message.chat_id if query.message else None
+
+    if not await is_admin_user(user.id, chat_id, context.bot):
+        await query.answer("⛔ Access Denied: Admin privileges required.", show_alert=True)
+        return
+
     await query.answer()
 
     data = query.data
@@ -163,6 +212,11 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
 async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processes uploaded CSV document files to bulk-import questions into the question bank."""
     if not update.message or not update.message.document:
+        return
+
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or not await is_admin_user(user.id, chat.id if chat else None, context.bot):
         return
 
     doc = update.message.document
