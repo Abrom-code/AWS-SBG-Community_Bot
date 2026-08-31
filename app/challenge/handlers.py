@@ -27,6 +27,34 @@ from app.challenge.keyboards import (
 logger = logging.getLogger(__name__)
 
 
+from datetime import datetime, timezone
+
+
+def _format_time_until(starts_at_str: Optional[str]) -> str:
+    """Returns a concise relative time string (e.g., 'in 2h 15m' or 'in 45m')."""
+    if not starts_at_str:
+        return "soon"
+    try:
+        dt = datetime.fromisoformat(str(starts_at_str).replace("Z", "+00:00"))
+        now = datetime.now(timezone.utc)
+        diff = (dt - now).total_seconds()
+        if diff <= 0:
+            return "momentarily"
+        hours = int(diff // 3600)
+        minutes = int((diff % 3600) // 60)
+        if hours >= 24:
+            days = hours // 24
+            return f"in {days}d {hours % 24}h"
+        elif hours > 0:
+            return f"in {hours}h {minutes}m"
+        elif minutes > 0:
+            return f"in {minutes}m"
+        else:
+            return "in less than 1m"
+    except Exception:
+        return f"at {starts_at_str}"
+
+
 # ---------------------------------------------------------------------------
 # Helper Formatters
 # ---------------------------------------------------------------------------
@@ -63,6 +91,7 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     user_id = user.id
     user_name = f"{user.first_name} {user.last_name or ''}".strip()
+    username = user.username or ""
 
     challenge = await get_active_challenge()
     if not challenge:
@@ -85,7 +114,7 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     total_q = len(questions)
 
     # Check participant state
-    part = await register_or_get_participant(ch_id, user_id, user_name)
+    part = await register_or_get_participant(ch_id, user_id, user_name, username)
 
     if part["status"] == "COMPLETED":
         score = part["score"]
@@ -103,14 +132,18 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if status == "SCHEDULED":
+        time_until = _format_time_until(challenge.get("starts_at"))
         starts_at = challenge.get("starts_at", "Soon")
         await update.message.reply_text(
             f"📅 <b>Upcoming AWS Builder Challenge</b>\n\n"
             f"⚡ <b>{title}</b>\n"
             f"🏗️ <b>Category:</b> {category}\n"
-            f"🕒 <b>Scheduled for:</b> {starts_at}\n\n"
-            f"<i>Registration is open! The challenge will go live at the scheduled time.</i>",
+            f"⏳ <b>Starts:</b> {time_until} <i>({starts_at})</i>\n"
+            f"⏱️ <b>Time Limit:</b> {time_limit}s per question\n"
+            f"📊 <b>Questions:</b> {total_q} questions\n\n"
+            f"<i>The challenge will automatically unlock at the scheduled start time.</i>",
             parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_start_keyboard(ch_id),
         )
         return
 
@@ -128,29 +161,44 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_challenge_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Starts the timed quiz session and delivers Question 1."""
+    """Starts the timed quiz session and delivers Question 1 with modal popup validation."""
     query = update.callback_query
-    await query.answer()
 
     data = query.data.split(":")
     ch_id = int(data[1])
     user = query.from_user
     user_id = user.id
     user_name = f"{user.first_name} {user.last_name or ''}".strip()
+    username = user.username or ""
 
-    part = await register_or_get_participant(ch_id, user_id, user_name)
-    if part["status"] == "COMPLETED":
-        await query.edit_message_text(
-            f"🏁 You have already completed this challenge! Check the leaderboard for standings.",
-            reply_markup=get_leaderboard_keyboard(ch_id),
-        )
+    challenge = await get_challenge(ch_id)
+    if not challenge or challenge.get("status") == "CANCELLED":
+        await query.answer("❌ This challenge has been cancelled.", show_alert=True)
         return
 
+    ch_status = challenge.get("status", "DRAFT")
+    if ch_status == "SCHEDULED":
+        time_until = _format_time_until(challenge.get("starts_at"))
+        await query.answer(f"⏳ Not yet! Challenge starts {time_until}.", show_alert=True)
+        return
+    elif ch_status == "ENDED":
+        await query.answer("🏁 This challenge has ended. Check the leaderboard for standings!", show_alert=True)
+        return
+    elif ch_status == "DRAFT":
+        await query.answer("🛠️ This challenge is in draft mode and not yet published.", show_alert=True)
+        return
+
+    part = await register_or_get_participant(ch_id, user_id, user_name, username)
+    if part["status"] == "COMPLETED":
+        await query.answer(f"🏁 You already completed this challenge! (Score: {part['score']} pts)", show_alert=True)
+        return
+
+    await query.answer()
     await start_participant_quiz(ch_id, user_id)
     q_data = await get_next_question_for_participant(ch_id, user_id)
 
     if not q_data:
-        await query.edit_message_text("⚠️ No questions configured for this challenge yet.")
+        await query.answer("⚠️ No questions configured for this challenge yet.", show_alert=True)
         return
 
     text = _format_question_card(q_data)
@@ -175,7 +223,7 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
     result = await record_answer_and_advance(ch_id, user_id, selected_key, q_index)
 
     if "error" in result:
-        await query.answer(result["error"], show_alert=False)
+        await query.answer(result["error"], show_alert=True)
         return
 
     await query.answer(f"Answer {selected_key} recorded!", show_alert=False)
