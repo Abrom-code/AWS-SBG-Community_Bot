@@ -25,6 +25,9 @@ from app.challenge.service import (
     update_challenge_details,
     get_weekly_leaderboard,
     get_monthly_leaderboard,
+    add_question_to_challenge,
+    import_questions_for_challenge,
+    remove_question_from_challenge,
 )
 from app.challenge.keyboards import (
     get_admin_panel_keyboard,
@@ -37,6 +40,7 @@ from app.challenge.keyboards import (
     get_wizard_questions_keyboard,
     get_challenge_delete_confirm_keyboard,
     get_admin_leaderboard_keyboard,
+    get_challenge_questions_view_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -355,6 +359,106 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             f"Participants can now view/access it according to the schedule!",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
+        )
+
+    elif data.startswith("adm_add_q_to_ch:"):
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        context.user_data["target_ch_id"] = ch_id
+        await set_user_state(user.id, "WAITING_FOR_CHALLENGE_SINGLE_QUESTION")
+        await query.edit_message_text(
+            f"✍️ <b>Add Question Specifically for Challenge #{ch_id} ({title})</b>\n\n"
+            "Please send the question details in the following format:\n\n"
+            "<code>What is Amazon DynamoDB?\n"
+            "A: Relational database\n"
+            "B: Key-value NoSQL database\n"
+            "C: In-memory cache\n"
+            "D: Object storage\n"
+            "Answer: B\n"
+            "Category: Database\n"
+            "Difficulty: EASY\n"
+            "Explanation: DynamoDB is a managed NoSQL key-value store</code>\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data.startswith("adm_import_csv_to_ch:"):
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        context.user_data["target_ch_id"] = ch_id
+        await set_user_state(user.id, "WAITING_FOR_CHALLENGE_CSV")
+        await query.edit_message_text(
+            f"📥 <b>Import Questions for Challenge #{ch_id} ({title})</b>\n\n"
+            "You can:\n"
+            "1. <b>Paste raw CSV lines</b> directly as a message.\n"
+            "2. Or <b>upload a .csv file</b> as a Telegram document.\n\n"
+            "<b>Format:</b>\n"
+            "<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>\n\n"
+            "<i>Example:</i>\n"
+            "<code>What is S3?,Object Storage,Block Storage,Compute,Database,A,EASY,Storage,10,S3 is scalable object storage</code>\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
+        )
+
+    elif data.startswith("adm_view_ch_q:"):
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        questions = await get_challenge_questions(ch_id)
+        if not questions:
+            await query.edit_message_text(
+                f"📋 <b>Questions in Challenge #{ch_id} ({title})</b>\n\n"
+                "<i>No questions attached to this challenge yet.</i>\n\n"
+                "Tap <b>➕ Add Question</b> or <b>📥 Import CSV</b> below to add questions!",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_questions_view_keyboard(ch_id, []),
+            )
+            return
+
+        lines = [f"📋 <b>Questions in Challenge #{ch_id} ({title})</b> — <code>{len(questions)} total</code>:\n"]
+        for idx, q in enumerate(questions):
+            q_t = html.escape(q.get("question_text", "Untitled"))
+            c_opt = q.get("correct_option", "A")
+            lines.append(f"<b>Q{idx+1}.</b> {q_t}\n   👉 <b>Answer:</b> Option {c_opt}")
+
+        await query.edit_message_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_questions_view_keyboard(ch_id, questions),
+        )
+
+    elif data.startswith("adm_rm_ch_q:"):
+        parts = data.split(":")
+        ch_id = int(parts[1])
+        q_id = int(parts[2])
+        await remove_question_from_challenge(ch_id, q_id)
+        await query.answer("🗑️ Question removed from challenge.", show_alert=False)
+
+        questions = await get_challenge_questions(ch_id)
+        ch = await get_challenge(ch_id)
+        title = html.escape(ch["title"]) if ch else f"#{ch_id}"
+        if not questions:
+            await query.edit_message_text(
+                f"📋 <b>Questions in Challenge #{ch_id} ({title})</b>\n\n"
+                "<i>No questions attached to this challenge yet.</i>\n\n"
+                "Tap <b>➕ Add Question</b> or <b>📥 Import CSV</b> below to add questions!",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_questions_view_keyboard(ch_id, []),
+            )
+            return
+
+        lines = [f"📋 <b>Questions in Challenge #{ch_id} ({title})</b> — <code>{len(questions)} total</code>:\n"]
+        for idx, q in enumerate(questions):
+            q_t = html.escape(q.get("question_text", "Untitled"))
+            c_opt = q.get("correct_option", "A")
+            lines.append(f"<b>Q{idx+1}.</b> {q_t}\n   👉 <b>Answer:</b> Option {c_opt}")
+
+        await query.edit_message_text(
+            "\n".join(lines),
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_questions_view_keyboard(ch_id, questions),
         )
 
     elif data.startswith("adm_pub:"):
@@ -706,18 +810,36 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
     file_bytes = await file.download_as_bytearray()
     csv_text = file_bytes.decode("utf-8", errors="ignore")
 
-    result = await import_questions_from_csv(csv_text)
-    imported = result["imported"]
-    errors = result["errors"]
+    target_ch_id = context.user_data.get("target_ch_id")
+    if target_ch_id:
+        result = await import_questions_for_challenge(target_ch_id, csv_text)
+        imported = result["imported"]
+        errors = result["errors"]
 
-    err_text = ""
-    if errors:
-        err_list = "\n".join(errors[:5])
-        err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+        err_text = ""
+        if errors:
+            err_list = "\n".join(errors[:5])
+            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
-    await update.message.reply_text(
-        f"📥 <b>CSV Import Complete!</b>\n\n"
-        f"✅ <b>Successfully Imported:</b> <code>{imported}</code> questions{err_text}",
-        parse_mode=ParseMode.HTML,
-        reply_markup=get_admin_panel_keyboard(),
-    )
+        await update.message.reply_text(
+            f"📥 <b>CSV Import Complete for Challenge #{target_ch_id}!</b>\n\n"
+            f"✅ <b>Successfully Linked:</b> <code>{imported}</code> questions to this challenge{err_text}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(target_ch_id, "DRAFT"),
+        )
+    else:
+        result = await import_questions_from_csv(csv_text)
+        imported = result["imported"]
+        errors = result["errors"]
+
+        err_text = ""
+        if errors:
+            err_list = "\n".join(errors[:5])
+            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+
+        await update.message.reply_text(
+            f"📥 <b>CSV Import Complete!</b>\n\n"
+            f"✅ <b>Successfully Imported:</b> <code>{imported}</code> questions into Question Bank{err_text}",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_panel_keyboard(),
+        )

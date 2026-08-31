@@ -729,6 +729,55 @@ def test_admin_paste_csv_text_import(monkeypatch):
     assert len(questions) == 2
 
 
+def test_admin_challenge_specific_question_flow(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import create_challenge, get_challenge_questions
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    asyncio.run(db.reset_db())
+
+    # Create challenge
+    ch_id = asyncio.run(create_challenge(title="VPC & Networking Sprint", category="Networking"))
+
+    # 1. Admin taps Add Question to Challenge
+    q_cb = FakeCallbackQuery(user_id=99999, data=f"adm_add_q_to_ch:{ch_id}")
+    up_cb = FakeUpdate(user_id=99999, callback_query=q_cb)
+    ctx = FakeContext()
+    asyncio.run(handle_admin_callback(up_cb, ctx))
+    assert f"Add Question Specifically for Challenge #{ch_id}" in q_cb.edited_text
+
+    # 2. Admin sends question text
+    q_text_input = """What is an Amazon VPC?
+A: Virtual Private Cloud
+B: Virtual Public Container
+C: Volume Partition Cluster
+D: Vector Processing Core
+Answer: A
+Category: Networking
+Difficulty: EASY
+Explanation: Amazon VPC lets you provision a logically isolated section of the AWS Cloud."""
+
+    up_msg = FakeUpdate(user_id=99999, text=q_text_input)
+    asyncio.run(bot.handle_message(up_msg, ctx))
+
+    assert len(up_msg.message.reply_text_calls) > 0
+    resp_text = up_msg.message.reply_text_calls[0]["text"]
+    assert f"Added to Challenge #{ch_id}!" in resp_text
+
+    # Verify questions attached specifically to this challenge
+    ch_q = asyncio.run(get_challenge_questions(ch_id))
+    assert len(ch_q) == 1
+    assert ch_q[0]["question_text"] == "What is an Amazon VPC?"
+    assert ch_q[0]["correct_option"] == "A"
+
+    # 3. View questions in challenge
+    q_view = FakeCallbackQuery(user_id=99999, data=f"adm_view_ch_q:{ch_id}")
+    up_view = FakeUpdate(user_id=99999, callback_query=q_view)
+    asyncio.run(handle_admin_callback(up_view, ctx))
+    assert "What is an Amazon VPC?" in q_view.edited_text
+
+
+
 
 
 

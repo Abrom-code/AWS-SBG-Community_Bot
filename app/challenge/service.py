@@ -738,6 +738,140 @@ async def get_challenge_questions(challenge_id: int) -> List[Dict[str, Any]]:
     return questions
 
 
+async def add_question_to_challenge(challenge_id: int, question_data: Dict[str, Any]) -> int:
+    """Creates a question and directly links it to a specific challenge."""
+    q_id = await create_question(
+        question_text=question_data["question_text"],
+        option_a=question_data["option_a"],
+        option_b=question_data["option_b"],
+        option_c=question_data["option_c"],
+        option_d=question_data["option_d"],
+        correct_option=question_data["correct_option"],
+        category=question_data.get("category", "General"),
+        difficulty=question_data.get("difficulty", "MEDIUM"),
+        base_points=question_data.get("base_points", 10.0),
+        explanation=question_data.get("explanation", ""),
+    )
+    await link_questions_to_challenge(challenge_id, [q_id])
+    return q_id
+
+
+async def import_questions_for_challenge(challenge_id: int, csv_text: str) -> Dict[str, Any]:
+    """Bulk imports questions from CSV or multiline text and links them directly to the specified challenge."""
+    text_clean = csv_text.strip()
+    if not text_clean:
+        return {"imported": 0, "errors": ["Empty text provided."]}
+
+    # Check if single question first
+    single = parse_single_question_text(text_clean)
+    if single and text_clean.count("\n") > 2:
+        q_id = await add_question_to_challenge(challenge_id, single)
+        return {"imported": 1, "errors": []}
+
+    imported = 0
+    errors = []
+
+    # Check if header present
+    first_line = text_clean.split("\n")[0].lower()
+    has_header = "question" in first_line or "option_a" in first_line
+
+    if has_header:
+        f = io.StringIO(text_clean)
+        reader = csv.DictReader(f)
+        for line_num, row in enumerate(reader, start=2):
+            try:
+                normalized = {k.strip().lower(): v for k, v in row.items() if k}
+                q_text = normalized.get("question") or normalized.get("question_text")
+                opt_a = normalized.get("option_a") or normalized.get("a")
+                opt_b = normalized.get("option_b") or normalized.get("b")
+                opt_c = normalized.get("option_c") or normalized.get("c")
+                opt_d = normalized.get("option_d") or normalized.get("d")
+                correct = normalized.get("correct") or normalized.get("correct_option") or normalized.get("answer")
+
+                if not all([q_text, opt_a, opt_b, opt_c, opt_d, correct]):
+                    errors.append(f"Row {line_num}: Missing required question or option fields")
+                    continue
+
+                correct_clean = correct.strip().upper()
+                if correct_clean not in ("A", "B", "C", "D"):
+                    errors.append(f"Row {line_num}: Invalid correct option '{correct}'")
+                    continue
+
+                q_data = {
+                    "question_text": q_text,
+                    "option_a": opt_a,
+                    "option_b": opt_b,
+                    "option_c": opt_c,
+                    "option_d": opt_d,
+                    "correct_option": correct_clean,
+                    "category": (normalized.get("category") or "General").strip(),
+                    "difficulty": (normalized.get("difficulty") or "MEDIUM").strip().upper(),
+                    "base_points": float(normalized.get("points") or normalized.get("base_points") or 10.0),
+                    "explanation": (normalized.get("explanation") or "").strip(),
+                }
+                await add_question_to_challenge(challenge_id, q_data)
+                imported += 1
+            except Exception as e:
+                errors.append(f"Row {line_num}: {str(e)}")
+    else:
+        # Positional CSV
+        f = io.StringIO(text_clean)
+        reader = csv.reader(f)
+        for line_num, row in enumerate(reader, start=1):
+            if not row or not any(field.strip() for field in row):
+                continue
+            if len(row) < 6:
+                errors.append(f"Row {line_num}: Expected at least 6 columns, got {len(row)}")
+                continue
+            try:
+                q_text = row[0].strip()
+                opt_a = row[1].strip()
+                opt_b = row[2].strip()
+                opt_c = row[3].strip()
+                opt_d = row[4].strip()
+                correct_clean = row[5].strip().upper()
+
+                if not all([q_text, opt_a, opt_b, opt_c, opt_d, correct_clean]):
+                    errors.append(f"Row {line_num}: Missing required fields")
+                    continue
+
+                if correct_clean not in ("A", "B", "C", "D"):
+                    errors.append(f"Row {line_num}: Invalid correct option '{row[5]}'")
+                    continue
+
+                q_data = {
+                    "question_text": q_text,
+                    "option_a": opt_a,
+                    "option_b": opt_b,
+                    "option_c": opt_c,
+                    "option_d": opt_d,
+                    "correct_option": correct_clean,
+                    "difficulty": row[6].strip().upper() if len(row) > 6 and row[6].strip() else "MEDIUM",
+                    "category": row[7].strip() if len(row) > 7 and row[7].strip() else "General",
+                    "base_points": float(row[8].strip()) if len(row) > 8 and row[8].strip().replace(".", "", 1).isdigit() else 10.0,
+                    "explanation": row[9].strip() if len(row) > 9 else "",
+                }
+                await add_question_to_challenge(challenge_id, q_data)
+                imported += 1
+            except Exception as e:
+                errors.append(f"Row {line_num}: {str(e)}")
+
+    if imported == 0 and single:
+        await add_question_to_challenge(challenge_id, single)
+        return {"imported": 1, "errors": []}
+
+    return {"imported": imported, "errors": errors}
+
+
+async def remove_question_from_challenge(challenge_id: int, question_id: int) -> bool:
+    """Removes a question link from a challenge."""
+    await _execute(
+        "DELETE FROM challenge_questions WHERE challenge_id = ? AND question_id = ?",
+        (challenge_id, question_id),
+    )
+    return True
+
+
 import math
 
 

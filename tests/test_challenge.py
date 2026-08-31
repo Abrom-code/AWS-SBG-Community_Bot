@@ -421,6 +421,46 @@ Correct: C"""
     assert res3["option_a"] == "Object Storage"
 
 
+def test_challenge_specific_question_crud_and_csv_import():
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(service.create_challenge(title="Security Specific Challenge", category="Security"))
+
+    # 1. Add single question directly to this challenge
+    q_data = {
+        "question_text": "What AWS service manages IAM policies?",
+        "option_a": "AWS IAM",
+        "option_b": "Amazon VPC",
+        "option_c": "Amazon S3",
+        "option_d": "AWS CloudTrail",
+        "correct_option": "A",
+        "category": "Security",
+        "difficulty": "EASY",
+        "base_points": 10.0,
+        "explanation": "IAM provides identity and access control.",
+    }
+    q1_id = asyncio.run(service.add_question_to_challenge(ch_id, q_data))
+    assert q1_id is not None
+
+    ch_q1 = asyncio.run(service.get_challenge_questions(ch_id))
+    assert len(ch_q1) == 1
+    assert ch_q1[0]["question_text"] == "What AWS service manages IAM policies?"
+
+    # 2. Import CSV directly to this challenge
+    csv_raw = "What is KMS?,Key Management,Block Storage,Compute,Database,A,MEDIUM,Security,10,KMS manages encryption keys"
+    res = asyncio.run(service.import_questions_for_challenge(ch_id, csv_raw))
+    assert res["imported"] == 1
+
+    ch_q2 = asyncio.run(service.get_challenge_questions(ch_id))
+    assert len(ch_q2) == 2
+
+    # 3. Remove a question from the challenge
+    asyncio.run(service.remove_question_from_challenge(ch_id, q1_id))
+    ch_q3 = asyncio.run(service.get_challenge_questions(ch_id))
+    assert len(ch_q3) == 1
+    assert ch_q3[0]["question_text"] == "What is KMS?"
+
+
+
 
 
 

@@ -40,6 +40,9 @@ from app.challenge.service import (
     create_question,
     import_questions_from_csv,
     parse_single_question_text,
+    add_question_to_challenge,
+    import_questions_for_challenge,
+    get_challenge_questions,
 )
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
@@ -307,8 +310,11 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "WAITING_FOR_EDIT_CHALLENGE_TITLE",
         "WAITING_FOR_ADMIN_SINGLE_QUESTION",
         "WAITING_FOR_ADMIN_CSV",
+        "WAITING_FOR_CHALLENGE_SINGLE_QUESTION",
+        "WAITING_FOR_CHALLENGE_CSV",
     ):
         await set_user_state(user_id, None)
+        context.user_data.pop("target_ch_id", None)
         await update.message.reply_text(
             "❌ Operation cancelled.",
             reply_markup=get_main_menu_keyboard(),
@@ -506,6 +512,96 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_question_bank_actions_keyboard(),
+            )
+        return
+
+    # Check if admin is adding a single question specifically for a challenge
+    if current_state == "WAITING_FOR_CHALLENGE_SINGLE_QUESTION":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        target_ch_id = context.user_data.get("target_ch_id")
+        if not target_ch_id:
+            await set_user_state(user_id, None)
+            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            return
+
+        parsed = parse_single_question_text(text)
+        if not parsed:
+            await update.message.reply_text(
+                "⚠️ <b>Could not parse question format.</b>\n\n"
+                "Please format your question as follows:\n\n"
+                "<code>What is Amazon DynamoDB?\n"
+                "A: Relational database\n"
+                "B: Key-value NoSQL database\n"
+                "C: In-memory cache\n"
+                "D: Object storage\n"
+                "Answer: B\n"
+                "Category: Database\n"
+                "Difficulty: EASY\n"
+                "Explanation: DynamoDB is a managed NoSQL key-value store</code>\n\n"
+                "<i>(Or send /cancel to abort)</i>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        await set_user_state(user_id, None)
+        q_id = await add_question_to_challenge(target_ch_id, parsed)
+        ch_questions = await get_challenge_questions(target_ch_id)
+
+        await update.message.reply_text(
+            f"✅ <b>Question #{q_id} Added to Challenge #{target_ch_id}!</b>\n\n"
+            f"❓ <b>Question:</b> {html.escape(parsed['question_text'])}\n"
+            f"🎯 <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
+            f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>\n\n"
+            f"<i>You can add another question, import CSV, or publish the challenge.</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_challenge_manage_keyboard(target_ch_id, "DRAFT"),
+        )
+        return
+
+    # Check if admin is importing questions for a specific challenge via CSV
+    if current_state == "WAITING_FOR_CHALLENGE_CSV":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        target_ch_id = context.user_data.get("target_ch_id")
+        if not target_ch_id:
+            await set_user_state(user_id, None)
+            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            return
+
+        await set_user_state(user_id, None)
+        result = await import_questions_for_challenge(target_ch_id, text)
+        imported = result["imported"]
+        errors = result["errors"]
+
+        err_text = ""
+        if errors:
+            err_list = "\n".join(errors[:5])
+            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+
+        ch_questions = await get_challenge_questions(target_ch_id)
+
+        if imported > 0:
+            await update.message.reply_text(
+                f"📥 <b>Questions Imported for Challenge #{target_ch_id}!</b>\n\n"
+                f"✅ <b>Linked:</b> <code>{imported}</code> questions to this challenge.\n"
+                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_manage_keyboard(target_ch_id, "DRAFT"),
+            )
+        else:
+            await update.message.reply_text(
+                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"Please ensure your text follows the CSV format:\n"
+                f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_manage_keyboard(target_ch_id, "DRAFT"),
             )
         return
 

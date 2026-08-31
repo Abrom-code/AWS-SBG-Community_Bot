@@ -233,16 +233,24 @@ def get_question_bank_actions_keyboard() -> InlineKeyboardMarkup:
     )
 
 
-def get_wizard_questions_keyboard() -> InlineKeyboardMarkup:
+def get_wizard_questions_keyboard(challenge_id: int = 0) -> InlineKeyboardMarkup:
     """Step 2 question selection options for Challenge Creation Wizard."""
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("🎲 Auto-Link All Questions from Bank", callback_data="adm_wiz_q:all")],
-            [InlineKeyboardButton("🎲 Auto-Link 5 Questions from Bank", callback_data="adm_wiz_q:5")],
-            [InlineKeyboardButton("✍️ Add a Single Question Now", callback_data="adm_wiz_q:manual")],
-            [InlineKeyboardButton("❌ Cancel Creation", callback_data="adm_panel")],
-        ]
-    )
+    buttons = []
+    if challenge_id > 0:
+        buttons.append([
+            InlineKeyboardButton("➕ Add Question to Challenge", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
+            InlineKeyboardButton("📥 Import CSV to Challenge", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
+        ])
+        buttons.append([
+            InlineKeyboardButton("🎲 Auto-Link from Question Bank", callback_data="adm_wiz_q:all"),
+            InlineKeyboardButton("🚀 Publish (Go LIVE)", callback_data=f"adm_pub:{challenge_id}"),
+        ])
+        buttons.append([InlineKeyboardButton("⚙️ Manage Challenge", callback_data=f"adm_manage:{challenge_id}")])
+    else:
+        buttons.append([InlineKeyboardButton("🎲 Auto-Link All Questions from Bank", callback_data="adm_wiz_q:all")])
+        buttons.append([InlineKeyboardButton("🎲 Auto-Link 5 Questions from Bank", callback_data="adm_wiz_q:5")])
+        buttons.append([InlineKeyboardButton("❌ Cancel Creation", callback_data="adm_panel")])
+    return InlineKeyboardMarkup(buttons)
 
 
 def get_challenge_delete_confirm_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
@@ -255,6 +263,24 @@ def get_challenge_delete_confirm_keyboard(challenge_id: int) -> InlineKeyboardMa
     )
 
 
+def get_challenge_questions_view_keyboard(challenge_id: int, questions: list) -> InlineKeyboardMarkup:
+    """Action buttons for inspecting and removing individual questions from a challenge."""
+    buttons = []
+    # Row of remove buttons if questions exist
+    for idx, q in enumerate(questions[:8]):
+        q_id = q.get("id", 0)
+        buttons.append([
+            InlineKeyboardButton(f"❌ Remove Q{idx+1}: {q.get('question_text', '')[:28]}...", callback_data=f"adm_rm_ch_q:{challenge_id}:{q_id}")
+        ])
+
+    buttons.append([
+        InlineKeyboardButton("➕ Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
+        InlineKeyboardButton("📥 Import CSV", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
+    ])
+    buttons.append([InlineKeyboardButton("🔙 Back to Manage Challenge", callback_data=f"adm_manage:{challenge_id}")])
+    return InlineKeyboardMarkup(buttons)
+
+
 def get_challenge_manage_keyboard(challenge_id: int, status: str) -> InlineKeyboardMarkup:
     """Action buttons for challenge management."""
     buttons = []
@@ -265,15 +291,23 @@ def get_challenge_manage_keyboard(challenge_id: int, status: str) -> InlineKeybo
 
     if status not in ("ENDED", "CANCELLED"):
         buttons.append([
-            InlineKeyboardButton("➕ Link Questions", callback_data=f"adm_link_q:{challenge_id}"),
+            InlineKeyboardButton("➕ Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
+            InlineKeyboardButton("📥 Import CSV", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
+        ])
+        buttons.append([
+            InlineKeyboardButton("📋 View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
+            InlineKeyboardButton("🎲 Link from Bank", callback_data=f"adm_link_q:{challenge_id}"),
+        ])
+        buttons.append([
             InlineKeyboardButton("✏️ Edit Title", callback_data=f"adm_edit_title:{challenge_id}"),
+            InlineKeyboardButton("🗑️ Delete", callback_data=f"adm_del_prompt:{challenge_id}"),
         ])
         buttons.append([
             InlineKeyboardButton("❌ Cancel Challenge", callback_data=f"adm_can:{challenge_id}"),
-            InlineKeyboardButton("🗑️ Delete", callback_data=f"adm_del_prompt:{challenge_id}"),
         ])
     else:
         buttons.append([
+            InlineKeyboardButton("📋 View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
             InlineKeyboardButton("🗑️ Delete Challenge", callback_data=f"adm_del_prompt:{challenge_id}"),
         ])
 
