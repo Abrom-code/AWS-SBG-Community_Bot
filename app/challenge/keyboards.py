@@ -165,15 +165,28 @@ def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton("📋 View Challenges", callback_data="adm_list_ch"),
             ],
             [
+                InlineKeyboardButton("🏆 Leaderboards", callback_data="adm_leaderboards"),
+                InlineKeyboardButton("📊 Monthly Report", callback_data="adm_report"),
+            ],
+            [
                 InlineKeyboardButton("📥 Import Questions (CSV)", callback_data="adm_import_csv"),
                 InlineKeyboardButton("❓ Question Bank", callback_data="adm_qbank"),
             ],
             [
-                InlineKeyboardButton("📊 Monthly Report", callback_data="adm_report"),
                 InlineKeyboardButton("📢 Broadcast Notification", callback_data="adm_broadcast"),
             ],
         ]
     )
+
+
+def get_admin_leaderboard_keyboard(active_ch_id: int = 0) -> InlineKeyboardMarkup:
+    """Action buttons for Admin Leaderboard view."""
+    buttons = []
+    if active_ch_id > 0:
+        buttons.append([InlineKeyboardButton("⚡ Active Challenge Standings", callback_data=f"adm_lb_view:weekly:{active_ch_id}")])
+    buttons.append([InlineKeyboardButton("📅 Monthly Cumulative Championship", callback_data="adm_lb_view:monthly:0")])
+    buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
+    return InlineKeyboardMarkup(buttons)
 
 
 def get_admin_report_keyboard() -> InlineKeyboardMarkup:

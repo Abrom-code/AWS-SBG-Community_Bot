@@ -4,7 +4,7 @@ import logging
 import os
 from typing import Optional
 
-from telegram import Update
+from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.constants import ParseMode
 from telegram.ext import ContextTypes
 
@@ -23,6 +23,8 @@ from app.challenge.service import (
     get_monthly_analytics_report,
     delete_challenge,
     update_challenge_details,
+    get_weekly_leaderboard,
+    get_monthly_leaderboard,
 )
 from app.challenge.keyboards import (
     get_admin_panel_keyboard,
@@ -34,6 +36,7 @@ from app.challenge.keyboards import (
     get_question_bank_actions_keyboard,
     get_wizard_questions_keyboard,
     get_challenge_delete_confirm_keyboard,
+    get_admin_leaderboard_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -400,8 +403,9 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         if champions:
             medals = ["🥇", "🥈", "🥉"]
             for idx, c in enumerate(champions[:3]):
-                uname = f"@{html.escape(c['username'])}" if c.get("username") else html.escape(c["user_name"])
-                champs_text += f"• {medals[idx]} <b>{uname}</b> — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
+                name = html.escape(c["user_name"])
+                uname = f" (@{html.escape(c['username'])})" if c.get("username") else ""
+                champs_text += f"• {medals[idx]} <b>{name}</b>{uname} — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
         else:
             champs_text = "• <i>No completed challenge attempts recorded yet this month.</i>\n"
 
@@ -419,7 +423,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             f"• Average Score: <code>{avg_score} pts</code>\n"
             f"• Total Points Earned: <code>{total_score} pts</code>\n"
             f"• Active Questions in Bank: <code>{questions}</code>\n\n"
-            f"🏆 <b>Top Champions of the Month:</b>\n"
+            f"🏆 <b>Top 3 Builders of the Month:</b>\n"
             f"{champs_text}\n"
             f"<i>AWS Student Builder Group • AASTU</i>"
         )
@@ -428,6 +432,83 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_report_keyboard(),
         )
+
+    elif data == "adm_leaderboards":
+        active_ch = await get_active_challenge()
+        active_ch_id = active_ch["id"] if active_ch else 0
+        await query.edit_message_text(
+            "🏆 <b>Admin Leaderboard & Builder Standings</b>\n\n"
+            "View live participant scores, ranks, and monthly cumulative standings:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_leaderboard_keyboard(active_ch_id),
+        )
+
+    elif data.startswith("adm_lb_view:"):
+        parts = data.split(":")
+        mode = parts[1]
+        target_id = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0
+
+        if mode == "weekly" and target_id > 0:
+            ch = await get_challenge(target_id)
+            title = html.escape(ch["title"]) if ch else f"#{target_id}"
+            lb_data = await get_weekly_leaderboard(target_id, limit=20)
+            entries = lb_data["entries"]
+
+            if not entries:
+                text = (
+                    f"🏆 <b>Active Challenge Leaderboard</b>\n"
+                    f"⚡ <b>{title}</b>\n\n"
+                    f"<i>No completed submissions yet.</i>"
+                )
+            else:
+                lines = [
+                    f"🏆 <b>Active Challenge Leaderboard</b>",
+                    f"⚡ <b>{title}</b>\n",
+                    f"👥 <b>Total Completed Participants:</b> <code>{lb_data['total_count']}</code>\n",
+                ]
+                medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+                for row in entries:
+                    rank_icon = medals.get(row["rank"], f"<b>{row['rank']}.</b>")
+                    name = html.escape(row["user_name"])
+                    uname = f" (@{html.escape(row['username'])})" if row.get("username") else ""
+                    uid = row["telegram_user_id"]
+                    score = row["score"]
+                    correct = row["correct_count"]
+                    total = row["answered_count"]
+                    lines.append(f"{rank_icon} <b>{name}</b>{uname} [<code>{uid}</code>] — <b>{score} pts</b> ({correct}/{total} ✅)")
+                text = "\n".join(lines)
+        else:
+            lb_data = await get_monthly_leaderboard(limit=20)
+            entries = lb_data["entries"]
+
+            if not entries:
+                text = (
+                    f"📅 <b>Monthly Season Championship Standings</b>\n\n"
+                    f"<i>No completed challenge data recorded yet this season.</i>"
+                )
+            else:
+                lines = [
+                    f"📅 <b>Monthly Season Championship Standings</b>",
+                    f"🏆 <b>Top Builders of the Month</b>\n",
+                    f"👥 <b>Total Ranked Builders:</b> <code>{lb_data['total_count']}</code>\n",
+                ]
+                medals = {1: "🥇", 2: "🥈", 3: "🥉"}
+                for row in entries:
+                    rank_icon = medals.get(row["rank"], f"<b>{row['rank']}.</b>")
+                    name = html.escape(row["user_name"])
+                    uname = f" (@{html.escape(row['username'])})" if row.get("username") else ""
+                    uid = row["telegram_user_id"]
+                    total_pts = row["total_score"]
+                    completed = row["challenges_completed"]
+                    lines.append(f"{rank_icon} <b>{name}</b>{uname} [<code>{uid}</code>] — <b>{total_pts} pts</b> ({completed} quizzes)")
+                text = "\n".join(lines)
+
+        from telegram import InlineKeyboardMarkup
+        back_kb = InlineKeyboardMarkup([
+            [InlineKeyboardButton("🔙 Back to Leaderboards", callback_data="adm_leaderboards")],
+            [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
+        ])
+        await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=back_kb)
 
     elif data == "adm_broadcast":
         users = await get_all_broadcast_user_ids()
@@ -518,8 +599,9 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         if champions:
             medals = ["🥇", "🥈", "🥉"]
             for idx, c in enumerate(champions[:3]):
-                uname = f"@{c['username']}" if c.get("username") else c["user_name"]
-                champs_text += f"{medals[idx]} <b>{uname}</b> — <code>{c['total_score']} pts</code>\n"
+                name = html.escape(c["user_name"])
+                uname = f" (@{html.escape(c['username'])})" if c.get("username") else ""
+                champs_text += f"{medals[idx]} <b>{name}</b>{uname} — <code>{c['total_score']} pts</code>\n"
         else:
             champs_text = "• <i>Check /leaderboard for latest championship rankings!</i>\n"
 
@@ -530,7 +612,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             f"⚡ <b>Challenges Completed:</b> <code>{rep['total_attempts']}</code>\n"
             f"🎯 <b>Community Accuracy:</b> <code>{rep['accuracy_pct']}%</code>\n"
             f"🏆 <b>Total Points Earned:</b> <code>{rep['total_score']} pts</code>\n\n"
-            f"🌟 <b>Top Champions of the Month:</b>\n"
+            f"🌟 <b>Top 3 Builders of the Month:</b>\n"
             f"{champs_text}\n"
             f"👉 Tap <b>/challenge</b> and <b>/leaderboard</b> to participate in upcoming events!\n\n"
             f"📢 @AWSAASTU"

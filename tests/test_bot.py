@@ -612,6 +612,77 @@ def test_admin_challenge_edit_and_delete_flow(monkeypatch):
     assert asyncio.run(get_challenge(ch_id)) is None
 
 
+def test_admin_leaderboard_view_and_monthly_report_top3_builders(monkeypatch):
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge import service
+    from app.challenge.service import (
+        create_challenge,
+        register_or_get_participant,
+        start_participant_quiz,
+        get_next_question_for_participant,
+        record_answer_and_advance,
+        link_questions_to_challenge,
+        update_challenge_status,
+        create_question,
+    )
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    asyncio.run(db.reset_db())
+
+    # Create questions and challenge
+    asyncio.run(create_question(
+        question_text="What is S3?",
+        option_a="Object Storage",
+        option_b="Compute",
+        option_c="Database",
+        option_d="Network",
+        correct_option="A",
+    ))
+    ch_id = asyncio.run(create_challenge(title="Storage Deep Dive"))
+    asyncio.run(link_questions_to_challenge(ch_id))
+    asyncio.run(update_challenge_status(ch_id, "LIVE"))
+
+    # Participant 1: Dawit
+    asyncio.run(register_or_get_participant(ch_id, 101, "Dawit Tadesse", username="dawit_cloud"))
+    asyncio.run(start_participant_quiz(ch_id, 101))
+    asyncio.run(get_next_question_for_participant(ch_id, 101))
+    p1_d = asyncio.run(register_or_get_participant(ch_id, 101))
+    asyncio.run(record_answer_and_advance(ch_id, 101, p1_d["current_option_order"]["_display_correct"], 0))
+
+    # Participant 2: Bethlehem
+    asyncio.run(register_or_get_participant(ch_id, 102, "Bethlehem Hailu", username="betty_dev"))
+    asyncio.run(start_participant_quiz(ch_id, 102))
+    asyncio.run(get_next_question_for_participant(ch_id, 102))
+    p2_d = asyncio.run(register_or_get_participant(ch_id, 102))
+    asyncio.run(record_answer_and_advance(ch_id, 102, p2_d["current_option_order"]["_display_correct"], 0))
+
+    # 1. Admin views Monthly Report
+    q_rep = FakeCallbackQuery(user_id=99999, data="adm_report")
+    up_rep = FakeUpdate(user_id=99999, callback_query=q_rep)
+    ctx_rep = FakeContext()
+    asyncio.run(handle_admin_callback(up_rep, ctx_rep))
+
+    assert "Top 3 Builders of the Month:" in q_rep.edited_text
+    assert "Dawit Tadesse" in q_rep.edited_text
+
+    # 2. Admin views Leaderboards menu
+    q_lb = FakeCallbackQuery(user_id=99999, data="adm_leaderboards")
+    up_lb = FakeUpdate(user_id=99999, callback_query=q_lb)
+    ctx_lb = FakeContext()
+    asyncio.run(handle_admin_callback(up_lb, ctx_lb))
+    assert "Admin Leaderboard & Builder Standings" in q_lb.edited_text
+
+    # 3. Admin views Active Challenge leaderboard
+    q_weekly = FakeCallbackQuery(user_id=99999, data=f"adm_lb_view:weekly:{ch_id}")
+    up_w = FakeUpdate(user_id=99999, callback_query=q_weekly)
+    ctx_w = FakeContext()
+    asyncio.run(handle_admin_callback(up_w, ctx_w))
+    assert "Active Challenge Leaderboard" in q_weekly.edited_text
+    assert "Dawit Tadesse" in q_weekly.edited_text
+    assert "[<code>101</code>]" in q_weekly.edited_text
+
+
+
 
 
 
