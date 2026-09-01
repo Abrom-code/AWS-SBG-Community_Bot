@@ -1177,154 +1177,189 @@ async def record_answer_and_advance(
 ) -> Dict[str, Any]:
     """Validates and scores an answer, preventing double-clicks and recording detailed audit logs."""
     part = await register_or_get_participant(challenge_id, telegram_user_id)
-    if part["status"] != "IN_PROGRESS":
-        return {"error": "Challenge is not active or already completed."}
-
-    # Anti-cheat & out-of-order check
-    if part["current_question_index"] != question_index:
-        return {"error": "Question has already been answered or is out of order."}
-
-    # Double-click lock check
-    if part["is_locked"]:
-        return {"error": "Answer is already being processed."}
-
-    # Immediately engage atomic lock
-    await _execute("UPDATE challenge_participants SET is_locked = 1 WHERE id = ?", (part["id"],))
-
-    now = datetime.now(timezone.utc)
-    now_iso = now.isoformat()
-
-    challenge = await get_challenge(challenge_id)
-    if not challenge:
-        return {"error": "Challenge not found."}
-
-    started_at_str = part.get("started_at")
-    time_remaining_seconds, is_capped, ends_at_str = calculate_remaining_exam_seconds(
-        challenge, started_at_str
-    )
-
-    total_time_taken = 0.0
-    if started_at_str:
-        started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
-        if started_dt.tzinfo is None:
-            started_dt = started_dt.replace(tzinfo=timezone.utc)
-        total_time_taken = max(0.0, (now - started_dt).total_seconds())
-
-    test_limit = float(challenge.get("duration_seconds") or 600)
-    if test_limit > 7200:
-        test_limit = 600.0
-
-    acc_weight = challenge["accuracy_weight"] if challenge else 0.70
-    spd_weight = challenge["speed_weight"] if challenge else 0.30
-
-    if time_remaining_seconds <= 0:
-        # Overtime or challenge window closed
-        await _execute(
-            "UPDATE challenge_participants SET status = 'COMPLETED', completed_at = ?, is_locked = 0 WHERE id = ?",
-            (now_iso, part["id"]),
-        )
+    if part["status"] == "COMPLETED":
         return {
-            "error": "Time's up! The allowed exam window or challenge closing deadline has been reached. Your completed answers have been submitted.",
             "is_completed": True,
+            "already_completed": True,
             "current_score": part["score"],
             "correct_count": part["correct_count"],
             "answered_count": part["answered_count"],
             "total_questions": len(part["question_order"]),
         }
+    if part["status"] != "IN_PROGRESS":
+        return {"error": "Challenge is not active or already completed."}
 
-    # Calculate per-question response time for telemetry
-    sent_at_str = part["current_question_sent_at"]
-    if sent_at_str:
-        sent_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
-        if sent_at.tzinfo is None:
-            sent_at = sent_at.replace(tzinfo=timezone.utc)
-        response_time_seconds = max(0.0, (now - sent_at).total_seconds())
-    else:
-        response_time_seconds = 0.0
+    # If the user already answered this question (e.g. from a quick double tap), gracefully advance
+    if part["current_question_index"] > question_index:
+        total_q = len(part["question_order"])
+        is_completed = (part["current_question_index"] >= total_q)
+        return {
+            "already_answered": True,
+            "is_completed": is_completed,
+            "current_score": part["score"],
+            "correct_count": part["correct_count"],
+            "answered_count": part["answered_count"],
+            "total_questions": total_q,
+            "next_question_index": part["current_question_index"],
+        }
 
-    response_time_ms = int(response_time_seconds * 1000)
+    # If out of order (attempting to jump ahead)
+    if part["current_question_index"] < question_index:
+        return {"error": "Question is out of order."}
 
-    # Retrieve randomized options mapping
-    mapping = part["current_option_order"]
-    display_correct = mapping.get("_display_correct", "A")
-    canonical_correct = mapping.get("_canonical_correct", "A")
-    question_id = mapping.get("_question_id", 0)
-    base_points = float(mapping.get("_base_points", 10.0))
+    # Double-click lock check: if locked in-flight, gracefully return current progression
+    if part.get("is_locked"):
+        total_q = len(part["question_order"])
+        is_completed = (part["current_question_index"] >= total_q)
+        return {
+            "already_answered": True,
+            "is_completed": is_completed,
+            "current_score": part["score"],
+            "correct_count": part["correct_count"],
+            "answered_count": part["answered_count"],
+            "total_questions": total_q,
+            "next_question_index": part["current_question_index"],
+        }
 
-    is_correct = (selected_option_key.upper() == display_correct.upper())
-    points_awarded = base_points if is_correct else 0
+    # Immediately engage atomic lock
+    await _execute("UPDATE challenge_participants SET is_locked = 1 WHERE id = ?", (part["id"],))
 
-    # Insert detailed answer audit log
-    await _execute(
-        """
-        INSERT INTO challenge_answers (
-            participant_id, challenge_id, question_id, question_position,
-            selected_option, correct_option, is_correct, question_sent_at,
-            answered_at, response_time_ms, base_points, speed_multiplier,
-            points_awarded, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """,
-        (
-            part["id"],
-            challenge_id,
-            question_id,
-            question_index + 1,
-            selected_option_key.upper(),
-            canonical_correct,
-            bool(is_correct),
-            sent_at_str,
-            now_iso,
-            response_time_ms,
-            base_points,
-            1.0 if is_correct else 0.0,
-            points_awarded,
-            now_iso,
-        ),
-    )
+    try:
+        now = datetime.now(timezone.utc)
+        now_iso = now.isoformat()
 
-    # Advance participant state
-    new_index = question_index + 1
-    raw_accumulated_score = round(part["score"] + points_awarded, 2)
-    new_correct = part["correct_count"] + (1 if is_correct else 0)
-    new_answered = part["answered_count"] + 1
-    total_q = len(part["question_order"])
-    is_completed = (new_index >= total_q)
+        challenge = await get_challenge(challenge_id)
+        if not challenge:
+            return {"error": "Challenge not found."}
 
-    now_iso_completed = datetime.now(timezone.utc).isoformat() if is_completed else None
+        started_at_str = part.get("started_at")
+        time_remaining_seconds, is_capped, ends_at_str = calculate_remaining_exam_seconds(
+            challenge, started_at_str
+        )
 
-    # Update database record
-    await _execute(
-        """
-        UPDATE challenge_participants
-        SET current_question_index = ?,
-            score = ?,
-            correct_count = ?,
-            answered_count = ?,
-            completed_at = COALESCE(?, completed_at),
-            status = CASE WHEN ? THEN 'COMPLETED' ELSE 'IN_PROGRESS' END,
-            current_question_sent_at = NULL
-        WHERE id = ?
-        """,
-        (
-            new_index,
-            raw_accumulated_score,
-            new_correct,
-            new_answered,
-            now_iso_completed,
-            is_completed,
-            part["id"],
-        ),
-    )
+        total_time_taken = 0.0
+        if started_at_str:
+            started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
+            if started_dt.tzinfo is None:
+                started_dt = started_dt.replace(tzinfo=timezone.utc)
+            total_time_taken = max(0.0, (now - started_dt).total_seconds())
 
-    return {
-        "is_completed": is_completed,
-        "current_score": raw_accumulated_score,
-        "correct_count": new_correct,
-        "total_questions": total_q,
-        "next_question_index": new_index,
-        "points_awarded": points_awarded,
-        "is_correct": is_correct,
-    }
+        test_limit = float(challenge.get("duration_seconds") or 600)
+        if test_limit > 7200:
+            test_limit = 600.0
+
+        if time_remaining_seconds <= 0:
+            # Overtime or challenge window closed
+            await _execute(
+                "UPDATE challenge_participants SET status = 'COMPLETED', completed_at = ?, is_locked = 0 WHERE id = ?",
+                (now_iso, part["id"]),
+            )
+            return {
+                "error": "Time's up! The allowed exam window or challenge closing deadline has been reached. Your completed answers have been submitted.",
+                "is_completed": True,
+                "current_score": part["score"],
+                "correct_count": part["correct_count"],
+                "answered_count": part["answered_count"],
+                "total_questions": len(part["question_order"]),
+            }
+
+        # Calculate per-question response time for telemetry
+        sent_at_str = part.get("current_question_sent_at")
+        if sent_at_str:
+            sent_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
+            if sent_at.tzinfo is None:
+                sent_at = sent_at.replace(tzinfo=timezone.utc)
+            response_time_seconds = max(0.0, (now - sent_at).total_seconds())
+        else:
+            response_time_seconds = 0.0
+
+        response_time_ms = int(response_time_seconds * 1000)
+
+        # Retrieve randomized options mapping
+        mapping = part.get("current_option_order") or {}
+        display_correct = mapping.get("_display_correct", "A")
+        canonical_correct = mapping.get("_canonical_correct", "A")
+        question_id = mapping.get("_question_id", 0)
+        base_points = float(mapping.get("_base_points", 10.0))
+
+        is_correct = (selected_option_key.upper() == display_correct.upper())
+        points_awarded = base_points if is_correct else 0
+
+        # Insert detailed answer audit log
+        await _execute(
+            """
+            INSERT INTO challenge_answers (
+                participant_id, challenge_id, question_id, question_position,
+                selected_option, correct_option, is_correct, question_sent_at,
+                answered_at, response_time_ms, base_points, speed_multiplier,
+                points_awarded, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                part["id"],
+                challenge_id,
+                question_id,
+                question_index + 1,
+                selected_option_key.upper(),
+                canonical_correct,
+                bool(is_correct),
+                sent_at_str,
+                now_iso,
+                response_time_ms,
+                base_points,
+                1.0 if is_correct else 0.0,
+                points_awarded,
+                now_iso,
+            ),
+        )
+
+        # Advance participant state
+        new_index = question_index + 1
+        raw_accumulated_score = round(part["score"] + points_awarded, 2)
+        new_correct = part["correct_count"] + (1 if is_correct else 0)
+        new_answered = part["answered_count"] + 1
+        total_q = len(part["question_order"])
+        is_completed = (new_index >= total_q)
+
+        now_iso_completed = datetime.now(timezone.utc).isoformat() if is_completed else None
+
+        # Update database record
+        await _execute(
+            """
+            UPDATE challenge_participants
+            SET current_question_index = ?,
+                score = ?,
+                correct_count = ?,
+                answered_count = ?,
+                completed_at = COALESCE(?, completed_at),
+                status = CASE WHEN ? THEN 'COMPLETED' ELSE 'IN_PROGRESS' END,
+                current_question_sent_at = NULL,
+                is_locked = 0
+            WHERE id = ?
+            """,
+            (
+                new_index,
+                raw_accumulated_score,
+                new_correct,
+                new_answered,
+                now_iso_completed,
+                is_completed,
+                part["id"],
+            ),
+        )
+
+        return {
+            "is_completed": is_completed,
+            "current_score": raw_accumulated_score,
+            "correct_count": new_correct,
+            "total_questions": total_q,
+            "next_question_index": new_index,
+            "points_awarded": points_awarded,
+            "is_correct": is_correct,
+        }
+    finally:
+        # Guarantee unlock so participant is never stuck
+        await _execute("UPDATE challenge_participants SET is_locked = 0 WHERE id = ?", (part["id"],))
 
 
 # ---------------------------------------------------------------------------

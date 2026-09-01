@@ -380,12 +380,15 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
 
 
 async def handle_challenge_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Validates and scores an answer, advancing to the next question or finishing."""
+    """Validates and scores an answer, advancing immediately to the next question screen or finishing."""
     query = update.callback_query
 
     parts = query.data.split(":")
     if len(parts) < 4:
-        await query.answer()
+        try:
+            await query.answer()
+        except Exception:
+            pass
         return
 
     ch_id = int(parts[1])
@@ -393,13 +396,27 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
     selected_key = parts[3]
     user_id = query.from_user.id
 
+    # Instant feedback toast to stop button loading spinner immediately
+    try:
+        await query.answer(f"⏳ Option {selected_key} recorded...", show_alert=False)
+    except Exception:
+        pass
+
     result = await record_answer_and_advance(ch_id, user_id, selected_key, q_index)
 
     if "error" in result:
-        await query.answer(result["error"], show_alert=True)
-        return
-
-    await query.answer(f"Answer {selected_key} recorded!", show_alert=False)
+        # Check if participant is already completed
+        part = await register_or_get_participant(ch_id, user_id)
+        if part.get("status") == "COMPLETED":
+            result = {
+                "is_completed": True,
+                "current_score": part["score"],
+                "correct_count": part["correct_count"],
+                "total_questions": len(part["question_order"]),
+            }
+        else:
+            await query.answer(result["error"], show_alert=True)
+            return
 
     if result.get("is_completed"):
         # Challenge completed!
@@ -422,11 +439,21 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         )
         return
 
-    # Fetch and render next question
+    # Fetch and render next question immediately
     next_q = await get_next_question_for_participant(ch_id, user_id)
     if not next_q:
+        part = await register_or_get_participant(ch_id, user_id)
+        score = part["score"]
+        correct = part["correct_count"]
+        total = len(part["question_order"])
         await query.edit_message_text(
-            "🏁 You have completed all questions!",
+            f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
+            f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
+            f"📊 <b>Total Questions:</b> {total}\n"
+            f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
+            f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
+            f"<i>Your score has been submitted to the leaderboard.</i>",
+            parse_mode=ParseMode.HTML,
             reply_markup=get_leaderboard_keyboard(ch_id),
         )
         return

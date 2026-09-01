@@ -174,9 +174,10 @@ def test_anti_double_click_protection():
     res1 = asyncio.run(service.record_answer_and_advance(ch_id, user_id, "A", 0))
     assert "error" not in res1
 
-    # Second rapid click on same question index 0 fails
+    # Second rapid click on same question index 0 is detected as already answered and does not award double points
     res2 = asyncio.run(service.record_answer_and_advance(ch_id, user_id, "B", 0))
-    assert "error" in res2
+    assert res2.get("already_answered") is True
+    assert res2["current_score"] == res1["current_score"]
 
 
 def test_weekly_and_monthly_leaderboards():
