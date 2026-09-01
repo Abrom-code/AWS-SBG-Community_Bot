@@ -108,6 +108,39 @@ def _format_question_card(q_data: dict) -> str:
     )
 
 
+async def _safe_edit_or_reply(query, text: str, reply_markup=None):
+    """Safely edits text or caption depending on whether the original message was a photo, with fallback to reply."""
+    is_photo = bool(query.message and getattr(query.message, "photo", None))
+    if is_photo:
+        try:
+            await query.edit_message_caption(caption=text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+            return
+        except BadRequest:
+            pass
+        except Exception as e:
+            logger.debug("edit_message_caption failed: %s", e)
+
+    try:
+        await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    except BadRequest as e:
+        logger.debug("edit_message_text BadRequest: %s", e)
+        try:
+            await query.edit_message_caption(caption=text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        except Exception:
+            try:
+                if query.message:
+                    await query.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+            except Exception:
+                pass
+    except Exception as exc:
+        logger.debug("edit_message_text exception: %s", exc)
+        try:
+            if query.message:
+                await query.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        except Exception:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # Student Challenge Commands & Callbacks
 # ---------------------------------------------------------------------------
@@ -280,11 +313,22 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
     except Exception:
         pass
 
-    await start_participant_quiz(ch_id, user_id)
-    q_data = await get_next_question_for_participant(ch_id, user_id)
+    try:
+        await start_participant_quiz(ch_id, user_id)
+        q_data = await get_next_question_for_participant(ch_id, user_id)
+    except Exception as exc:
+        logger.exception("Error starting participant quiz: %s", exc)
+        try:
+            await query.answer("⚠️ Could not start quiz. Please try again.", show_alert=True)
+        except Exception:
+            pass
+        return
 
     if not q_data:
-        await query.answer("⚠️ No questions configured for this challenge yet.", show_alert=True)
+        try:
+            await query.answer("⚠️ No questions configured for this challenge yet.", show_alert=True)
+        except Exception:
+            pass
         return
 
     text = _format_question_card(q_data)
@@ -295,7 +339,7 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
         q_data["total_questions"],
         q_data.get("answered_indices"),
     )
-    await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    await _safe_edit_or_reply(query, text, reply_markup=kb)
 
 
 # ---------------------------------------------------------------------------
@@ -455,14 +499,7 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
             f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
             f"<i>Your score has been submitted to the leaderboard.</i>"
         )
-        try:
-            await query.edit_message_text(
-                completion_text,
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_leaderboard_keyboard(ch_id),
-            )
-        except BadRequest:
-            pass
+        await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
         return
 
     # Fetch and render next question immediately (e.g. Q1 -> Q2, Q2 -> Q3)
@@ -473,19 +510,15 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         score = part["score"]
         correct = part["correct_count"]
         total = len(part["question_order"])
-        try:
-            await query.edit_message_text(
-                f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
-                f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
-                f"📊 <b>Total Questions:</b> {total}\n"
-                f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
-                f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
-                f"<i>Your score has been submitted to the leaderboard.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_leaderboard_keyboard(ch_id),
-            )
-        except BadRequest:
-            pass
+        completion_text = (
+            f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
+            f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
+            f"📊 <b>Total Questions:</b> {total}\n"
+            f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
+            f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
+            f"<i>Your score has been submitted to the leaderboard.</i>"
+        )
+        await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
         return
 
     text = _format_question_card(next_q)
@@ -496,14 +529,7 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         next_q["total_questions"],
         next_q.get("answered_indices"),
     )
-    try:
-        await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-    except BadRequest as e:
-        logger.debug("edit_message_text in answer callback: %s", e)
-        try:
-            await query.answer(f"✅ Moved to Question {next_q['question_number']}", show_alert=False)
-        except Exception:
-            pass
+    await _safe_edit_or_reply(query, text, reply_markup=kb)
 
 
 async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -543,19 +569,15 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
             score = part["score"]
             correct = part["correct_count"]
             total = len(part["question_order"])
-            try:
-                await query.edit_message_text(
-                    f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
-                    f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
-                    f"📊 <b>Total Questions:</b> {total}\n"
-                    f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
-                    f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
-                    f"<i>Your score has been submitted to the leaderboard.</i>",
-                    parse_mode=ParseMode.HTML,
-                    reply_markup=get_leaderboard_keyboard(ch_id),
-                )
-            except BadRequest:
-                pass
+            completion_text = (
+                f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
+                f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
+                f"📊 <b>Total Questions:</b> {total}\n"
+                f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
+                f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
+                f"<i>Your score has been submitted to the leaderboard.</i>"
+            )
+            await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
         else:
             try:
                 await query.answer("⚠️ Could not load question. Time may have expired.", show_alert=True)
@@ -571,14 +593,7 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
         q_data["total_questions"],
         q_data.get("answered_indices"),
     )
-    try:
-        await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
-    except BadRequest as e:
-        logger.debug("edit_message_text in nav callback: %s", e)
-        try:
-            await query.answer(f"📖 Question {q_data['question_number']}", show_alert=False)
-        except Exception:
-            pass
+    await _safe_edit_or_reply(query, text, reply_markup=kb)
 
 
 # ---------------------------------------------------------------------------

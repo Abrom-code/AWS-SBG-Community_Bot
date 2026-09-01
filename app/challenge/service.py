@@ -951,6 +951,17 @@ async def register_or_get_participant(
                 (user_name or current_name, username or current_un, row[0]),
             )
 
+        q_order = json.loads(row[7]) if row[7] else []
+        if not q_order:
+            questions = await get_challenge_questions(challenge_id)
+            q_order = [q["id"] for q in questions]
+            random.shuffle(q_order)
+            if q_order:
+                await _execute(
+                    "UPDATE challenge_participants SET question_order_json = ? WHERE id = ?",
+                    (json.dumps(q_order), row[0]),
+                )
+
         return {
             "id": row[0],
             "challenge_id": row[1],
@@ -960,7 +971,7 @@ async def register_or_get_participant(
             "started_at": row[4],
             "completed_at": row[5],
             "current_question_index": row[6],
-            "question_order": json.loads(row[7]) if row[7] else [],
+            "question_order": q_order,
             "current_option_order": json.loads(row[8]) if row[8] else {},
             "score": float(row[9]),
             "correct_count": row[10],
@@ -1110,8 +1121,19 @@ async def get_next_question_for_participant(
     else:
         idx = part["current_question_index"]
 
+    if idx < 0:
+        idx = 0
     if idx >= total_q:
-        return None
+        answered_pos = await get_answered_positions_for_participant(part["id"])
+        unanswered = [i for i in range(total_q) if i not in answered_pos]
+        if unanswered:
+            idx = unanswered[0]
+            await _execute(
+                "UPDATE challenge_participants SET current_question_index = ? WHERE id = ?",
+                (idx, part["id"]),
+            )
+        else:
+            return None
 
     challenge = await get_challenge(challenge_id)
     if not challenge:
