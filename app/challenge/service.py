@@ -292,7 +292,7 @@ def to_utc_datetime(val: Any) -> Optional[datetime]:
 
 
 async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
-    """Retrieves a single challenge by ID."""
+    """Retrieves a single challenge by ID with automatic time-based status transitions."""
     row = await _execute(
         """
         SELECT id, season_id, title, description, category, starts_at, ends_at,
@@ -305,6 +305,19 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
     )
     if not row:
         return None
+
+    status = row[11]
+    starts_at_val = row[5]
+    ends_at_val = row[6]
+
+    now_dt = datetime.now(timezone.utc)
+    # Auto-transition SCHEDULED to LIVE if start time has arrived
+    if status == "SCHEDULED" and starts_at_val:
+        s_dt = to_utc_datetime(starts_at_val)
+        if s_dt and now_dt >= s_dt:
+            await _execute("UPDATE challenges SET status = 'LIVE' WHERE id = ?", (challenge_id,))
+            status = "LIVE"
+
     return {
         "id": row[0],
         "season_id": row[1],
@@ -317,7 +330,7 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
         "question_time_limit_seconds": row[8],
         "accuracy_weight": float(row[9]),
         "speed_weight": float(row[10]),
-        "status": row[11],
+        "status": status,
         "created_by": row[12],
         "created_at": str(row[13]) if row[13] is not None else None,
     }
@@ -1197,9 +1210,17 @@ def calculate_remaining_exam_seconds(
     if configured_seconds > 7200:
         configured_seconds = 600.0
 
-    # If challenge is an archived/ended challenge, allow practice without live deadline capping
-    ch_status = challenge.get("status", "LIVE")
-    if ch_status == "ENDED":
+    ends_at_val = challenge.get("ends_at")
+    seconds_until_close = None
+    if ends_at_val:
+        ends_dt = to_utc_datetime(ends_at_val)
+        if ends_dt:
+            seconds_until_close = (ends_dt - now_dt).total_seconds()
+
+    ends_at_str = str(ends_at_val) if ends_at_val is not None else None
+
+    # If the challenge is already marked ENDED, run in practice mode on the exam timer
+    if challenge.get("status") == "ENDED":
         if not started_at_str:
             return (configured_seconds, False, None)
         started_dt = to_utc_datetime(started_at_str) or now_dt
@@ -1207,32 +1228,22 @@ def calculate_remaining_exam_seconds(
         time_from_exam_timer = max(0.0, configured_seconds - elapsed)
         return (time_from_exam_timer, False, None)
 
-    ends_at_val = challenge.get("ends_at")
-    seconds_until_close = None
-    if ends_at_val:
-        ends_dt = to_utc_datetime(ends_at_val)
-        if ends_dt:
-            seconds_until_close = max(0.0, (ends_dt - now_dt).total_seconds())
-
-    ends_at_str = str(ends_at_val) if ends_at_val is not None else None
-
     # 1. Participant hasn't started yet
     if not started_at_str:
         if seconds_until_close is not None:
             if seconds_until_close <= 0.0:
                 return (0.0, True, ends_at_str)
             if seconds_until_close < configured_seconds:
-                return (seconds_until_close, True, ends_at_str)
+                return (max(0.0, seconds_until_close), True, ends_at_str)
         return (configured_seconds, False, ends_at_str)
 
     # 2. Participant has already started
     started_dt = to_utc_datetime(started_at_str) or now_dt
-
     elapsed = max(0.0, (now_dt - started_dt).total_seconds())
     time_from_exam_timer = max(0.0, configured_seconds - elapsed)
 
     if seconds_until_close is not None:
-        effective_remaining = min(time_from_exam_timer, seconds_until_close)
+        effective_remaining = min(time_from_exam_timer, max(0.0, seconds_until_close))
         is_capped = (seconds_until_close < time_from_exam_timer)
         return (effective_remaining, is_capped, ends_at_str)
 

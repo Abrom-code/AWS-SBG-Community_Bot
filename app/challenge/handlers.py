@@ -21,6 +21,8 @@ from app.challenge.service import (
     list_past_challenges,
     calculate_remaining_exam_seconds,
     get_challenge_review_data,
+    to_utc_datetime,
+    update_challenge_status,
 )
 from app.challenge.keyboards import (
     get_challenge_start_keyboard,
@@ -46,7 +48,9 @@ def _format_time_until(starts_at_str: Optional[str]) -> str:
     if not starts_at_str:
         return "soon"
     try:
-        dt = datetime.fromisoformat(str(starts_at_str).replace("Z", "+00:00"))
+        dt = to_utc_datetime(starts_at_str)
+        if not dt:
+            return "soon"
         now = datetime.now(timezone.utc)
         diff = (dt - now).total_seconds()
         if diff <= 0:
@@ -55,15 +59,16 @@ def _format_time_until(starts_at_str: Optional[str]) -> str:
         minutes = int((diff % 3600) // 60)
         if hours >= 24:
             days = hours // 24
-            return f"in {days}d {hours % 24}h"
+            rem_hours = hours % 24
+            return f"in {days}d {rem_hours}h" if rem_hours > 0 else f"in {days} days"
         elif hours > 0:
-            return f"in {hours}h {minutes}m"
+            return f"in {hours}h {minutes}m" if minutes > 0 else f"in {hours}h"
         elif minutes > 0:
             return f"in {minutes}m"
         else:
             return "in less than 1m"
     except Exception:
-        return f"at {starts_at_str}"
+        return "soon"
 
 
 # ---------------------------------------------------------------------------
@@ -381,9 +386,16 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
 
     ch_status = challenge.get("status", "DRAFT")
     if ch_status == "SCHEDULED":
-        time_until = _format_time_until(challenge.get("starts_at"))
-        await query.answer(f"⏳ Not yet! Challenge starts {time_until}.", show_alert=True)
-        return
+        s_dt = to_utc_datetime(challenge.get("starts_at"))
+        now_dt = datetime.now(timezone.utc)
+        if s_dt and now_dt >= s_dt:
+            await update_challenge_status(ch_id, "LIVE")
+            challenge["status"] = "LIVE"
+            ch_status = "LIVE"
+        else:
+            time_until = _format_time_until(challenge.get("starts_at"))
+            await query.answer(f"⏳ Not yet! Challenge starts {time_until}.", show_alert=True)
+            return
     elif ch_status == "DRAFT":
         await query.answer("🛠️ This challenge is in draft mode and not yet published.", show_alert=True)
         return
