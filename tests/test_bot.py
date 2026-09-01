@@ -477,9 +477,10 @@ def test_admin_command_security_restrictions(monkeypatch):
     admin_context = FakeContext()
     asyncio.run(admin_command(admin_update, admin_context))
 
-    assert len(admin_update.message.reply_text_calls) == 1
+    assert len(admin_update.message.reply_text_calls) == 2
     assert "AWS SBG Challenge Admin Panel" in admin_update.message.reply_text_calls[0]["text"]
     assert admin_update.message.reply_text_calls[0]["reply_markup"] is not None
+    assert admin_update.message.reply_text_calls[1]["reply_markup"] is not None
 
 
 def test_past_challenges_command_and_shortcuts():

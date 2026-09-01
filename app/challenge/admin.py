@@ -107,14 +107,17 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Render admin dashboard with inline keyboard panel
-    text = (
+    # Switch bottom buttons to admin menu (includes 🔙 Main Menu)
+    await update.message.reply_text(
         "👑 <b>AWS SBG Challenge Admin Panel</b>\n\n"
         "Welcome to the challenge operations center. You can schedule weekly competitions, "
-        "manage questions, view leaderboards, and publish live quizzes."
+        "manage questions, view leaderboards, and publish live quizzes.",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_admin_menu_keyboard(),
     )
+    # Render admin dashboard with inline keyboard panel
     await update.message.reply_text(
-        text,
+        "⬇️ <i>Use the buttons below or tap an option:</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=get_admin_panel_keyboard(),
     )

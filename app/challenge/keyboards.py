@@ -234,6 +234,7 @@ def get_admin_menu_keyboard() -> ReplyKeyboardMarkup:
             ["➕ Create Challenge", "📋 Manage Challenges"],
             ["🏆 Leaderboards", "📊 Monthly Report"],
             ["📢 Broadcast Notification", "🚪 Exit Admin"],
+            ["🔙 Main Menu"],
         ],
         resize_keyboard=True,
     )
