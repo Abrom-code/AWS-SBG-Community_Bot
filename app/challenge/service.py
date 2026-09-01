@@ -1292,10 +1292,8 @@ async def record_answer_and_advance(
         )
 
         total_time_taken = 0.0
-        if started_at_str:
-            started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
-            if started_dt.tzinfo is None:
-                started_dt = started_dt.replace(tzinfo=timezone.utc)
+        started_dt = to_utc_datetime(started_at_str)
+        if started_dt:
             total_time_taken = max(0.0, (now - started_dt).total_seconds())
 
         test_limit = float(challenge.get("duration_seconds") or 600)
@@ -1318,11 +1316,10 @@ async def record_answer_and_advance(
             }
 
         # Calculate per-question response time for telemetry
-        sent_at_str = part.get("current_question_sent_at")
-        if sent_at_str:
-            sent_at = datetime.fromisoformat(sent_at_str.replace("Z", "+00:00"))
-            if sent_at.tzinfo is None:
-                sent_at = sent_at.replace(tzinfo=timezone.utc)
+        sent_at_val = part.get("current_question_sent_at")
+        sent_at = to_utc_datetime(sent_at_val)
+        sent_at_iso = sent_at.isoformat() if sent_at else None
+        if sent_at:
             response_time_seconds = max(0.0, (now - sent_at).total_seconds())
         else:
             response_time_seconds = 0.0
@@ -1357,7 +1354,7 @@ async def record_answer_and_advance(
                 selected_option_key.upper(),
                 canonical_correct,
                 bool(is_correct),
-                sent_at_str,
+                sent_at_iso,
                 now_iso,
                 response_time_ms,
                 base_points,
