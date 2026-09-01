@@ -1,122 +1,179 @@
-# AWS SBG Community & Challenge Bot
+# ⚡ AWS SBG Community & Challenge Bot
 
-A Telegram bot for the AWS Student Builder Group community featuring an interactive **Weekly Challenge Engine**, **Leaderboards**, and direct **Feedback & Support Routing**.
+An advanced, production-grade Telegram bot built for the **AWS Student Builder Group (AASTU)**. Features an interactive **Cloud Challenge & Exam Engine**, **Competitive Leaderboards**, **Community Guidelines & Anti-Cheat System**, **2-Way Support Ticket Routing**, and an **Admin Operations Command Center**.
 
 ---
 
-## Key Features
+## 🌟 Key Features
 
-### 1. ⚡ AWS Builder Challenge Engine (Phase 1)
-* **Multiple-Choice Questions (MCQ)**: 4 options with randomized display order and anti-cheat question shuffling per participant.
-* **Server-Side Timing Model**: Server measures exact elapsed response time ($t$) up to the configured question time limit ($T$).
+### 1. ⚡ AWS Builder Challenge & Exam Engine
+* **Unified Exam Timer & Self-Pacing**: Configurable overall test duration (e.g. 10 minutes total). Live countdown display on each question card.
+* **Intelligent Deadline Capping**: If a challenge closes before the standard exam duration finishes, the timer dynamically caps to the closing deadline with real-time warnings.
 * **Continuous Decay Scoring Formula**:
-  $$Score = B \times \left(0.70 + 0.30 \times \left(1 - \frac{t}{T}\right)\right)$$
-  * $70\%$ of points awarded for knowledge accuracy, and up to $30\%$ for response speed.
-  * Overtime ($t > T$) or incorrect answers award $0$ points.
-  * Configurable accuracy & speed weights per challenge.
-* **Single Attempt Enforcement**: Exactly 1 attempt per user per challenge.
-* **Anti-Double-Click Lock**: Prevents duplicate answer submissions or rapid tapping glitches.
-* **Challenge Question Snapshotting**: Questions are snapshotted at publication time for immutability.
-* **Leaderboards**:
-  * 🏆 **Weekly Challenge Leaderboard**: Real-time ranks and accuracy for the active challenge.
-  * 📅 **Monthly Cumulative Leaderboard**: Aggregated season scores across all weekly challenges.
+  $$\text{Final Score} = \text{Raw Points} \times \left(0.70 + 0.30 \times \left(1 - \frac{\text{Total Time Taken}}{\text{Allotted Exam Time}}\right)\right)$$
+  * $70\%$ baseline awarded for correct answers (accuracy).
+  * Up to $30\%$ efficiency bonus awarded for rapid completion speed.
+  * Overtime or incorrect submissions yield $0$ points.
+* **Anti-Cheat & Shuffling**:
+  * Randomized 4-option keyboard layout ($A, B, C, D$) per participant.
+  * Anti-double-click atomic locking prevents duplicate score submissions.
+  * Content protection / anti-forwarding enabled on questions.
+  * Strict single-attempt policy per participant.
+* **Post-Exam Explanation**: Detailed explanations and correct answers revealed immediately after submission.
 
-### 2. 👑 Admin Challenge Panel & CSV Importer
-* Accessible via `/admin`.
-* **CSV Bulk Question Importer**: Upload a `.csv` file via Telegram to import hundreds of questions instantly.
-  * Columns: `question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation`
-* **Challenge Lifecycle State Machine**: `DRAFT` $\rightarrow$ `SCHEDULED` $\rightarrow$ `LIVE` $\rightarrow$ `ENDED` (or `CANCELLED`).
+### 2. 🛡️ Universal Community Guidelines & Code of Conduct
+* Accessible anytime via `/guidelines` or the dedicated button on any challenge start card.
+* **Rules Enforced**: Strictly 1 account per builder, no AI/automation assistance, continuous exam timer, anti-leak integrity, and screenshot restriction.
 
-### 3. 💬 Feedback & Community Support System
-* Direct forwarding of feedback tickets to the configured admin group with clean HTML formatting.
-* **Multi-Reply & Thread Support**: Admins can send multiple replies and discussion thread replies that automatically route back to the member.
-* **Real-Time Edit Synchronization**: Editing an admin reply or user feedback dynamically updates the corresponding message in real time.
+### 3. 🏆 Championship Leaderboards
+* ⚡ **Weekly Challenge Leaderboard**: Real-time rank, points, and accuracy for active challenges with next/prev pagination.
+* 📅 **Monthly Season Championship**: Aggregated monthly scores across all weekly challenges.
+* **Tie-Breaker Logic**: Fastest total exam completion time ranks higher.
 
----
+### 4. 📚 Past Challenges & Practice Archive
+* Accessible via `/archive` or `/past`.
+* Browse past competitions to review final leaderboards or practice all questions indefinitely in self-paced archive mode.
 
-## Member Experience
+### 5. 💬 2-Way Feedback & Support Routing
+* Direct forwarding of feedback tickets to the configured admin group formatted in clean blockquotes.
+* **Multi-Reply & Staff Routing**: Admin replies sent to feedback messages automatically route directly to the original member's private chat.
+* **Real-Time Edit Sync**: Editing an admin reply or user feedback dynamically updates the corresponding message in real time.
 
-### Available Commands
-- `/start` — Opens the welcome screen and main menu
-- `/challenge` — Starts or resumes the active weekly challenge
-- `/leaderboard` — Displays weekly and monthly cumulative rankings
-- `/feedback` — Starts the feedback submission flow
-- `/help` — Displays command list and shortcuts
-- `/about` — Community info and links
-- `/cancel` — Cancels an active feedback draft
-- `/admin` — Admin operations dashboard
-
-### Main Menu Shortcuts
-- `⚡ Challenges`
-- `🏆 Leaderboard`
-- `📝 Submit Feedback`
-- `ℹ️ About`
-- `❓ Help`
-- `❌ Cancel`
+### 6. 👑 Admin Operations Command Center (`/admin`)
+* **Interactive Creation Wizard**: Step-by-step title, category, and schedule setup.
+* **Schedule & Exam Timer Editors**: Update start/end timestamps and exam time limits anytime.
+* **Full Question Inspector**: View complete question cards (options, answer, difficulty, points, explanation) with 4-card pagination and individual remove buttons.
+* **Bulk CSV Importer**: Upload `.csv` files or paste CSV text directly in chat.
+  ```csv
+  question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation
+  What is Amazon S3?,Object Storage,Block Storage,Compute,Database,A,EASY,Storage,10,S3 is scalable object storage
+  ```
+* **Flexible Single-Question Parser**: Supports natural multiline format with `A:`, `1.`, `Ans:`, `Difficulty:`, `Explanation:`.
+* **Monthly Analytics Report**: Summary of registered members, challenge attempts, average score, accuracy %, and Top 3 builders of the month.
+* **Community Broadcast Announcements**: Deliver formatted announcements to all registered bot members with 1 click.
 
 ---
 
-## Project Structure
+## 🤖 Member Commands Reference
+
+| Command | Description |
+| :--- | :--- |
+| `/start` | Open the main welcome menu & persistent keyboard |
+| `/challenge` | Open Challenge Center or start the live weekly challenge |
+| `/archive` / `/past` | Browse archived challenges to practice questions |
+| `/leaderboard` | View weekly & monthly championship standings |
+| `/rules` | View how the two-factor scoring formula works |
+| `/guidelines` | Read universal community rules & code of conduct |
+| `/feedback` / `/support` | Submit a ticket/suggestion to the core admin team |
+| `/about` | Learn about AWS Student Builder Group AASTU |
+| `/help` | Display shortcuts and command list |
+| `/cancel` | Cancel current text input state and return to main menu |
+| `/admin` | Open Admin Operations Command Center *(restricted)* |
+
+---
+
+## 📂 Project Architecture
 
 ```
 AWS-SBG-Community_Bot/
-├── main.py                     # Local development launcher with auto-reconnect
-├── requirements.txt            # Python dependencies
+├── main.py                     # Local development polling launcher
+├── requirements.txt            # Python dependencies (psycopg, telegram, etc.)
 ├── vercel.json                 # Vercel serverless routing configuration
 ├── .env.example                # Environment variables template
 ├── api/
-│   └── webhook.py              # Vercel serverless Telegram webhook entrypoint
+│   └── webhook.py              # Vercel serverless Telegram webhook handler
 ├── app/
-│   ├── bot.py                  # Bot application factory & route aggregator
-│   ├── db.py                   # SQLite & PostgreSQL dual-persistence layer
+│   ├── bot.py                  # Bot application factory, router & text handlers
+│   ├── db.py                   # SQLite (dev) & Supabase PostgreSQL (prod) layer
 │   └── challenge/
-│       ├── models.py           # Enums & data structures
-│       ├── scoring.py          # Decoupled accuracy + speed scoring engine
+│       ├── models.py           # Enums & challenge data structures
+│       ├── scoring.py          # Decoupled accuracy & speed scoring math
 │       ├── keyboards.py        # Inline keyboards (quiz options, menus, admin)
-│       ├── service.py          # Database operations, session tracking, CSV parser, leaderboards
-│       ├── handlers.py         # Student quiz flow & leaderboard views
-│       └── admin.py            # Admin operations & CSV document upload
+│       ├── service.py          # Business logic, timer capping, leaderboards & CSV parser
+│       ├── handlers.py         # Quiz lifecycle, guidelines & student views
+│       └── admin.py            # Admin operations, report cards & broadcast
 └── tests/
-    ├── test_bot.py             # Feedback & bot core unit tests (12 tests)
-    ├── test_scoring.py         # Scoring engine math unit tests (6 tests)
-    └── test_challenge.py       # Challenge engine & leaderboard tests (5 tests)
+    ├── test_bot.py             # Feedback routing, menus, shortcuts & admin security
+    ├── test_challenge.py       # Challenge lifecycle, questions CRUD, time capping & archive
+    └── test_scoring.py         # Mathematical scoring formulas & speed multipliers
 ```
 
 ---
 
-## Setup & Local Development
+## 💻 Local Setup & Development
 
-1. Create and activate a Python virtual environment.
-2. Install dependencies:
+### 1. Clone & Install Dependencies
 ```bash
+git clone https://github.com/<YOUR_USERNAME>/AWS-SBG-Community_Bot.git
+cd AWS-SBG-Community_Bot
+
+# Create and activate virtual environment
+python -m venv .venv
+.venv\Scripts\activate   # On Windows
+source .venv/bin/activate # On Linux/macOS
+
+# Install requirements
 pip install -r requirements.txt
 ```
-3. Configure `.env`:
+
+### 2. Configure Environment Variables
+Copy `.env.example` to `.env`:
 ```env
-TELEGRAM_BOT_TOKEN=your_bot_token
-ADMIN_GROUP_CHAT_ID=your_admin_group_chat_id
-# Optional: PostgreSQL Database URL (if omitted, automatically uses local SQLite bot.db)
-# DATABASE_URL=postgresql://user:password@host:port/database
+TELEGRAM_BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+ADMIN_GROUP_CHAT_ID=-1001234567890
+ADMIN_USER_IDS=123456789,987654321
+
+# Optional: Supabase PostgreSQL (if omitted, automatically defaults to local SQLite bot.db)
+# DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres
 ```
-4. Start the bot locally:
+
+### 3. Run Locally (Long-Polling Mode)
 ```bash
 python main.py
 ```
-5. Run the test suite:
+
+### 4. Run Automated Test Suite
 ```bash
-python -m pytest tests/
+python -m pytest tests/ -v
 ```
 
 ---
 
-## Deployment to Vercel (Serverless)
+## 🚀 Cloud Deployment (Vercel + Supabase)
 
-1. Import this repository into Vercel.
-2. Configure Environment Variables in Vercel project settings:
-   - `TELEGRAM_BOT_TOKEN`
-   - `ADMIN_GROUP_CHAT_ID`
-   - `DATABASE_URL` (from Supabase or Neon PostgreSQL)
-3. Set your Telegram webhook:
+### Step 1: Set Up Supabase PostgreSQL
+1. Create a free project at [supabase.com](https://supabase.com).
+2. In **Project Settings** ➔ **Database** ➔ **Connection String**, copy the **URI (Transaction Pooler - Port 6543)**:
+   ```env
+   DATABASE_URL=postgresql://postgres.[project-ref]:[PASSWORD]@aws-0-[region].pooler.supabase.com:6543/postgres
+   ```
+3. *All database tables, constraints, and indexes are automatically created on first boot!*
+
+### Step 2: Deploy to Vercel
+1. Push your repository to your GitHub account.
+2. Import the repository in [vercel.com](https://vercel.com).
+3. Set the following **Environment Variables**:
+   * `TELEGRAM_BOT_TOKEN`
+   * `ADMIN_GROUP_CHAT_ID`
+   * `ADMIN_USER_IDS`
+   * `DATABASE_URL`
+4. Click **Deploy**.
+
+### Step 3: Register Telegram Webhook
+Tell Telegram to deliver incoming updates to your Vercel endpoint:
+```bash
+curl -F "url=https://<your-project>.vercel.app/api/webhook" https://api.telegram.org/bot<YOUR_BOT_TOKEN>/setWebhook
 ```
-https://api.telegram.org/bot<TOKEN>/setWebhook?url=https://<VERCEL_APP>.vercel.app/api/webhook
+
+To verify your webhook status anytime:
+```bash
+curl https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo
 ```
+
+---
+
+## 👥 Contributing & Community
+
+* **Organization:** AWS Student Builder Group — Addis Ababa Science and Technology University (AASTU)
+* **Telegram Channel:** [@AWSAASTU](https://t.me/AWSAASTU)
+* **License:** MIT
