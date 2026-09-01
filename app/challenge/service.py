@@ -1191,7 +1191,7 @@ def calculate_remaining_exam_seconds(
     now_dt = datetime.now(timezone.utc)
     configured_seconds = float(challenge.get("duration_seconds") or 600)
     if configured_seconds > 7200:
-        configured_seconds = 600.0
+        configured_seconds = 7200.0
 
     ends_at_val = challenge.get("ends_at")
     seconds_until_close = None
@@ -1455,7 +1455,8 @@ async def record_answer_and_advance(
 
         test_limit = float(challenge.get("duration_seconds") or 600)
         if test_limit > 7200:
-            test_limit = 600.0
+            logger.warning(f"Challenge {challenge_id} has duration_seconds={test_limit} (>2h), capping to 7200s.")
+            test_limit = 7200.0
 
         if time_remaining_seconds <= 0:
             # Overtime or challenge window closed
@@ -1491,7 +1492,18 @@ async def record_answer_and_advance(
         base_points = float(mapping.get("_base_points", 10.0))
 
         is_correct = (selected_option_key.upper() == display_correct.upper())
-        points_awarded = base_points if is_correct else 0
+
+        # Use the scoring engine so speed actually affects points
+        question_time_limit = float(challenge.get("question_time_limit_seconds") or 60)
+        points_awarded = calculate_score(
+            is_correct=is_correct,
+            response_time_seconds=response_time_seconds,
+            time_limit_seconds=question_time_limit,
+            base_points=base_points,
+            accuracy_weight=float(challenge.get("accuracy_weight", 0.70)),
+            speed_weight=float(challenge.get("speed_weight", 0.30)),
+        )
+        speed_multiplier = (points_awarded / base_points) if (is_correct and base_points > 0) else 0.0
 
         # Insert detailed answer audit log
         await _execute(
@@ -1515,7 +1527,7 @@ async def record_answer_and_advance(
                 now_iso,
                 response_time_ms,
                 base_points,
-                1.0 if is_correct else 0.0,
+                round(speed_multiplier, 4),
                 points_awarded,
                 now_iso,
             ),
@@ -1538,6 +1550,16 @@ async def record_answer_and_advance(
             new_index = unanswered[0] if unanswered else total_q
 
         now_iso_completed = datetime.now(timezone.utc).isoformat() if is_completed else None
+
+        # Apply exam-level speed bonus when all questions are answered
+        if is_completed:
+            raw_accumulated_score = calculate_exam_score(
+                raw_points_earned=raw_accumulated_score,
+                total_time_taken_seconds=total_time_taken,
+                total_time_limit_seconds=test_limit,
+                accuracy_weight=float(challenge.get("accuracy_weight", 0.70)),
+                speed_weight=float(challenge.get("speed_weight", 0.30)),
+            )
 
         # Update database record
         await _execute(
