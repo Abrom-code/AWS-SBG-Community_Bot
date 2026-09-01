@@ -269,7 +269,11 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
         await query.answer(f"🏁 You already completed this challenge! (Score: {part['score']} pts)", show_alert=True)
         return
 
-    await query.answer()
+    try:
+        await query.answer("🚀 Initializing quiz session...", show_alert=False)
+    except Exception:
+        pass
+
     await start_participant_quiz(ch_id, user_id)
     q_data = await get_next_question_for_participant(ch_id, user_id)
 
@@ -311,11 +315,13 @@ async def past_challenges_command(update: Update, context: ContextTypes.DEFAULT_
 async def handle_past_challenges_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handles interaction with past challenges archive."""
     query = update.callback_query
-    await query.answer()
-
     data = query.data
 
     if data == "ch_past_list":
+        try:
+            await query.answer("📚 Loading archive...", show_alert=False)
+        except Exception:
+            pass
         challenges = await list_past_challenges(limit=15)
         if not challenges:
             await query.edit_message_text(
@@ -336,6 +342,10 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
         )
 
     elif data.startswith("ch_past:"):
+        try:
+            await query.answer("📋 Loading challenge details...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         if not ch:
@@ -443,9 +453,12 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
 async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Switches leaderboard views and handles next/prev pagination."""
     query = update.callback_query
-    await query.answer()
 
     if query.data == "noop":
+        try:
+            await query.answer()
+        except Exception:
+            pass
         return
 
     data = query.data.split(":")
@@ -456,6 +469,10 @@ async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFA
     is_admin = await is_admin_user(user.id if user else 0, chat.id if chat else None, context.bot)
 
     if mode_prefix == "lb_weekly":
+        try:
+            await query.answer("🏆 Loading weekly leaderboard...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data[1]) if len(data) > 1 and data[1].isdigit() else 0
         page = int(data[2]) if len(data) > 2 and data[2].isdigit() else 1
         if ch_id == 0:
@@ -467,6 +484,10 @@ async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFA
         else:
             await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page, is_admin=is_admin)
     elif mode_prefix == "lb_monthly":
+        try:
+            await query.answer("📅 Loading monthly standings...", show_alert=False)
+        except Exception:
+            pass
         page = int(data[2]) if len(data) > 2 and data[2].isdigit() else (int(data[1]) if len(data) > 1 and data[1].isdigit() else 1)
         await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin)
 
@@ -640,7 +661,10 @@ async def handle_guidelines_callback(update: Update, context: ContextTypes.DEFAU
     challenge = await get_active_challenge()
     ch_id = challenge["id"] if challenge else 0
     if update.callback_query:
-        await update.callback_query.answer()
+        try:
+            await update.callback_query.answer("🛡️ Loading community guidelines...", show_alert=False)
+        except Exception:
+            pass
         await update.callback_query.edit_message_text(
             get_guidelines_text(),
             parse_mode=ParseMode.HTML,
@@ -657,7 +681,10 @@ async def handle_guidelines_callback(update: Update, context: ContextTypes.DEFAU
 async def handle_challenge_rules_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Inline callback handler to view scoring rules."""
     query = update.callback_query
-    await query.answer()
+    try:
+        await query.answer("📖 Loading scoring rules...", show_alert=False)
+    except Exception:
+        pass
     challenge = await get_active_challenge()
     ch_id = challenge["id"] if challenge else 0
     await query.edit_message_text(

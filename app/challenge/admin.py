@@ -163,7 +163,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     if data == "adm_panel":
         try:
-            await query.answer()
+            await query.answer("👑 Loading Admin Dashboard...", show_alert=False)
         except Exception:
             pass
         await query.edit_message_text(
@@ -205,6 +205,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_manage:"):
+        try:
+            await query.answer("⚙️ Loading challenge settings...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         if not ch:
@@ -238,6 +242,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_link_q:"):
+        try:
+            await query.answer("🔗 Linking questions from bank...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         linked = await link_questions_to_challenge(ch_id)
         ch = await get_challenge(ch_id)
@@ -253,6 +261,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data == "adm_cr_custom_date":
+        try:
+            await query.answer("✍️ Opening date scheduler...", show_alert=False)
+        except Exception:
+            pass
         await set_user_state(user.id, "WAITING_FOR_ADMIN_SCHEDULE")
         await query.edit_message_text(
             "📅 <b>Set Custom Challenge Schedule</b>\n\n"
@@ -265,6 +277,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data == "adm_qbank":
+        try:
+            await query.answer("📚 Loading Question Bank...", show_alert=False)
+        except Exception:
+            pass
         questions = await list_questions(limit=10)
         count = len(questions)
         if not questions:
@@ -295,6 +311,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data == "adm_create_ch":
+        try:
+            await query.answer("➕ Opening Challenge Wizard...", show_alert=False)
+        except Exception:
+            pass
         await set_user_state(user.id, "WAITING_FOR_CHALLENGE_TITLE")
         await query.edit_message_text(
             "➕ <b>Create Challenge Wizard (Step 1/2: Details)</b>\n\n"
@@ -308,6 +328,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_del_prompt:"):
+        try:
+            await query.answer("🗑️ Opening delete confirmation...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
@@ -320,6 +344,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_del_conf:"):
+        try:
+            await query.answer("🗑️ Deleting challenge...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         await delete_challenge(ch_id)
         await query.edit_message_text(
@@ -329,6 +357,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_edit_title:"):
+        try:
+            await query.answer("✏️ Opening title editor...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         context.user_data["edit_ch_id"] = ch_id
         await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_TITLE")
@@ -340,6 +372,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_edit_sched:"):
+        try:
+            await query.answer("📅 Loading schedule options...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
@@ -358,6 +394,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_sched_set:"):
+        try:
+            await query.answer("⏳ Updating schedule...", show_alert=False)
+        except Exception:
+            pass
         parts = data.split(":")
         ch_id = int(parts[1])
         start_opt = parts[2]
@@ -385,7 +425,6 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
         await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
         await update_challenge_status(ch_id, status)
-        await query.answer("✅ Schedule updated successfully!", show_alert=False)
 
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
@@ -402,6 +441,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_sched_custom:"):
+        try:
+            await query.answer("✍️ Opening custom schedule editor...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         context.user_data["edit_ch_id"] = ch_id
         await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE")
@@ -414,6 +457,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_edit_timer:"):
+        try:
+            await query.answer("⏱️ Loading timer settings...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
@@ -429,13 +476,16 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_timer_set:"):
+        try:
+            await query.answer("⏱️ Updating duration...", show_alert=False)
+        except Exception:
+            pass
         parts = data.split(":")
         ch_id = int(parts[1])
         mins = int(parts[2])
         dur_secs = mins * 60
 
         await update_challenge_details(ch_id, duration_seconds=dur_secs)
-        await query.answer(f"✅ Exam time limit set to {mins} minutes!", show_alert=False)
 
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
@@ -451,6 +501,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_timer_custom:"):
+        try:
+            await query.answer("✍️ Opening custom timer editor...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         context.user_data["edit_ch_id"] = ch_id
         await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_TIMER")
@@ -462,6 +516,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_cr_sched:"):
+        try:
+            await query.answer("⚙️ Creating challenge...", show_alert=False)
+        except Exception:
+            pass
         parts = data.split(":")
         start_opt = parts[1]
         from datetime import datetime, timezone, timedelta
@@ -523,6 +581,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_add_q_to_ch:"):
+        try:
+            await query.answer("✍️ Opening Question Editor...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
@@ -545,6 +607,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_import_csv_to_ch:"):
+        try:
+            await query.answer("📥 Opening CSV Importer...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
@@ -564,6 +630,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_view_ch_q:"):
+        try:
+            await query.answer("📋 Loading attached questions...", show_alert=False)
+        except Exception:
+            pass
         parts = data.split(":")
         ch_id = int(parts[1])
         page = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 1
@@ -626,13 +696,16 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_rm_ch_q:"):
+        try:
+            await query.answer("🗑️ Removing question...", show_alert=False)
+        except Exception:
+            pass
         parts = data.split(":")
         ch_id = int(parts[1])
         q_id = int(parts[2])
         page = int(parts[3]) if len(parts) > 3 and parts[3].isdigit() else 1
 
         await remove_question_from_challenge(ch_id, q_id)
-        await query.answer("🗑️ Question removed from challenge.", show_alert=False)
 
         questions = await get_challenge_questions(ch_id)
         ch = await get_challenge(ch_id)
@@ -692,6 +765,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_pub:"):
+        try:
+            await query.answer("🚀 Publishing challenge...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         questions = await get_challenge_questions(ch_id)
         if not questions:
@@ -707,6 +784,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_end:"):
+        try:
+            await query.answer("🏁 Concluding challenge...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         await update_challenge_status(ch_id, "ENDED")
         await query.edit_message_text(
@@ -717,6 +798,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_can:"):
+        try:
+            await query.answer("❌ Cancelling challenge...", show_alert=False)
+        except Exception:
+            pass
         ch_id = int(data.split(":")[1])
         await update_challenge_status(ch_id, "CANCELLED")
         await query.edit_message_text(
@@ -866,6 +951,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=back_kb)
 
     elif data == "adm_broadcast":
+        try:
+            await query.answer("📢 Opening Broadcast Center...", show_alert=False)
+        except Exception:
+            pass
         users = await get_all_broadcast_user_ids()
         count = len(users)
         await query.edit_message_text(
@@ -878,6 +967,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data == "adm_bcast_custom":
+        try:
+            await query.answer("✍️ Opening broadcast composer...", show_alert=False)
+        except Exception:
+            pass
         await set_user_state(user.id, "WAITING_FOR_ADMIN_BROADCAST")
         await query.edit_message_text(
             "✍️ <b>Custom Announcement Broadcast</b>\n\n"
@@ -889,6 +982,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data == "adm_bcast_preset:challenge":
+        try:
+            await query.answer("📢 Preparing challenge broadcast...", show_alert=False)
+        except Exception:
+            pass
         active_ch = await get_active_challenge()
         users = await get_all_broadcast_user_ids()
         count = len(users)
@@ -923,6 +1020,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data == "adm_bcast_preset:leaderboard":
+        try:
+            await query.answer("🏆 Preparing leaderboard broadcast...", show_alert=False)
+        except Exception:
+            pass
         users = await get_all_broadcast_user_ids()
         count = len(users)
         bcast_text = (
@@ -947,6 +1048,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data == "adm_bcast_preset:report":
+        try:
+            await query.answer("📊 Preparing report broadcast...", show_alert=False)
+        except Exception:
+            pass
         rep = await get_monthly_analytics_report()
         month = rep["month_name"]
         champions = rep["champions"]
@@ -987,6 +1092,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_bcast_send:"):
+        try:
+            await query.answer("🚀 Broadcasting announcement...", show_alert=False)
+        except Exception:
+            pass
         bcast_text = context.user_data.get("bcast_text")
         if not bcast_text:
             await query.answer("⚠️ No broadcast message prepared.", show_alert=True)
