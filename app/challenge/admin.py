@@ -62,14 +62,23 @@ def get_configured_admin_ids() -> set:
     return admin_ids
 
 
+_verified_admin_cache: set = set()
+
+
 async def is_admin_user(user_id: int, chat_id: Optional[int] = None, bot=None) -> bool:
-    """Verifies whether a user has administrative permissions."""
+    """Verifies whether a user has administrative permissions with fast in-memory caching."""
+    # 0. Fast-path: Check in-memory cache of already verified admins
+    if user_id in _verified_admin_cache:
+        return True
+
     # 1. Check explicitly configured admin user IDs
     if user_id in get_configured_admin_ids():
+        _verified_admin_cache.add(user_id)
         return True
 
     # 2. Check if executed directly inside the admin staff group
     if chat_id and ADMIN_GROUP_ID != 0 and chat_id == ADMIN_GROUP_ID:
+        _verified_admin_cache.add(user_id)
         return True
 
     # 3. Check if user is a creator, administrator, or member of the staff group
@@ -77,6 +86,7 @@ async def is_admin_user(user_id: int, chat_id: Optional[int] = None, bot=None) -
         try:
             member = await bot.get_chat_member(chat_id=ADMIN_GROUP_ID, user_id=user_id)
             if member.status in ("creator", "administrator", "member"):
+                _verified_admin_cache.add(user_id)
                 return True
         except Exception as e:
             logger.debug(f"Admin verification check failed for user {user_id}: {e}")
