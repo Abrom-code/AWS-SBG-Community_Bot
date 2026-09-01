@@ -142,24 +142,24 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     ]
 
     assert labels == [
-        ["⚡ Challenge Center", "💬 Feedback & Support"],
-        ["🛡️ Community Guidelines", "ℹ️ About Us"],
-        ["❓ Help"],
+        ["Challenges", "Feedback"],
+        ["Guidelines", "About"],
+        ["Help"],
     ]
 
     ch_keyboard = bot.get_challenge_menu_keyboard()
     ch_labels = [[button.text for button in row] for row in ch_keyboard.keyboard]
     assert ch_labels == [
-        ["🚀 Take Active Challenge", "🏆 Leaderboards"],
-        ["📚 Past Challenges", "📖 Scoring & Rules"],
-        ["🔙 Main Menu"],
+        ["Take Challenge", "Leaderboards"],
+        ["Past Challenges", "Scoring Rules"],
+        ["Main Menu"],
     ]
 
     fb_keyboard = bot.get_feedback_menu_keyboard()
     fb_labels = [[button.text for button in row] for row in fb_keyboard.keyboard]
     assert fb_labels == [
-        ["📝 Submit Feedback", "ℹ️ About Support"],
-        ["🔙 Main Menu"],
+        ["Submit Feedback", "About Support"],
+        ["Main Menu"],
     ]
 
 
@@ -220,9 +220,9 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
         for row in update.message.reply_text_calls[0]["reply_markup"].keyboard
     ]
     assert labels == [
-        ["⚡ Challenge Center", "💬 Feedback & Support"],
-        ["🛡️ Community Guidelines", "ℹ️ About Us"],
-        ["❓ Help"],
+        ["Challenges", "Feedback"],
+        ["Guidelines", "About"],
+        ["Help"],
     ]
 
 
@@ -394,12 +394,12 @@ def test_challenge_hub_and_feedback_hub_commands():
     asyncio.run(bot.challenge_hub_command(update, context))
     assert len(update.message.reply_text_calls) == 1
     assert "AWS Builder Challenge Center" in update.message.reply_text_calls[0]["text"]
-    assert "🚀 Take Active Challenge" in [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert "Take Challenge" in [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
 
     asyncio.run(bot.feedback_hub_command(update, context))
     assert len(update.message.reply_text_calls) == 2
     assert "Feedback & Community Support Hub" in update.message.reply_text_calls[1]["text"]
-    assert "📝 Submit Feedback" in [b.text for row in update.message.reply_text_calls[1]["reply_markup"].keyboard for b in row]
+    assert "Submit Feedback" in [b.text for row in update.message.reply_text_calls[1]["reply_markup"].keyboard for b in row]
 
 
 def test_direct_feedback_and_support_navigation():
@@ -447,9 +447,9 @@ def test_guidelines_command_and_callback():
     # Test start keyboard has guidelines button
     kb = get_challenge_start_keyboard(challenge_id=99)
     button_texts = [btn.text for row in kb.inline_keyboard for btn in row]
-    assert "🛡️ Community Guidelines" in button_texts
-    assert "🚀 Start Challenge Now" in button_texts
-    assert "📖 How Scoring Works" in button_texts
+    assert "Community Guidelines" in button_texts
+    assert "Start Challenge" in button_texts
+    assert "Scoring Rules" in button_texts
 
     # Test callback query
     cb_query = FakeCallbackQuery(data="ch_guidelines", user_id=123)
@@ -622,11 +622,11 @@ def test_admin_panel_keyboard_layout_and_no_question_bank():
     # 4. 📊 Monthly Report
     # 5. 📢 Broadcast Notification
     assert flat_buttons == [
-        "➕ Create Challenge",
-        "📋 Manage Challenges",
-        "🏆 Leaderboards",
-        "📊 Monthly Report",
-        "📢 Broadcast Notification",
+        "Create Challenge",
+        "Manage Challenges",
+        "Leaderboards",
+        "Monthly Report",
+        "Broadcast",
     ]
     # Question Bank must NOT be in the admin panel
     assert not any("Question Bank" in b for b in flat_buttons)

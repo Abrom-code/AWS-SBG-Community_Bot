@@ -281,13 +281,13 @@ def test_leaderboard_pagination_and_navigation_controls():
     kb1 = get_leaderboard_keyboard(ch_id, mode="weekly", page=1, total_pages=2)
     kb1_texts = [btn.text for row in kb1.inline_keyboard for btn in row]
     assert "Next ➡️" in kb1_texts
-    assert "📄 1/2" in kb1_texts
+    assert "1/2" in kb1_texts
     assert "⬅️ Prev" not in kb1_texts
 
     kb2 = get_leaderboard_keyboard(ch_id, mode="weekly", page=2, total_pages=2)
     kb2_texts = [btn.text for row in kb2.inline_keyboard for btn in row]
     assert "⬅️ Prev" in kb2_texts
-    assert "📄 2/2" in kb2_texts
+    assert "2/2" in kb2_texts
     assert "Next ➡️" not in kb2_texts
 
 

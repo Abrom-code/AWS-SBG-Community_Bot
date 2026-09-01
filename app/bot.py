@@ -95,9 +95,9 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Returns persistent bottom menu buttons for primary member actions."""
     return ReplyKeyboardMarkup(
         [
-            ["⚡ Challenge Center", "💬 Feedback & Support"],
-            ["🛡️ Community Guidelines", "ℹ️ About Us"],
-            ["❓ Help"],
+            ["Challenges", "Feedback"],
+            ["Guidelines", "About"],
+            ["Help"],
         ],
         resize_keyboard=True,
     )
@@ -107,9 +107,9 @@ def get_challenge_menu_keyboard() -> ReplyKeyboardMarkup:
     """Returns persistent sub-menu keyboard for the Challenge Center."""
     return ReplyKeyboardMarkup(
         [
-            ["🚀 Take Active Challenge", "🏆 Leaderboards"],
-            ["📚 Past Challenges", "📖 Scoring & Rules"],
-            ["🔙 Main Menu"],
+            ["Take Challenge", "Leaderboards"],
+            ["Past Challenges", "Scoring Rules"],
+            ["Main Menu"],
         ],
         resize_keyboard=True,
     )
@@ -119,8 +119,8 @@ def get_feedback_menu_keyboard() -> ReplyKeyboardMarkup:
     """Returns persistent sub-menu keyboard for Feedback & Support."""
     return ReplyKeyboardMarkup(
         [
-            ["📝 Submit Feedback", "ℹ️ About Support"],
-            ["🔙 Main Menu"],
+            ["Submit Feedback", "About Support"],
+            ["Main Menu"],
         ],
         resize_keyboard=True,
     )
@@ -359,33 +359,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await register_or_update_bot_user(user.id, user.first_name, user.username)
 
     # Handle Top-Level Navigation
-    if text in ("⚡ Challenge Center", "⚡ Challenges"):
+    if text in ("Challenges", "⚡ Challenges", "⚡ Challenge Center", "Challenge Center", "Challenge"):
         return await challenge_hub_command(update, context)
-    elif text in ("💬 Feedback & Support", "💬 Feedback", "💬 Support", "Support", "Feedback", "📝 Submit Feedback", "📝 Submit New Feedback"):
+    elif text in ("Feedback", "💬 Feedback", "💬 Feedback & Support", "Feedback & Support", "Submit Feedback", "📝 Submit Feedback", "📝 Submit New Feedback"):
         return await feedback_command(update, context)
-    elif text in ("ℹ️ About Us", "ℹ️ About Support", "ℹ️ About"):
+    elif text in ("About", "About Us", "ℹ️ About Us", "ℹ️ About Support", "ℹ️ About", "About Support"):
         return await about_command(update, context)
-    elif text == "❓ Help":
+    elif text in ("Help", "❓ Help"):
         return await help_command(update, context)
-    elif text in ("🔙 Main Menu", "❌ Cancel"):
+    elif text in ("Main Menu", "🔙 Main Menu", "❌ Cancel", "Cancel", "Menu"):
         return await cancel_command(update, context)
 
     # Handle Challenge Sub-Menu
-    elif text in ("🚀 Take Active Challenge", "🚀 Start Challenge"):
+    elif text in ("Take Challenge", "Active Challenge", "🚀 Take Active Challenge", "🚀 Start Challenge", "Start Challenge", "Take Active Challenge"):
         return await challenge_command(update, context)
-    elif text in ("🏆 Leaderboards", "🏆 Leaderboard"):
+    elif text in ("Leaderboards", "Leaderboard", "🏆 Leaderboards", "🏆 Leaderboard"):
         return await leaderboard_command(update, context)
-    elif text in ("📚 Past Challenges", "📚 Archive", "📚 Past Quizzes", "/archive"):
+    elif text in ("Past Challenges", "Archive", "📚 Past Challenges", "📚 Archive", "📚 Past Quizzes", "Past Quizzes"):
         return await past_challenges_command(update, context)
-    elif text in ("📖 Scoring & Rules", "📖 Rules", "ℹ️ Scoring Rules", "📖 How Scoring Works"):
+    elif text in ("Scoring Rules", "Scoring & Rules", "Rules", "📖 Scoring & Rules", "📖 Rules", "ℹ️ Scoring Rules", "📖 How Scoring Works", "How Scoring Works"):
         return await scoring_rules_command(update, context)
-    elif text in ("🛡️ Community Guidelines", "🛡️ Guidelines", "Guidelines", "Code of Conduct"):
+    elif text in ("Guidelines", "Community Guidelines", "🛡️ Community Guidelines", "🛡️ Guidelines", "Code of Conduct"):
         return await guidelines_command(update, context)
 
     # Handle Admin Bottom Navigation Buttons
     chat_id = update.effective_chat.id if update.effective_chat else None
     if await is_admin_user(user_id, chat_id, context.bot):
-        if text in ("➕ Create Challenge", "➕ Create New Challenge"):
+        if text in ("Create Challenge", "➕ Create Challenge", "➕ Create New Challenge", "Create New Challenge"):
             await set_user_state(user_id, "WAITING_FOR_CHALLENGE_TITLE")
             await update.message.reply_text(
                 "➕ <b>Create Challenge Wizard (Step 1/2: Details)</b>\n\n"
@@ -397,7 +397,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode=ParseMode.HTML,
             )
             return
-        elif text in ("📋 Manage Challenges", "📋 Challenge List"):
+        elif text in ("Manage Challenges", "📋 Manage Challenges", "📋 Challenge List", "Challenge List"):
             challenges = await list_challenges(limit=10)
             if not challenges:
                 await update.message.reply_text(
@@ -411,14 +411,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 for ch in challenges:
                     status_emoji = {"LIVE": "🟢", "SCHEDULED": "⏳", "DRAFT": "🛠️", "ENDED": "🏁"}.get(ch["status"], "⚡")
                     buttons.append([InlineKeyboardButton(f"{status_emoji} {ch['title'][:30]} ({ch['status']})", callback_data=f"adm_manage_ch:{ch['id']}")])
-                buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
+                buttons.append([InlineKeyboardButton("Back to Admin", callback_data="adm_panel")])
                 await update.message.reply_text(
                     "📋 <b>Select a Challenge to Manage:</b>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(buttons),
                 )
             return
-        elif text in ("📊 Monthly Report", "📊 Analytics Report"):
+        elif text in ("Monthly Report", "📊 Monthly Report", "📊 Analytics Report", "Analytics Report"):
             rep = await get_monthly_analytics_report()
             champions = rep.get("champions", [])
             champs_text = ""
@@ -453,7 +453,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_admin_report_keyboard(),
             )
             return
-        elif text in ("📢 Broadcast Notification", "📢 Broadcast"):
+        elif text in ("Broadcast", "Broadcast Notification", "📢 Broadcast Notification", "📢 Broadcast"):
             users = await get_all_broadcast_user_ids()
             count = len(users)
             await update.message.reply_text(
@@ -464,7 +464,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_admin_broadcast_presets_keyboard(),
             )
             return
-        elif text in ("🚪 Exit Admin", "🚪 Leave Admin"):
+        elif text in ("Exit Admin", "🚪 Exit Admin", "🚪 Leave Admin", "Leave Admin"):
             await update.message.reply_text(
                 "🔙 <b>Exited Admin Panel.</b>\n\nReturning to member menu:",
                 parse_mode=ParseMode.HTML,
