@@ -158,15 +158,9 @@ async def _execute(query: str, params: tuple = (), fetch: str = "none") -> Any:
     await db.ensure_db()
 
     if db.is_postgres():
-        import psycopg
-
-        url = (
-            db.DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if db.DATABASE_URL.startswith("postgres://")
-            else db.DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await db.get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     pg_query = query.replace("?", "%s")
                     # PostgreSQL requires RETURNING id to get the inserted row's ID
@@ -340,27 +334,16 @@ async def get_active_challenge() -> Optional[Dict[str, Any]]:
     """Retrieves the latest LIVE challenge, or next SCHEDULED challenge, with time-based transitions."""
     now_dt = datetime.now(timezone.utc)
 
-    # 1. Transition SCHEDULED challenges to LIVE if start time has arrived
-    scheduled = await _execute(
-        "SELECT id, starts_at FROM challenges WHERE status = 'SCHEDULED'",
-        fetch="all",
+    # 1. Batch transition SCHEDULED→LIVE and LIVE→ENDED using server-side timestamps
+    now_iso = now_dt.isoformat()
+    await _execute(
+        "UPDATE challenges SET status = 'LIVE' WHERE status = 'SCHEDULED' AND starts_at <= ?",
+        (now_iso,),
     )
-    for ch in scheduled or []:
-        if ch[1]:
-            s_dt = to_utc_datetime(ch[1])
-            if s_dt and now_dt >= s_dt:
-                await _execute("UPDATE challenges SET status = 'LIVE' WHERE id = ?", (ch[0],))
-
-    # 2. Transition LIVE challenges to ENDED if end time has passed
-    live = await _execute(
-        "SELECT id, ends_at FROM challenges WHERE status = 'LIVE'",
-        fetch="all",
+    await _execute(
+        "UPDATE challenges SET status = 'ENDED' WHERE status = 'LIVE' AND ends_at IS NOT NULL AND ends_at <= ?",
+        (now_iso,),
     )
-    for ch in live or []:
-        if ch[1]:
-            e_dt = to_utc_datetime(ch[1])
-            if e_dt and now_dt >= e_dt:
-                await _execute("UPDATE challenges SET status = 'ENDED' WHERE id = ?", (ch[0],))
 
     row = await _execute(
         """
