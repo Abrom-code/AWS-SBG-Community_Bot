@@ -1196,7 +1196,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
 
 async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes uploaded CSV document files to bulk-import questions into the question bank."""
+    """Processes uploaded CSV/TSV document files to bulk-import questions into challenges or question bank."""
     if not update.message or not update.message.document:
         return
 
@@ -1206,14 +1206,56 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
         return
 
     doc = update.message.document
-    if not doc.file_name.endswith(".csv"):
+    filename = (doc.file_name or "").lower()
+    mime = (doc.mime_type or "").lower()
+    is_csv_like = (
+        filename.endswith((".csv", ".txt", ".tsv", ".tab"))
+        or "csv" in mime
+        or "text" in mime
+        or "tab-separated" in mime
+        or "comma-separated" in mime
+    )
+    if not is_csv_like:
+        await update.message.reply_text(
+            "⚠️ <b>Unsupported file format.</b>\nPlease upload a <b>.csv</b>, <b>.tsv</b>, or <b>.txt</b> file.",
+            parse_mode=ParseMode.HTML,
+        )
         return
+
+    if context.bot and update.effective_chat:
+        try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception:
+            pass
 
     file = await context.bot.get_file(doc.file_id)
     file_bytes = await file.download_as_bytearray()
-    csv_text = file_bytes.decode("utf-8", errors="ignore")
+    try:
+        csv_text = file_bytes.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        try:
+            csv_text = file_bytes.decode("latin-1")
+        except Exception:
+            csv_text = file_bytes.decode("utf-8", errors="replace")
 
+    # Resolve target challenge ID: in-memory user_data -> persistent DB user_state -> active challenge
     target_ch_id = context.user_data.get("target_ch_id")
+    if not target_ch_id:
+        user_state = await get_user_state(user.id)
+        if user_state and user_state.startswith("WAITING_FOR_CHALLENGE_CSV:"):
+            try:
+                target_ch_id = int(user_state.split(":")[1])
+            except Exception:
+                target_ch_id = None
+
+    if not target_ch_id:
+        # Fallback: check if there's an active or latest challenge
+        active_ch = await get_active_challenge()
+        if active_ch:
+            target_ch_id = active_ch["id"]
+
+    await set_user_state(user.id, None)
+
     if target_ch_id:
         result = await import_questions_for_challenge(target_ch_id, csv_text)
         imported = result["imported"]
@@ -1224,12 +1266,26 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
             err_list = "\n".join(errors[:5])
             err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
-        await update.message.reply_text(
-            f"📥 <b>CSV Import Complete for Challenge #{target_ch_id}!</b>\n\n"
-            f"✅ <b>Successfully Linked:</b> <code>{imported}</code> questions to this challenge{err_text}",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_manage_keyboard(target_ch_id, "DRAFT"),
-        )
+        ch = await get_challenge(target_ch_id)
+        ch_status = ch["status"] if ch else "DRAFT"
+        ch_questions = await get_challenge_questions(target_ch_id)
+
+        if imported > 0:
+            await update.message.reply_text(
+                f"📥 <b>CSV Import Complete for Challenge #{target_ch_id}!</b>\n\n"
+                f"✅ <b>Successfully Linked:</b> <code>{imported}</code> questions to this challenge.\n"
+                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_manage_keyboard(target_ch_id, ch_status),
+            )
+        else:
+            await update.message.reply_text(
+                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"Please ensure your CSV contains headers like:\n"
+                f"<code>question,option_a,option_b,option_c,option_d,correct_option,explanation</code>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_manage_keyboard(target_ch_id, ch_status),
+            )
     else:
         result = await import_questions_from_csv(csv_text)
         imported = result["imported"]
@@ -1240,9 +1296,17 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
             err_list = "\n".join(errors[:5])
             err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
-        await update.message.reply_text(
-            f"📥 <b>CSV Import Complete!</b>\n\n"
-            f"✅ <b>Successfully Imported:</b> <code>{imported}</code> questions into Question Bank{err_text}",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_panel_keyboard(),
-        )
+        if imported > 0:
+            await update.message.reply_text(
+                f"📥 <b>CSV Import Complete!</b>\n\n"
+                f"✅ <b>Successfully Imported:</b> <code>{imported}</code> questions into Question Bank{err_text}",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_panel_keyboard(),
+            )
+        else:
+            await update.message.reply_text(
+                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"Please ensure your CSV follows the standard question structure.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_panel_keyboard(),
+            )

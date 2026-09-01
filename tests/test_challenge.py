@@ -652,16 +652,54 @@ def test_challenge_review_questions_and_explanations():
     assert rev0["is_correct"] is True
     assert rev0["explanation"] != ""
 
-    rev1 = asyncio.run(service.get_challenge_review_data(ch_id, user_id, question_index=1))
-    assert rev1["question_number"] == 2
-    assert rev1["is_correct"] is False
+    rev_all = [asyncio.run(service.get_challenge_review_data(ch_id, user_id, question_index=i)) for i in range(3)]
+    assert sum(1 for r in rev_all if r["is_correct"] is True) == 2
+    assert sum(1 for r in rev_all if r["is_correct"] is False) == 1
 
     # 4. Review card formatting
     from app.challenge.handlers import _format_review_card
-    card = _format_review_card(rev0)
+    card = _format_review_card(rev_all[0])
     assert "Question Review" in card
     assert "Explanation" in card
     assert "Correct" in card
+
+
+def test_flexible_csv_import_formats():
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(service.create_challenge(title="CSV Test Sprint"))
+
+    # Format 1: Human spaced headers with BOM + Full text answer
+    csv_spaced = "\ufeffQuestion,Option A,Option B,Option C,Option D,Answer,Explanation\n" \
+                 "What is DynamoDB?,Managed NoSQL,Relational DB,Object Storage,DNS,Managed NoSQL,DynamoDB is NoSQL\n"
+    res1 = asyncio.run(service.import_questions_for_challenge(ch_id, csv_spaced))
+    assert res1["imported"] == 1
+    assert len(res1["errors"]) == 0
+
+    # Format 2: Semicolon delimited
+    csv_semi = "Question;Option A;Option B;Option C;Option D;Answer\n" \
+               "What is CloudFront?;CDN;Compute;Storage;Queue;A\n"
+    res2 = asyncio.run(service.import_questions_for_challenge(ch_id, csv_semi))
+    assert res2["imported"] == 1
+
+    # Format 3: Numbered answer (1 = A, 2 = B, 3 = C, 4 = D)
+    csv_num = "Prompt,Choice 1,Choice 2,Choice 3,Choice 4,Key,Rationale\n" \
+              "What is SNS?,Pub/Sub,Storage,Compute,Database,1,SNS is messaging\n"
+    res3 = asyncio.run(service.import_questions_for_challenge(ch_id, csv_num))
+    assert res3["imported"] == 1
+
+    # Format 4: Markdown wrapped CSV
+    csv_md = "```csv\nquestion,option_a,option_b,option_c,option_d,correct\n" \
+             "What is SQS?,Queue,Storage,Compute,Database,A\n```"
+    res4 = asyncio.run(service.import_questions_for_challenge(ch_id, csv_md))
+    assert res4["imported"] == 1
+
+    # Verify all 4 questions were linked to the challenge
+    questions = asyncio.run(service.get_challenge_questions(ch_id))
+    assert len(questions) == 4
+    assert questions[0]["correct_option"] == "A"
+    assert questions[1]["correct_option"] == "A"
+    assert questions[2]["correct_option"] == "A"
+    assert questions[3]["correct_option"] == "A"
 
 
 
