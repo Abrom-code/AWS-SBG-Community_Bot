@@ -5,6 +5,7 @@ from typing import Optional
 
 from telegram import Update
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
 from app.challenge.service import (
@@ -413,7 +414,15 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
     except Exception:
         pass
 
-    result = await record_answer_and_advance(ch_id, user_id, selected_key, q_index)
+    try:
+        result = await record_answer_and_advance(ch_id, user_id, selected_key, q_index)
+    except Exception as exc:
+        logger.exception("record_answer_and_advance crashed: %s", exc)
+        try:
+            await query.answer("⚠️ Something went wrong. Please try again.", show_alert=True)
+        except Exception:
+            pass
+        return
 
     if "error" in result:
         # Check if participant is already completed
@@ -426,7 +435,10 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
                 "total_questions": len(part["question_order"]),
             }
         else:
-            await query.answer(result["error"], show_alert=True)
+            try:
+                await query.answer(result["error"], show_alert=True)
+            except Exception:
+                pass
             return
 
     if result.get("is_completed"):
@@ -443,11 +455,14 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
             f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
             f"<i>Your score has been submitted to the leaderboard.</i>"
         )
-        await query.edit_message_text(
-            completion_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_leaderboard_keyboard(ch_id),
-        )
+        try:
+            await query.edit_message_text(
+                completion_text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_leaderboard_keyboard(ch_id),
+            )
+        except BadRequest:
+            pass
         return
 
     # Fetch and render next question immediately (e.g. Q1 -> Q2, Q2 -> Q3)
@@ -458,16 +473,19 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         score = part["score"]
         correct = part["correct_count"]
         total = len(part["question_order"])
-        await query.edit_message_text(
-            f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
-            f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
-            f"📊 <b>Total Questions:</b> {total}\n"
-            f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
-            f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
-            f"<i>Your score has been submitted to the leaderboard.</i>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_leaderboard_keyboard(ch_id),
-        )
+        try:
+            await query.edit_message_text(
+                f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
+                f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
+                f"📊 <b>Total Questions:</b> {total}\n"
+                f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
+                f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
+                f"<i>Your score has been submitted to the leaderboard.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_leaderboard_keyboard(ch_id),
+            )
+        except BadRequest:
+            pass
         return
 
     text = _format_question_card(next_q)
@@ -478,7 +496,14 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         next_q["total_questions"],
         next_q.get("answered_indices"),
     )
-    await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    try:
+        await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    except BadRequest as e:
+        logger.debug("edit_message_text in answer callback: %s", e)
+        try:
+            await query.answer(f"✅ Moved to Question {next_q['question_number']}", show_alert=False)
+        except Exception:
+            pass
 
 
 async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -502,25 +527,40 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
     except Exception:
         pass
 
-    q_data = await get_next_question_for_participant(ch_id, user_id, question_index=target_idx)
+    try:
+        q_data = await get_next_question_for_participant(ch_id, user_id, question_index=target_idx)
+    except Exception as exc:
+        logger.exception("get_next_question_for_participant crashed in nav: %s", exc)
+        try:
+            await query.answer("⚠️ Failed to load question. Please try again.", show_alert=True)
+        except Exception:
+            pass
+        return
+
     if not q_data:
         part = await register_or_get_participant(ch_id, user_id)
         if part.get("status") == "COMPLETED":
             score = part["score"]
             correct = part["correct_count"]
             total = len(part["question_order"])
-            await query.edit_message_text(
-                f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
-                f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
-                f"📊 <b>Total Questions:</b> {total}\n"
-                f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
-                f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
-                f"<i>Your score has been submitted to the leaderboard.</i>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_leaderboard_keyboard(ch_id),
-            )
+            try:
+                await query.edit_message_text(
+                    f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
+                    f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
+                    f"📊 <b>Total Questions:</b> {total}\n"
+                    f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
+                    f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
+                    f"<i>Your score has been submitted to the leaderboard.</i>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=get_leaderboard_keyboard(ch_id),
+                )
+            except BadRequest:
+                pass
         else:
-            await query.answer("⚠️ Could not load question.", show_alert=True)
+            try:
+                await query.answer("⚠️ Could not load question. Time may have expired.", show_alert=True)
+            except Exception:
+                pass
         return
 
     text = _format_question_card(q_data)
@@ -531,7 +571,14 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
         q_data["total_questions"],
         q_data.get("answered_indices"),
     )
-    await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    try:
+        await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+    except BadRequest as e:
+        logger.debug("edit_message_text in nav callback: %s", e)
+        try:
+            await query.answer(f"📖 Question {q_data['question_number']}", show_alert=False)
+        except Exception:
+            pass
 
 
 # ---------------------------------------------------------------------------
