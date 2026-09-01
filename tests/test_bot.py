@@ -19,15 +19,18 @@ class FakeUser:
 
 
 class FakeMessage:
-    def __init__(self, text="", chat_id=1, message_id=50):
+    def __init__(self, text="", chat_id=1, message_id=50, parent=None):
         self.text = text
         self.chat_id = chat_id
         self.message_id = message_id
+        self.parent = parent
         self.reply_text_calls = []
         self.reply_photo_calls = []
         self.reply_to_message = None
+        self.edited_text = None
 
     async def reply_text(self, text, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
+        msg = FakeMessage(text=text, chat_id=self.chat_id, message_id=self.message_id + len(self.reply_text_calls) + 1, parent=self)
         self.reply_text_calls.append(
             {
                 "text": text,
@@ -36,6 +39,27 @@ class FakeMessage:
                 "protect_content": protect_content,
             }
         )
+        return msg
+
+    async def edit_text(self, text, parse_mode=None, reply_markup=None, **kwargs):
+        self.edited_text = text
+        self.text = text
+        self.reply_text_calls.append(
+            {
+                "text": text,
+                "parse_mode": parse_mode,
+                "reply_markup": reply_markup,
+            }
+        )
+        if self.parent:
+            self.parent.reply_text_calls.append(
+                {
+                    "text": text,
+                    "parse_mode": parse_mode,
+                    "reply_markup": reply_markup,
+                }
+            )
+        return self
 
     async def reply_photo(self, photo, caption=None, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
         self.reply_photo_calls.append(
@@ -47,6 +71,7 @@ class FakeMessage:
                 "protect_content": protect_content,
             }
         )
+        return self
 
 
 class FakeChat:
@@ -868,9 +893,9 @@ def test_admin_paste_csv_text_import(monkeypatch):
     asyncio.run(bot.handle_message(up_msg, ctx_csv))
 
     assert len(up_msg.message.reply_text_calls) > 0
-    resp_text = up_msg.message.reply_text_calls[0]["text"]
-    assert f"Questions Imported for Challenge #{ch_id}!" in resp_text
-    assert "<code>2</code>" in resp_text
+    all_responses = " ".join([c["text"] for c in up_msg.message.reply_text_calls])
+    assert f"Questions Imported for Challenge #{ch_id}!" in all_responses
+    assert "<code>2</code>" in all_responses
 
     questions = asyncio.run(get_challenge_questions(ch_id))
     assert len(questions) == 2

@@ -922,6 +922,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("⚠️ No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
             return
 
+        loading_msg = None
+        try:
+            loading_msg = await update.message.reply_text(
+                "⏳ <b>Processing CSV lines...</b>\n<i>Parsing questions and linking to challenge...</i>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+
         await set_user_state(user_id, None)
         result = await import_questions_for_challenge(target_ch_id, text)
         imported = result["imported"]
@@ -935,21 +944,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch_questions = await get_challenge_questions(target_ch_id)
 
         if imported > 0:
-            await update.message.reply_text(
+            final_text = (
                 f"📥 <b>Questions Imported for Challenge #{target_ch_id}!</b>\n\n"
                 f"✅ <b>Linked:</b> <code>{imported}</code> questions to this challenge.\n"
-                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_wizard_questions_keyboard(target_ch_id),
+                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}"
             )
         else:
-            await update.message.reply_text(
+            final_text = (
                 f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
                 f"Please ensure your text follows the CSV format:\n"
-                f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_wizard_questions_keyboard(target_ch_id),
+                f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>"
             )
+        markup = get_wizard_questions_keyboard(target_ch_id)
+
+        if loading_msg:
+            try:
+                await loading_msg.edit_text(final_text, parse_mode=ParseMode.HTML, reply_markup=markup)
+                return
+            except Exception:
+                pass
+        await update.message.reply_text(final_text, parse_mode=ParseMode.HTML, reply_markup=markup)
         return
 
     # Check if admin is scheduling a custom date/time for a challenge

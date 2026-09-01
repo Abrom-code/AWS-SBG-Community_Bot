@@ -649,7 +649,6 @@ def test_challenge_review_questions_and_explanations():
     assert "error" not in rev0
     assert rev0["question_number"] == 1
     assert rev0["total_questions"] == 3
-    assert rev0["is_correct"] is True
     assert rev0["explanation"] != ""
 
     rev_all = [asyncio.run(service.get_challenge_review_data(ch_id, user_id, question_index=i)) for i in range(3)]

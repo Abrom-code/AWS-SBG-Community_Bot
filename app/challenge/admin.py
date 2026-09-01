@@ -1228,6 +1228,15 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
         except Exception:
             pass
 
+    loading_msg = None
+    try:
+        loading_msg = await update.message.reply_text(
+            "⏳ <b>Processing CSV Document...</b>\n<i>Downloading, parsing headers, and validating question bank entries...</i>",
+            parse_mode=ParseMode.HTML,
+        )
+    except Exception:
+        pass
+
     file = await context.bot.get_file(doc.file_id)
     file_bytes = await file.download_as_bytearray()
     try:
@@ -1271,21 +1280,27 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
         ch_questions = await get_challenge_questions(target_ch_id)
 
         if imported > 0:
-            await update.message.reply_text(
+            final_text = (
                 f"📥 <b>CSV Import Complete for Challenge #{target_ch_id}!</b>\n\n"
                 f"✅ <b>Successfully Linked:</b> <code>{imported}</code> questions to this challenge.\n"
-                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_challenge_manage_keyboard(target_ch_id, ch_status),
+                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}"
             )
+            markup = get_challenge_manage_keyboard(target_ch_id, ch_status)
         else:
-            await update.message.reply_text(
+            final_text = (
                 f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
                 f"Please ensure your CSV contains headers like:\n"
-                f"<code>question,option_a,option_b,option_c,option_d,correct_option,explanation</code>",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_challenge_manage_keyboard(target_ch_id, ch_status),
+                f"<code>question,option_a,option_b,option_c,option_d,correct_option,explanation</code>"
             )
+            markup = get_challenge_manage_keyboard(target_ch_id, ch_status)
+
+        if loading_msg:
+            try:
+                await loading_msg.edit_text(final_text, parse_mode=ParseMode.HTML, reply_markup=markup)
+                return
+            except Exception:
+                pass
+        await update.message.reply_text(final_text, parse_mode=ParseMode.HTML, reply_markup=markup)
     else:
         result = await import_questions_from_csv(csv_text)
         imported = result["imported"]
@@ -1297,16 +1312,22 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
             err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
         if imported > 0:
-            await update.message.reply_text(
+            final_text = (
                 f"📥 <b>CSV Import Complete!</b>\n\n"
-                f"✅ <b>Successfully Imported:</b> <code>{imported}</code> questions into Question Bank{err_text}",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_admin_panel_keyboard(),
+                f"✅ <b>Successfully Imported:</b> <code>{imported}</code> questions into Question Bank{err_text}"
             )
+            markup = get_admin_panel_keyboard()
         else:
-            await update.message.reply_text(
+            final_text = (
                 f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
-                f"Please ensure your CSV follows the standard question structure.",
-                parse_mode=ParseMode.HTML,
-                reply_markup=get_admin_panel_keyboard(),
+                f"Please ensure your CSV follows the standard question structure."
             )
+            markup = get_admin_panel_keyboard()
+
+        if loading_msg:
+            try:
+                await loading_msg.edit_text(final_text, parse_mode=ParseMode.HTML, reply_markup=markup)
+                return
+            except Exception:
+                pass
+        await update.message.reply_text(final_text, parse_mode=ParseMode.HTML, reply_markup=markup)
