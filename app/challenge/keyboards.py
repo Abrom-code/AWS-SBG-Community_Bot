@@ -194,6 +194,7 @@ def get_admin_leaderboard_keyboard(active_ch_id: int = 0) -> InlineKeyboardMarku
     if active_ch_id > 0:
         buttons.append([InlineKeyboardButton("⚡ Active Challenge Standings", callback_data=f"adm_lb_view:weekly:{active_ch_id}")])
     buttons.append([InlineKeyboardButton("📅 Monthly Cumulative Championship", callback_data="adm_lb_view:monthly:0")])
+    buttons.append([InlineKeyboardButton("📚 Browse Past Challenge Boards", callback_data="ch_past_list")])
     buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
     return InlineKeyboardMarkup(buttons)
 

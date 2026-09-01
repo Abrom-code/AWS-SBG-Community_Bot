@@ -269,6 +269,24 @@ async def create_challenge(
     )
 
 
+def to_utc_datetime(val: Any) -> Optional[datetime]:
+    """Converts a string, timestamp, or datetime to an offset-aware UTC datetime safely."""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        if val.tzinfo is None:
+            return val.replace(tzinfo=timezone.utc)
+        return val.astimezone(timezone.utc)
+    try:
+        s = str(val).replace("Z", "+00:00")
+        dt = datetime.fromisoformat(s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(timezone.utc)
+    except Exception:
+        return None
+
+
 async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
     """Retrieves a single challenge by ID."""
     row = await _execute(
@@ -289,15 +307,15 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
         "title": row[2],
         "description": row[3],
         "category": row[4],
-        "starts_at": row[5],
-        "ends_at": row[6],
+        "starts_at": str(row[5]) if row[5] is not None else None,
+        "ends_at": str(row[6]) if row[6] is not None else None,
         "duration_seconds": row[7],
         "question_time_limit_seconds": row[8],
         "accuracy_weight": float(row[9]),
         "speed_weight": float(row[10]),
         "status": row[11],
         "created_by": row[12],
-        "created_at": row[13],
+        "created_at": str(row[13]) if row[13] is not None else None,
     }
 
 
@@ -310,28 +328,22 @@ async def get_active_challenge() -> Optional[Dict[str, Any]]:
         "SELECT id, starts_at FROM challenges WHERE status = 'SCHEDULED'",
         fetch="all",
     )
-    for ch in scheduled:
+    for ch in scheduled or []:
         if ch[1]:
-            try:
-                s_dt = datetime.fromisoformat(str(ch[1]).replace("Z", "+00:00"))
-                if now_dt >= s_dt:
-                    await _execute("UPDATE challenges SET status = 'LIVE' WHERE id = ?", (ch[0],))
-            except Exception:
-                pass
+            s_dt = to_utc_datetime(ch[1])
+            if s_dt and now_dt >= s_dt:
+                await _execute("UPDATE challenges SET status = 'LIVE' WHERE id = ?", (ch[0],))
 
     # 2. Transition LIVE challenges to ENDED if end time has passed
     live = await _execute(
         "SELECT id, ends_at FROM challenges WHERE status = 'LIVE'",
         fetch="all",
     )
-    for ch in live:
+    for ch in live or []:
         if ch[1]:
-            try:
-                e_dt = datetime.fromisoformat(str(ch[1]).replace("Z", "+00:00"))
-                if now_dt >= e_dt:
-                    await _execute("UPDATE challenges SET status = 'ENDED' WHERE id = ?", (ch[0],))
-            except Exception:
-                pass
+            e_dt = to_utc_datetime(ch[1])
+            if e_dt and now_dt >= e_dt:
+                await _execute("UPDATE challenges SET status = 'ENDED' WHERE id = ?", (ch[0],))
 
     row = await _execute(
         """
@@ -351,15 +363,15 @@ async def get_active_challenge() -> Optional[Dict[str, Any]]:
         "title": row[2],
         "description": row[3],
         "category": row[4],
-        "starts_at": row[5],
-        "ends_at": row[6],
+        "starts_at": str(row[5]) if row[5] is not None else None,
+        "ends_at": str(row[6]) if row[6] is not None else None,
         "duration_seconds": row[7],
         "question_time_limit_seconds": row[8],
         "accuracy_weight": float(row[9]),
         "speed_weight": float(row[10]),
         "status": row[11],
         "created_by": row[12],
-        "created_at": row[13],
+        "created_at": str(row[13]) if row[13] is not None else None,
     }
 
 
@@ -1012,23 +1024,19 @@ def calculate_remaining_exam_seconds(
     if ch_status == "ENDED":
         if not started_at_str:
             return (configured_seconds, False, None)
-        started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
-        if started_dt.tzinfo is None:
-            started_dt = started_dt.replace(tzinfo=timezone.utc)
+        started_dt = to_utc_datetime(started_at_str) or now_dt
         elapsed = max(0.0, (now_dt - started_dt).total_seconds())
         time_from_exam_timer = max(0.0, configured_seconds - elapsed)
         return (time_from_exam_timer, False, None)
 
-    ends_at_str = challenge.get("ends_at")
+    ends_at_val = challenge.get("ends_at")
     seconds_until_close = None
-    if ends_at_str:
-        try:
-            ends_dt = datetime.fromisoformat(ends_at_str.replace("Z", "+00:00"))
-            if ends_dt.tzinfo is None:
-                ends_dt = ends_dt.replace(tzinfo=timezone.utc)
+    if ends_at_val:
+        ends_dt = to_utc_datetime(ends_at_val)
+        if ends_dt:
             seconds_until_close = max(0.0, (ends_dt - now_dt).total_seconds())
-        except Exception:
-            seconds_until_close = None
+
+    ends_at_str = str(ends_at_val) if ends_at_val is not None else None
 
     # 1. Participant hasn't started yet
     if not started_at_str:
@@ -1040,9 +1048,7 @@ def calculate_remaining_exam_seconds(
         return (configured_seconds, False, ends_at_str)
 
     # 2. Participant has already started
-    started_dt = datetime.fromisoformat(started_at_str.replace("Z", "+00:00"))
-    if started_dt.tzinfo is None:
-        started_dt = started_dt.replace(tzinfo=timezone.utc)
+    started_dt = to_utc_datetime(started_at_str) or now_dt
 
     elapsed = max(0.0, (now_dt - started_dt).total_seconds())
     time_from_exam_timer = max(0.0, configured_seconds - elapsed)
