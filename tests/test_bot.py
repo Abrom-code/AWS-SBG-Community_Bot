@@ -600,9 +600,8 @@ def test_custom_date_challenge_creation_flow(monkeypatch):
 
     asyncio.run(bot.handle_message(up_msg, ctx_msg))
 
-    assert len(up_msg.message.reply_text_calls) == 1
     resp = up_msg.message.reply_text_calls[0]["text"]
-    assert "Created" in resp
+    assert "Challenge" in resp
     assert "2026-09-10" in resp
     assert up_msg.message.reply_text_calls[0]["reply_markup"] is not None
 
@@ -993,6 +992,82 @@ def test_challenge_manual_duration_configuration(monkeypatch):
 
     ch_updated = asyncio.run(get_challenge(ch_id))
     assert ch_updated["duration_seconds"] == 45 * 60
+
+
+def test_modern_step_by_step_creation_wizard(monkeypatch):
+    """Verifies the modern 4-step challenge creation flow: Title -> Description -> Schedule/Duration -> Add Questions."""
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import get_challenge, get_challenge_questions
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    # Step 1: Open Wizard & Enter Title
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_create_ch")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    asyncio.run(handle_admin_callback(up1, ctx))
+    assert "Step 1/4: Title" in q1.edited_text
+
+    up_title = FakeUpdate(user_id=99999, text="AWS Developer Associate Sprint")
+    asyncio.run(bot.handle_message(up_title, ctx))
+
+    assert len(up_title.message.reply_text_calls) == 1
+    resp1 = up_title.message.reply_text_calls[0]["text"]
+    assert "Step 2/4: Description" in resp1
+    assert "AWS Developer Associate Sprint" in resp1
+
+    state = asyncio.run(db.get_user_state(99999))
+    assert state.startswith("WAITING_FOR_CHALLENGE_DESC:")
+    ch_id = int(state.split(":")[1])
+
+    # Step 2: Enter Description
+    up_desc = FakeUpdate(user_id=99999, text="Hands-on practice quiz covering DynamoDB, Lambda, CI/CD, and ECS architectures.")
+    asyncio.run(bot.handle_message(up_desc, ctx))
+
+    assert len(up_desc.message.reply_text_calls) == 1
+    resp2 = up_desc.message.reply_text_calls[0]["text"]
+    assert "Step 3/4: Schedule & Start/End Time" in resp2
+    assert "DynamoDB, Lambda, CI/CD" in resp2
+
+    # Step 3: Select Schedule preset
+    q_sched = FakeCallbackQuery(user_id=99999, data=f"adm_cr_sched:{ch_id}:now:7d")
+    up_s = FakeUpdate(user_id=99999, callback_query=q_sched)
+    asyncio.run(handle_admin_callback(up_s, ctx))
+
+    assert "Step 4/4: Add Questions" in q_sched.edited_text or "Add Questions" in q_sched.edited_text
+
+    # Step 4: Add single question
+    q_single = FakeCallbackQuery(user_id=99999, data=f"adm_add_q_to_ch:{ch_id}")
+    up_sq = FakeUpdate(user_id=99999, callback_query=q_single)
+    asyncio.run(handle_admin_callback(up_sq, ctx))
+
+    q_text = (
+        "What is AWS CodePipeline?\n"
+        "A: A continuous delivery service\n"
+        "B: A relational database engine\n"
+        "C: An object storage repository\n"
+        "D: A DNS management service\n"
+        "Answer: A\n"
+        "Category: DevOps\n"
+        "Difficulty: EASY\n"
+        "Explanation: CodePipeline is a managed continuous delivery service."
+    )
+    up_q = FakeUpdate(user_id=99999, text=q_text)
+    asyncio.run(bot.handle_message(up_q, ctx))
+
+    assert len(up_q.message.reply_text_calls) == 1
+    resp_q = up_q.message.reply_text_calls[0]["text"]
+    assert f"Added to Challenge #{ch_id}!" in resp_q
+
+    # Verify final challenge state
+    final_ch = asyncio.run(get_challenge(ch_id))
+    assert final_ch["title"] == "AWS Developer Associate Sprint"
+    assert "Hands-on practice quiz" in final_ch["description"]
+    assert final_ch["status"] == "LIVE"
+
+    questions = asyncio.run(get_challenge_questions(ch_id))
+    assert len(questions) == 1
+
 
 
 

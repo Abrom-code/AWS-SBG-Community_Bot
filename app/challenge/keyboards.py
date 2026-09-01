@@ -302,6 +302,16 @@ def get_challenge_timer_edit_keyboard(challenge_id: int) -> InlineKeyboardMarkup
     )
 
 
+def get_wizard_skip_desc_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
+    """Provides a skip/default shortcut button for Challenge Description in wizard."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("⏭️ Use Default Description", callback_data=f"adm_wiz_skip_desc:{challenge_id}")],
+            [InlineKeyboardButton("❌ Cancel Creation", callback_data="adm_panel")],
+        ]
+    )
+
+
 def get_wizard_questions_keyboard(challenge_id: int = 0) -> InlineKeyboardMarkup:
     """Step 2 question selection options for Challenge Creation Wizard."""
     buttons = []

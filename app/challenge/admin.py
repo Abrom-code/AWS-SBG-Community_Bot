@@ -39,6 +39,7 @@ from app.challenge.keyboards import (
     get_admin_broadcast_confirm_keyboard,
     get_admin_report_keyboard,
     get_wizard_questions_keyboard,
+    get_wizard_skip_desc_keyboard,
     get_challenge_delete_confirm_keyboard,
     get_admin_leaderboard_keyboard,
     get_challenge_questions_view_keyboard,
@@ -317,16 +318,36 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             pass
         await set_user_state(user.id, "WAITING_FOR_CHALLENGE_TITLE")
         await query.edit_message_text(
-            "➕ <b>Create Challenge Wizard (Step 1/2: Details & Duration)</b>\n\n"
-            "Please enter the challenge details in this format:\n"
-            "<code>Title | Category | Description | Duration in Minutes</code>\n\n"
-            "<i>Examples:</i>\n"
-            "• <code>AWS Serverless Sprint | Serverless | Master Lambda & DynamoDB | 15</code>\n"
-            "• <code>AWS Cloud Practitioner | Cloud Essentials | 50 Questions Exam | 30</code>\n"
-            "• <code>AWS Solutions Architect | Architecture | Multi-tier design | 45</code>\n\n"
-            "<i>(Or simply send the Title: <code>AWS Serverless Sprint</code> — default duration is 10 mins)</i>\n\n"
+            "✨ <b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
+            "📌 <b>Please enter the Title for this challenge:</b>\n\n"
+            "<i>Example:</i>\n"
+            "<code>AWS Solutions Architect Associate Sprint</code>\n\n"
+            "💡 <i>(Power users can also send all at once: <code>Title | Description | Duration</code>)</i>\n\n"
             "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
+        )
+
+    elif data.startswith("adm_wiz_skip_desc:"):
+        try:
+            await query.answer("⏭️ Default description applied...", show_alert=False)
+        except Exception:
+            pass
+        ch_id = int(data.split(":")[1])
+        await set_user_state(user.id, None)
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+        category = ch.get("category", "Architecture") if ch else "Architecture"
+        desc = ch.get("description", "Weekly test on AWS core services and cloud architecture patterns.") if ch else "Weekly test on AWS core services and cloud architecture patterns."
+        dur_secs = ch.get("duration_seconds") or 600 if ch else 600
+        dur_mins = int(dur_secs // 60)
+        await query.edit_message_text(
+            f"✨ <b>Create Challenge Wizard (Step 3/4: Schedule & Start/End Time)</b>\n\n"
+            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n"
+            f"⏱️ <b>Exam Time Limit:</b> <code>{dur_mins} Minutes</code>\n\n"
+            f"⏰ <b>Select Start Schedule & Deadline:</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_schedule_presets_keyboard(ch_id, dur_mins),
         )
 
     elif data.startswith("adm_del_prompt:"):

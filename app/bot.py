@@ -56,6 +56,7 @@ from app.challenge.keyboards import (
     get_challenge_manage_keyboard,
     get_admin_schedule_presets_keyboard,
     get_wizard_questions_keyboard,
+    get_wizard_skip_desc_keyboard,
     get_question_bank_actions_keyboard,
     get_admin_menu_keyboard,
     get_admin_panel_keyboard,
@@ -471,7 +472,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Check user state
     current_state = await get_user_state(user_id)
 
-    # Check if admin is entering challenge title/category (Wizard Step 1)
+    # Check if admin is entering challenge title (Wizard Step 1/4)
     if current_state == "WAITING_FOR_CHALLENGE_TITLE":
         chat_id = update.effective_chat.id if update.effective_chat else None
         if not await is_admin_user(user_id, chat_id, context.bot):
@@ -479,32 +480,66 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        await set_user_state(user_id, None)
         raw = text.strip()
         parts = [p.strip() for p in raw.split("|")]
-        duration_mins = 10
-        if len(parts) >= 4:
-            title = parts[0]
-            category = parts[1] or "Architecture"
-            description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
-            try:
-                duration_mins = int(parts[3].lower().replace("mins", "").replace("min", "").replace("m", "").strip())
-            except Exception:
-                duration_mins = 10
-        elif len(parts) == 3:
-            title = parts[0]
-            category = parts[1] or "Architecture"
-            description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
-        elif len(parts) == 2:
-            title = parts[0]
-            category = parts[1] or "Architecture"
-            description = "Weekly test on AWS core services and cloud architecture patterns."
-        else:
-            title = raw
-            category = "Architecture"
-            description = "Weekly test on AWS core services and cloud architecture patterns."
 
-        duration_mins = max(1, min(300, duration_mins))
+        # Power-user shortcut: entered multiple fields at once (e.g. Title | Category | Description | Duration)
+        if len(parts) >= 2:
+            await set_user_state(user_id, None)
+            duration_mins = 10
+            if len(parts) >= 4:
+                title = parts[0]
+                category = parts[1] or "Architecture"
+                description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
+                try:
+                    duration_mins = int(parts[3].lower().replace("mins", "").replace("min", "").replace("m", "").strip())
+                except Exception:
+                    duration_mins = 10
+            elif len(parts) == 3:
+                title = parts[0]
+                category = parts[1] or "Architecture"
+                description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
+            else:
+                title = parts[0]
+                category = parts[1] or "Architecture"
+                description = "Weekly test on AWS core services and cloud architecture patterns."
+
+            duration_mins = max(1, min(300, duration_mins))
+            ch_id = await create_challenge(
+                title=title,
+                description=description,
+                category=category,
+                starts_at=None,
+                ends_at=None,
+                question_time_limit_seconds=60,
+                duration_seconds=duration_mins * 60,
+                accuracy_weight=0.70,
+                speed_weight=0.30,
+                created_by=user_id,
+            )
+
+            context.user_data["wiz_title"] = title
+            context.user_data["wiz_category"] = category
+            context.user_data["wiz_description"] = description
+            context.user_data["wiz_duration_mins"] = duration_mins
+
+            await update.message.reply_text(
+                f"✨ <b>Create Challenge Wizard (Step 3/4: Schedule & Start/End Time)</b>\n\n"
+                f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
+                f"🏗️ <b>Category:</b> {html.escape(category)}\n"
+                f"📝 <b>Description:</b> <i>{html.escape(description)}</i>\n"
+                f"⏱️ <b>Exam Time Limit:</b> <code>{duration_mins} Minutes</code>\n\n"
+                f"⏰ <b>Select Start Schedule & Deadline:</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_schedule_presets_keyboard(ch_id, duration_mins),
+            )
+            return
+
+        # Single Title entered -> Step-by-Step Flow: proceed to Step 2 (Description)
+        title = raw
+        category = "Architecture"
+        description = "Weekly test on AWS core services and cloud architecture patterns."
+        duration_mins = 10
 
         ch_id = await create_challenge(
             title=title,
@@ -521,18 +556,51 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         context.user_data["wiz_title"] = title
         context.user_data["wiz_category"] = category
-        context.user_data["wiz_description"] = description
         context.user_data["wiz_duration_mins"] = duration_mins
 
+        await set_user_state(user_id, f"WAITING_FOR_CHALLENGE_DESC:{ch_id}")
         await update.message.reply_text(
-            f"⚡ <b>Challenge #{ch_id} Details Configured:</b>\n\n"
-            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
-            f"🏗️ <b>Category:</b> {html.escape(category)}\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{duration_mins} Minutes</code>\n"
-            f"📝 <b>Description:</b> <i>{html.escape(description)}</i>\n\n"
-            f"⏰ <b>Select Start Schedule:</b>",
+            f"✨ <b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
+            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n\n"
+            f"📝 <b>Please enter the challenge description:</b>\n"
+            f"<i>(Explain what community members will learn or test in this challenge)</i>\n\n"
+            f"<i>Example:</i> <code>Master EC2, S3, VPC, Lambda, and high-availability design patterns in this weekly challenge.</code>\n\n"
+            f"<i>(Or tap below to use default description)</i>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_schedule_presets_keyboard(ch_id, duration_mins),
+            reply_markup=get_wizard_skip_desc_keyboard(ch_id),
+        )
+        return
+
+    # Check if admin is entering challenge description (Wizard Step 2/4)
+    if current_state and current_state.startswith("WAITING_FOR_CHALLENGE_DESC"):
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        await set_user_state(user_id, None)
+        parts = current_state.split(":")
+        ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("wiz_ch_id")
+        if not ch_id:
+            await update.message.reply_text("⚠️ No active challenge creation session.", reply_markup=get_main_menu_keyboard())
+            return
+
+        desc = text.strip()
+        await update_challenge_details(ch_id, description=desc)
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+        dur_secs = ch.get("duration_seconds") or 600 if ch else 600
+        dur_mins = int(dur_secs // 60)
+
+        await update.message.reply_text(
+            f"✨ <b>Create Challenge Wizard (Step 3/4: Schedule & Start/End Time)</b>\n\n"
+            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n"
+            f"⏱️ <b>Exam Time Limit:</b> <code>{dur_mins} Minutes</code>\n\n"
+            f"⏰ <b>Select Start Schedule & Deadline:</b>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_schedule_presets_keyboard(ch_id, dur_mins),
         )
         return
 
@@ -868,13 +936,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Check if admin is scheduling a custom date/time for a challenge
-    if current_state == "WAITING_FOR_ADMIN_SCHEDULE":
+    if current_state and current_state.startswith("WAITING_FOR_ADMIN_SCHEDULE"):
         chat_id = update.effective_chat.id if update.effective_chat else None
         if not await is_admin_user(user_id, chat_id, context.bot):
             await set_user_state(user_id, None)
             return
 
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        parts_state = current_state.split(":")
+        existing_ch_id = int(parts_state[1]) if len(parts_state) > 1 and parts_state[1].isdigit() else None
         await set_user_state(user_id, None)
+
         raw = text.strip()
         parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
         now_dt = datetime.now(timezone.utc)
@@ -911,38 +983,53 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         status = "LIVE" if datetime.fromisoformat(starts_at.replace("Z", "+00:00")) <= now_dt else "SCHEDULED"
 
-        title = context.user_data.pop("wiz_title", "AWS Cloud Architecture Challenge")
-        category = context.user_data.pop("wiz_category", "Architecture")
-        description = context.user_data.pop("wiz_description", "Weekly test on AWS core services and cloud architecture patterns.")
-
-        ch_id = await create_challenge(
-            title=title,
-            description=description,
-            category=category,
-            starts_at=starts_at,
-            ends_at=ends_at,
-            question_time_limit_seconds=60,
-            duration_seconds=600,
-            accuracy_weight=0.70,
-            speed_weight=0.30,
-        )
-        if status != "DRAFT":
+        if existing_ch_id:
+            ch_id = existing_ch_id
+            await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
             await update_challenge_status(ch_id, status)
+            ch = await get_challenge(ch_id)
+            title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+            category = ch.get("category", "Architecture") if ch else "Architecture"
+            dur_secs = ch.get("duration_seconds") or 600 if ch else 600
+            exam_mins = int(dur_secs // 60)
+            questions = await get_challenge_questions(ch_id)
+            q_count = len(questions)
+        else:
+            title = context.user_data.pop("wiz_title", "AWS Cloud Architecture Challenge")
+            category = context.user_data.pop("wiz_category", "Architecture")
+            description = context.user_data.pop("wiz_description", "Weekly test on AWS core services and cloud architecture patterns.")
+            dur_mins = context.user_data.pop("wiz_duration_mins", 10)
+            exam_mins = dur_mins
+
+            ch_id = await create_challenge(
+                title=title,
+                description=description,
+                category=category,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                question_time_limit_seconds=60,
+                duration_seconds=dur_mins * 60,
+                accuracy_weight=0.70,
+                speed_weight=0.30,
+            )
+            if status != "DRAFT":
+                await update_challenge_status(ch_id, status)
+            q_count = 0
 
         status_text = "🟢 <b>LIVE</b>" if status == "LIVE" else "⏳ <b>SCHEDULED</b>"
 
         await update.message.reply_text(
-            f"✅ <b>Challenge #{ch_id} Created! (Step 2/2: Add Questions)</b>\n\n"
+            f"✨ <b>Challenge #{ch_id} Configured! (Step 4/4: Add Questions)</b>\n\n"
             f"⚡ <b>Title:</b> {html.escape(title)}\n"
             f"🏗️ <b>Category:</b> {html.escape(category)}\n"
             f"🚦 <b>Status:</b> {status_text}\n"
-            f"⏳ <b>Starts:</b> <code>{starts_at}</code>\n"
+            f"🟢 <b>Starts:</b> <code>{starts_at}</code>\n"
             f"🏁 <b>Ends:</b> <code>{ends_at}</code>\n"
-            f"⏱️ <b>Exam Time:</b> 10 minutes\n"
-            f"📊 <b>Questions Attached:</b> <code>0</code>\n\n"
+            f"⏱️ <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
+            f"📊 <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"👉 <b>Next step: Attach questions to this challenge.</b>\n"
-            f"You can add questions one-by-one or bulk import via CSV file below:",
+            f"Add questions one-by-one or bulk import via CSV file below:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_questions_keyboard(ch_id),
         )
