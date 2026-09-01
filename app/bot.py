@@ -213,6 +213,11 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the Challenge Center hub with dedicated sub-menu."""
+    if context.bot and update.effective_chat:
+        try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception:
+            pass
     hub_text = (
         "⚡ <b>AWS Builder Challenge Center</b>\n\n"
         "Participate in weekly cloud competitions to test your architecture and serverless knowledge.\n\n"
@@ -224,7 +229,10 @@ async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TY
     )
     cb_query = getattr(update, "callback_query", None)
     if cb_query:
-        await cb_query.answer()
+        try:
+            await cb_query.answer("⚡ Loading Challenge Center...", show_alert=False)
+        except Exception:
+            pass
         await cb_query.message.reply_text(
             hub_text,
             parse_mode=ParseMode.HTML,
@@ -240,6 +248,11 @@ async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the Feedback & Support hub with dedicated sub-menu."""
+    if context.bot and update.effective_chat:
+        try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception:
+            pass
     hub_text = (
         "💬 <b>Feedback & Community Support Hub</b>\n\n"
         "Have an idea for upcoming AWS workshops, a feature suggestion, or an issue to report?\n\n"

@@ -4,7 +4,7 @@ import math
 from typing import Optional
 
 from telegram import Update
-from telegram.constants import ParseMode
+from telegram.constants import ParseMode, ChatAction
 from telegram.error import BadRequest
 from telegram.ext import ContextTypes
 
@@ -155,9 +155,17 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     cb_query = getattr(update, "callback_query", None)
     if cb_query:
-        await cb_query.answer()
+        try:
+            await cb_query.answer("⏳ Loading challenge...", show_alert=False)
+        except Exception:
+            pass
         sender_func = cb_query.edit_message_text
     elif update.message:
+        if context.bot and update.effective_chat:
+            try:
+                await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+            except Exception:
+                pass
         sender_func = lambda text, **kwargs: update.message.reply_text(text, protect_content=True, **kwargs)
     else:
         return
@@ -352,6 +360,11 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
 # ---------------------------------------------------------------------------
 async def past_challenges_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays previous challenges for leaderboard inspection and question practice."""
+    if context.bot and update.effective_chat:
+        try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception:
+            pass
     challenges = await list_past_challenges(limit=15)
     if not challenges:
         await update.message.reply_text(
@@ -606,6 +619,11 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
 # ---------------------------------------------------------------------------
 async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the community challenge leaderboard."""
+    if context.bot and update.effective_chat:
+        try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception:
+            pass
     challenge = await get_active_challenge()
     ch_id = challenge["id"] if challenge else 0
     user = update.effective_user
@@ -801,6 +819,11 @@ def get_guidelines_text() -> str:
 
 async def scoring_rules_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the scoring rules to the user."""
+    if context.bot and update.effective_chat:
+        try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception:
+            pass
     challenge = await get_active_challenge()
     ch_id = challenge["id"] if challenge else 0
     await update.message.reply_text(
@@ -812,6 +835,11 @@ async def scoring_rules_command(update: Update, context: ContextTypes.DEFAULT_TY
 
 async def guidelines_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the community guidelines to the user."""
+    if context.bot and update.effective_chat:
+        try:
+            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        except Exception:
+            pass
     challenge = await get_active_challenge()
     ch_id = challenge["id"] if challenge else 0
     await update.message.reply_text(
