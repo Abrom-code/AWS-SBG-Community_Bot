@@ -520,6 +520,55 @@ def test_challenge_time_capping_and_closing_deadline():
     assert part_completed["status"] == "COMPLETED"
 
 
+def test_question_bottom_navigation_bar_and_jumping():
+    """Verifies that questions have bottom navigation buttons and direct jumping works."""
+    from app.challenge.keyboards import get_question_options_keyboard
+
+    asyncio.run(db.reset_db())
+    asyncio.run(service.import_questions_from_csv(SAMPLE_CSV))
+
+    ch_id = asyncio.run(service.create_challenge(title="Nav Test Sprint"))
+    asyncio.run(service.link_questions_to_challenge(ch_id))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    user_id = 998877
+    asyncio.run(service.register_or_get_participant(ch_id, user_id, "NavUser"))
+    asyncio.run(service.start_participant_quiz(ch_id, user_id))
+
+    # 1. Fetch Question 1 (index 0)
+    q1 = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, question_index=0))
+    assert q1["question_number"] == 1
+    assert q1["total_questions"] == 3
+    assert q1["answered_indices"] == []
+
+    # 2. Keyboard has 2x2 options and bottom navigation
+    kb1 = get_question_options_keyboard(ch_id, 0, q1["display_keys"], q1["total_questions"], q1["answered_indices"])
+    all_buttons = [btn.text for row in kb1.inline_keyboard for btn in row]
+    assert "• 1 •" in all_buttons
+    assert "2" in all_buttons
+    assert "3" in all_buttons
+    assert "Next Q ➡️" in all_buttons
+
+    # 3. Answer Question 1
+    p1 = asyncio.run(service.register_or_get_participant(ch_id, user_id))
+    correct_key = p1["current_option_order"]["_display_correct"]
+    res = asyncio.run(service.record_answer_and_advance(ch_id, user_id, correct_key, 0))
+    assert res["is_correct"] is True
+
+    # 4. Jump directly to Question 3 (index 2) via navigation
+    q3 = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, question_index=2))
+    assert q3["question_number"] == 3
+    assert 0 in q3["answered_indices"]  # Question 1 was answered
+
+    kb3 = get_question_options_keyboard(ch_id, 2, q3["display_keys"], q3["total_questions"], q3["answered_indices"])
+    all_buttons3 = [btn.text for row in kb3.inline_keyboard for btn in row]
+    assert "1✅" in all_buttons3
+    assert "2" in all_buttons3
+    assert "• 3 •" in all_buttons3
+    assert "⬅️ Prev Q" in all_buttons3
+
+
+
 
 
 

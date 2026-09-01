@@ -24,10 +24,14 @@ def get_question_options_keyboard(
     challenge_id: int,
     question_index: int,
     options_keys: Optional[List[str]] = None,
+    total_questions: int = 1,
+    answered_indices: Optional[List[int]] = None,
 ) -> InlineKeyboardMarkup:
-    """Randomized 4-option question response keyboard."""
+    """Randomized 4-option question response keyboard with bottom question navigation bar."""
     keys = options_keys or ["A", "B", "C", "D"]
-    # Group in 2x2 grid
+    answered_set = set(answered_indices or [])
+
+    # 1. Option Answer Buttons (2x2 Grid)
     row1 = [
         InlineKeyboardButton(f"{keys[0]}", callback_data=f"ch_ans:{challenge_id}:{question_index}:{keys[0]}"),
         InlineKeyboardButton(f"{keys[1]}", callback_data=f"ch_ans:{challenge_id}:{question_index}:{keys[1]}"),
@@ -36,7 +40,43 @@ def get_question_options_keyboard(
         InlineKeyboardButton(f"{keys[2]}", callback_data=f"ch_ans:{challenge_id}:{question_index}:{keys[2]}"),
         InlineKeyboardButton(f"{keys[3]}", callback_data=f"ch_ans:{challenge_id}:{question_index}:{keys[3]}"),
     ]
-    return InlineKeyboardMarkup([row1, row2])
+
+    buttons = [row1, row2]
+
+    # 2. Bottom Question Navigation Bar (when multiple questions exist)
+    if total_questions > 1:
+        # Numbered Question buttons (sliding window up to 5 buttons)
+        max_visible = 5
+        if total_questions <= max_visible:
+            start_num = 0
+            end_num = total_questions
+        else:
+            start_num = max(0, min(question_index - 2, total_questions - max_visible))
+            end_num = min(total_questions, start_num + max_visible)
+
+        num_row = []
+        for i in range(start_num, end_num):
+            q_num = i + 1
+            if i == question_index:
+                label = f"• {q_num} •"
+            elif i in answered_set:
+                label = f"{q_num}✅"
+            else:
+                label = f"{q_num}"
+            num_row.append(InlineKeyboardButton(label, callback_data=f"ch_nav:{challenge_id}:{i}"))
+        buttons.append(num_row)
+
+        # Prev / Next navigation row
+        nav_row = []
+        if question_index > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ Prev Q", callback_data=f"ch_nav:{challenge_id}:{question_index - 1}"))
+        if question_index < total_questions - 1:
+            nav_row.append(InlineKeyboardButton("Next Q ➡️", callback_data=f"ch_nav:{challenge_id}:{question_index + 1}"))
+
+        if nav_row:
+            buttons.append(nav_row)
+
+    return InlineKeyboardMarkup(buttons)
 
 
 def get_leaderboard_keyboard(

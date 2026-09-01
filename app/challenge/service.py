@@ -1074,17 +1074,43 @@ async def start_participant_quiz(challenge_id: int, telegram_user_id: int) -> No
     )
 
 
+async def get_answered_positions_for_participant(participant_id: int) -> List[int]:
+    """Returns list of 0-based question indices that have been answered by the participant."""
+    rows = await _execute(
+        "SELECT DISTINCT question_position FROM challenge_answers WHERE participant_id = ?",
+        (participant_id,),
+        fetch="all",
+    )
+    if not rows:
+        return []
+    return [int(r[0]) - 1 for r in rows if r and r[0] is not None]
+
+
 async def get_next_question_for_participant(
-    challenge_id: int, telegram_user_id: int
+    challenge_id: int, telegram_user_id: int, question_index: Optional[int] = None
 ) -> Optional[Dict[str, Any]]:
-    """Prepares the next question for a participant with randomized option mapping and capped deadline timer."""
+    """Prepares a question for a participant with randomized option mapping, bottom navigation state, and timer."""
     part = await register_or_get_participant(challenge_id, telegram_user_id)
     if part["status"] not in ("REGISTERED", "IN_PROGRESS"):
         return None
 
     q_order = part["question_order"]
-    idx = part["current_question_index"]
-    if idx >= len(q_order):
+    total_q = len(q_order)
+    if total_q == 0:
+        return None
+
+    if question_index is not None and 0 <= question_index < total_q:
+        idx = question_index
+        # Update current index in DB if different
+        if part["current_question_index"] != idx:
+            await _execute(
+                "UPDATE challenge_participants SET current_question_index = ? WHERE id = ?",
+                (idx, part["id"]),
+            )
+    else:
+        idx = part["current_question_index"]
+
+    if idx >= total_q:
         return None
 
     challenge = await get_challenge(challenge_id)
@@ -1153,9 +1179,12 @@ async def get_next_question_for_participant(
         (json.dumps(mapping), now, part["id"]),
     )
 
+    answered_indices = await get_answered_positions_for_participant(part["id"])
+
     return {
         "question_number": idx + 1,
-        "total_questions": len(q_order),
+        "question_index": idx,
+        "total_questions": total_q,
         "question_id": target_q_id,
         "question_text": question["question_text"],
         "category": question["category"],
@@ -1166,6 +1195,7 @@ async def get_next_question_for_participant(
         "time_remaining_seconds": time_remaining_seconds,
         "time_remaining_str": time_remaining_str,
         "is_deadline_capped": is_capped,
+        "answered_indices": answered_indices,
     }
 
 

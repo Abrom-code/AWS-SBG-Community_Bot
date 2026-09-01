@@ -282,7 +282,13 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
         return
 
     text = _format_question_card(q_data)
-    kb = get_question_options_keyboard(ch_id, q_data["question_number"] - 1, q_data["display_keys"])
+    kb = get_question_options_keyboard(
+        ch_id,
+        q_data["question_number"] - 1,
+        q_data["display_keys"],
+        q_data["total_questions"],
+        q_data.get("answered_indices"),
+    )
     await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
@@ -459,7 +465,66 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         return
 
     text = _format_question_card(next_q)
-    kb = get_question_options_keyboard(ch_id, next_q["question_number"] - 1, next_q["display_keys"])
+    kb = get_question_options_keyboard(
+        ch_id,
+        next_q["question_number"] - 1,
+        next_q["display_keys"],
+        next_q["total_questions"],
+        next_q.get("answered_indices"),
+    )
+    await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
+async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles jumping directly to a specific question via the bottom navigation bar."""
+    query = update.callback_query
+
+    parts = query.data.split(":")
+    if len(parts) < 3:
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        return
+
+    ch_id = int(parts[1])
+    target_idx = int(parts[2])
+    user_id = query.from_user.id
+
+    try:
+        await query.answer(f"📖 Loading Question {target_idx + 1}...", show_alert=False)
+    except Exception:
+        pass
+
+    q_data = await get_next_question_for_participant(ch_id, user_id, question_index=target_idx)
+    if not q_data:
+        part = await register_or_get_participant(ch_id, user_id)
+        if part.get("status") == "COMPLETED":
+            score = part["score"]
+            correct = part["correct_count"]
+            total = len(part["question_order"])
+            await query.edit_message_text(
+                f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
+                f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
+                f"📊 <b>Total Questions:</b> {total}\n"
+                f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
+                f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
+                f"<i>Your score has been submitted to the leaderboard.</i>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_leaderboard_keyboard(ch_id),
+            )
+        else:
+            await query.answer("⚠️ Could not load question.", show_alert=True)
+        return
+
+    text = _format_question_card(q_data)
+    kb = get_question_options_keyboard(
+        ch_id,
+        q_data["question_number"] - 1,
+        q_data["display_keys"],
+        q_data["total_questions"],
+        q_data.get("answered_indices"),
+    )
     await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
 
 
