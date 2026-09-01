@@ -115,30 +115,29 @@ async def _safe_edit_or_reply(query, text: str, reply_markup=None):
         try:
             await query.edit_message_caption(caption=text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
             return
-        except BadRequest:
-            pass
+        except BadRequest as e:
+            if "not modified" in str(e).lower():
+                return
+            logger.debug("edit_message_caption BadRequest: %s", e)
         except Exception as e:
             logger.debug("edit_message_caption failed: %s", e)
 
     try:
         await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+        return
     except BadRequest as e:
+        if "not modified" in str(e).lower():
+            return
         logger.debug("edit_message_text BadRequest: %s", e)
-        try:
-            await query.edit_message_caption(caption=text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
-        except Exception:
-            try:
-                if query.message:
-                    await query.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
-            except Exception:
-                pass
     except Exception as exc:
         logger.debug("edit_message_text exception: %s", exc)
-        try:
-            if query.message:
-                await query.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
-        except Exception:
-            pass
+
+    # Fallback to sending a new message in chat if in-place edit was rejected
+    try:
+        if query.message:
+            await query.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=reply_markup)
+    except Exception as e:
+        logger.error("Fallback reply_text failed: %s", e)
 
 
 # ---------------------------------------------------------------------------
@@ -339,6 +338,12 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
         q_data["total_questions"],
         q_data.get("answered_indices"),
     )
+    if query.message and getattr(query.message, "photo", None):
+        try:
+            await query.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+            return
+        except Exception:
+            pass
     await _safe_edit_or_reply(query, text, reply_markup=kb)
 
 
