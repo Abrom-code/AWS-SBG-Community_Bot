@@ -208,7 +208,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             reply_markup=InlineKeyboardMarkup(buttons),
         )
 
-    elif data.startswith("adm_manage:"):
+    elif data.startswith("adm_manage:") or data.startswith("adm_manage_ch:"):
         try:
             await query.answer("⚙️ Loading challenge settings...", show_alert=False)
         except Exception:

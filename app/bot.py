@@ -423,7 +423,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 buttons = []
                 for ch in challenges:
                     status_emoji = {"LIVE": "🟢", "SCHEDULED": "⏳", "DRAFT": "🛠️", "ENDED": "🏁"}.get(ch["status"], "⚡")
-                    buttons.append([InlineKeyboardButton(f"{status_emoji} {ch['title'][:30]} ({ch['status']})", callback_data=f"adm_manage_ch:{ch['id']}")])
+                    buttons.append([InlineKeyboardButton(f"{status_emoji} {ch['title'][:30]} ({ch['status']})", callback_data=f"adm_manage:{ch['id']}")])
                 buttons.append([InlineKeyboardButton("Back to Admin", callback_data="adm_panel")])
                 await update.message.reply_text(
                     "📋 <b>Select a Challenge to Manage:</b>",
