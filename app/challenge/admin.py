@@ -127,8 +127,13 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         logger.error(f"Error in handle_admin_callback: {e}", exc_info=True)
         query = update.callback_query
         if query:
+            err_msg = str(e)
+            if "HTTP implementation" in err_msg or "Event loop" in err_msg or "attached to a different loop" in err_msg:
+                user_alert = "⚠️ Temporary connection reset. Please tap again."
+            else:
+                user_alert = f"⚠️ {err_msg[:60]}"
             try:
-                await query.answer(f"⚠️ Error: {str(e)[:40]}", show_alert=True)
+                await query.answer(user_alert, show_alert=True)
             except Exception:
                 pass
             try:
