@@ -498,7 +498,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
         context.user_data["target_ch_id"] = ch_id
-        await set_user_state(user.id, "WAITING_FOR_CHALLENGE_SINGLE_QUESTION")
+        await set_user_state(user.id, f"WAITING_FOR_CHALLENGE_SINGLE_QUESTION:{ch_id}")
         await query.edit_message_text(
             f"✍️ <b>Add Question Specifically for Challenge #{ch_id} ({title})</b>\n\n"
             "Please send the question details in the following format:\n\n"
@@ -520,7 +520,7 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
         context.user_data["target_ch_id"] = ch_id
-        await set_user_state(user.id, "WAITING_FOR_CHALLENGE_CSV")
+        await set_user_state(user.id, f"WAITING_FOR_CHALLENGE_CSV:{ch_id}")
         await query.edit_message_text(
             f"📥 <b>Import Questions for Challenge #{ch_id} ({title})</b>\n\n"
             "You can:\n"

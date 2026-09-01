@@ -316,7 +316,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "❌ Broadcast cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
-    elif current_state in (
+    elif current_state and any(current_state.startswith(s) for s in (
         "WAITING_FOR_ADMIN_SCHEDULE",
         "WAITING_FOR_CHALLENGE_TITLE",
         "WAITING_FOR_EDIT_CHALLENGE_TITLE",
@@ -326,7 +326,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "WAITING_FOR_ADMIN_CSV",
         "WAITING_FOR_CHALLENGE_SINGLE_QUESTION",
         "WAITING_FOR_CHALLENGE_CSV",
-    ):
+    )):
         await set_user_state(user_id, None)
         context.user_data.pop("target_ch_id", None)
         context.user_data.pop("edit_ch_id", None)
@@ -728,16 +728,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Check if admin is adding a single question specifically for a challenge
-    if current_state == "WAITING_FOR_CHALLENGE_SINGLE_QUESTION":
+    if current_state and current_state.startswith("WAITING_FOR_CHALLENGE_SINGLE_QUESTION"):
         chat_id = update.effective_chat.id if update.effective_chat else None
         if not await is_admin_user(user_id, chat_id, context.bot):
             await set_user_state(user_id, None)
             return
 
-        target_ch_id = context.user_data.get("target_ch_id")
+        parts = current_state.split(":")
+        target_ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("target_ch_id")
+        if not target_ch_id:
+            active_ch = await get_active_challenge()
+            target_ch_id = active_ch["id"] if active_ch else 0
+
         if not target_ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("⚠️ No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
             return
 
         parsed = parse_single_question_text(text)
@@ -770,21 +775,26 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>\n\n"
             f"<i>You can add another question, import CSV, or publish the challenge.</i>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_manage_keyboard(target_ch_id, "DRAFT"),
+            reply_markup=get_wizard_questions_keyboard(target_ch_id),
         )
         return
 
     # Check if admin is importing questions for a specific challenge via CSV
-    if current_state == "WAITING_FOR_CHALLENGE_CSV":
+    if current_state and current_state.startswith("WAITING_FOR_CHALLENGE_CSV"):
         chat_id = update.effective_chat.id if update.effective_chat else None
         if not await is_admin_user(user_id, chat_id, context.bot):
             await set_user_state(user_id, None)
             return
 
-        target_ch_id = context.user_data.get("target_ch_id")
+        parts = current_state.split(":")
+        target_ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("target_ch_id")
+        if not target_ch_id:
+            active_ch = await get_active_challenge()
+            target_ch_id = active_ch["id"] if active_ch else 0
+
         if not target_ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("⚠️ No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
             return
 
         await set_user_state(user_id, None)
@@ -805,7 +815,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"✅ <b>Linked:</b> <code>{imported}</code> questions to this challenge.\n"
                 f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}",
                 parse_mode=ParseMode.HTML,
-                reply_markup=get_challenge_manage_keyboard(target_ch_id, "DRAFT"),
+                reply_markup=get_wizard_questions_keyboard(target_ch_id),
             )
         else:
             await update.message.reply_text(
@@ -813,7 +823,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Please ensure your text follows the CSV format:\n"
                 f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>",
                 parse_mode=ParseMode.HTML,
-                reply_markup=get_challenge_manage_keyboard(target_ch_id, "DRAFT"),
+                reply_markup=get_wizard_questions_keyboard(target_ch_id),
             )
         return
 
