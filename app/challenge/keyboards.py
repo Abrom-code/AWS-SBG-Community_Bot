@@ -245,14 +245,11 @@ def get_admin_menu_keyboard() -> ReplyKeyboardMarkup:
 
 
 def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
-    """Admin dashboard navigation in formal sequence: Create, Manage, Leaderboards, Report, Broadcast."""
+    """Admin dashboard inline shortcut."""
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Create Challenge", callback_data="adm_create_ch")],
             [InlineKeyboardButton("Manage Challenges", callback_data="adm_list_ch")],
-            [InlineKeyboardButton("Leaderboards", callback_data="adm_leaderboards")],
-            [InlineKeyboardButton("Monthly Report", callback_data="adm_report")],
-            [InlineKeyboardButton("Broadcast", callback_data="adm_broadcast")],
         ]
     )
 
@@ -263,8 +260,6 @@ def get_admin_leaderboard_keyboard(active_ch_id: int = 0) -> InlineKeyboardMarku
     if active_ch_id > 0:
         buttons.append([InlineKeyboardButton("Active Standings", callback_data=f"adm_lb_view:weekly:{active_ch_id}")])
     buttons.append([InlineKeyboardButton("Monthly Championship", callback_data="adm_lb_view:monthly:0")])
-    buttons.append([InlineKeyboardButton("Past Leaderboards", callback_data="ch_past_list")])
-    buttons.append([InlineKeyboardButton("Back to Admin", callback_data="adm_panel")])
     return InlineKeyboardMarkup(buttons)
 
 
@@ -273,7 +268,6 @@ def get_admin_report_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Broadcast Report", callback_data="adm_bcast_preset:report")],
-            [InlineKeyboardButton("Back to Admin", callback_data="adm_panel")],
         ]
     )
 
@@ -286,7 +280,6 @@ def get_admin_broadcast_presets_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("Announce Leaderboard", callback_data="adm_bcast_preset:leaderboard")],
             [InlineKeyboardButton("Announce Monthly Wrap-Up", callback_data="adm_bcast_preset:report")],
             [InlineKeyboardButton("Custom Broadcast", callback_data="adm_bcast_custom")],
-            [InlineKeyboardButton("Back to Admin", callback_data="adm_panel")],
         ]
     )
 
@@ -306,7 +299,6 @@ def get_question_bank_actions_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Manage Challenges", callback_data="adm_list_ch")],
-            [InlineKeyboardButton("Back to Admin", callback_data="adm_panel")],
         ]
     )
 
@@ -361,7 +353,6 @@ def get_wizard_questions_keyboard(challenge_id: int = 0) -> InlineKeyboardMarkup
         buttons.append([InlineKeyboardButton("View Questions", callback_data=f"adm_view_ch_q:{challenge_id}")])
         buttons.append([InlineKeyboardButton("Publish (Go LIVE)", callback_data=f"adm_pub:{challenge_id}")])
         buttons.append([InlineKeyboardButton("Manage Challenge", callback_data=f"adm_manage:{challenge_id}")])
-        buttons.append([InlineKeyboardButton("Back to Admin", callback_data="adm_panel")])
     else:
         buttons.append([InlineKeyboardButton("Cancel", callback_data="adm_panel")])
     return InlineKeyboardMarkup(buttons)
@@ -435,5 +426,4 @@ def get_challenge_manage_keyboard(challenge_id: int, status: str) -> InlineKeybo
         buttons.append([InlineKeyboardButton("Delete Challenge", callback_data=f"adm_del_prompt:{challenge_id}")])
 
     buttons.append([InlineKeyboardButton("Manage Challenges", callback_data="adm_list_ch")])
-    buttons.append([InlineKeyboardButton("Back to Admin", callback_data="adm_panel")])
     return InlineKeyboardMarkup(buttons)

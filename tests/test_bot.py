@@ -637,18 +637,10 @@ def test_admin_panel_keyboard_layout_and_no_question_bank():
     button_rows = [[btn.text for btn in row] for row in kb.inline_keyboard]
     flat_buttons = [btn.text for row in kb.inline_keyboard for btn in row]
 
-    # Verify exact required order:
-    # 1. ➕ Create Challenge
-    # 2. 📋 Manage Challenges
-    # 3. 🏆 Leaderboards
-    # 4. 📊 Monthly Report
-    # 5. 📢 Broadcast Notification
+    # Verify only contextual actions remain inline (rest on bottom menu)
     assert flat_buttons == [
         "Create Challenge",
         "Manage Challenges",
-        "Leaderboards",
-        "Monthly Report",
-        "Broadcast",
     ]
     # Question Bank must NOT be in the admin panel
     assert not any("Question Bank" in b for b in flat_buttons)
