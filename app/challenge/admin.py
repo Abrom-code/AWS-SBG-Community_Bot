@@ -697,6 +697,11 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data == "adm_report":
+        try:
+            await query.answer("📊 Generating Monthly Report...", show_alert=False)
+        except Exception:
+            pass
+
         rep = await get_monthly_analytics_report()
         month = rep["month_name"]
         users = rep["total_users"]
@@ -747,6 +752,10 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data == "adm_leaderboards":
+        try:
+            await query.answer("🏆 Loading leaderboards...", show_alert=False)
+        except Exception:
+            pass
         active_ch = await get_active_challenge()
         active_ch_id = active_ch["id"] if active_ch else 0
         await query.edit_message_text(
@@ -757,6 +766,10 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data.startswith("adm_lb_view:"):
+        try:
+            await query.answer("🏆 Fetching builder rankings...", show_alert=False)
+        except Exception:
+            pass
         parts = data.split(":")
         mode = parts[1]
         target_id = int(parts[2]) if len(parts) > 2 and parts[2].isdigit() else 0

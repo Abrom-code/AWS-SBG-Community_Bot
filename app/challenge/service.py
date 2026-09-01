@@ -1447,14 +1447,25 @@ async def get_monthly_analytics_report(season_id: Optional[int] = None) -> Dict[
     now = datetime.now(timezone.utc)
     month_name = now.strftime("%B %Y")
 
-    # 1. User engagement
-    users_row = await _execute("SELECT COUNT(*) FROM bot_users", fetch="one")
-    total_users = users_row[0] if users_row else 0
+    # 1. Consolidated counts in 1 single fast query (engagement, challenges, feedback, questions)
+    counts_row = await _execute(
+        """
+        SELECT
+            (SELECT COUNT(*) FROM bot_users),
+            (SELECT COUNT(*) FROM challenges),
+            (SELECT COUNT(*) FROM feedback_submissions),
+            (SELECT COUNT(*) FROM admin_reply_mappings),
+            (SELECT COUNT(*) FROM questions WHERE is_active = 1 OR is_active = TRUE)
+        """,
+        fetch="one",
+    )
+    total_users = counts_row[0] if counts_row else 0
+    total_challenges = counts_row[1] if counts_row else 0
+    feedback_count = counts_row[2] if counts_row else 0
+    reply_count = counts_row[3] if counts_row else 0
+    question_count = counts_row[4] if counts_row else 0
 
-    # 2. Challenge statistics
-    ch_row = await _execute("SELECT COUNT(*) FROM challenges", fetch="one")
-    total_challenges = ch_row[0] if ch_row else 0
-
+    # 2. Aggregated participant quiz performance
     part_row = await _execute(
         """
         SELECT COUNT(*), COALESCE(SUM(score), 0), COALESCE(AVG(score), 0),
@@ -1471,18 +1482,7 @@ async def get_monthly_analytics_report(season_id: Optional[int] = None) -> Dict[
     total_answered = part_row[4] if part_row else 0
     accuracy_pct = round((total_correct / total_answered * 100), 1) if total_answered > 0 else 0.0
 
-    # 3. Community Feedback & Support
-    fb_row = await _execute("SELECT COUNT(*) FROM feedback_submissions", fetch="one")
-    feedback_count = fb_row[0] if fb_row else 0
-
-    reply_row = await _execute("SELECT COUNT(*) FROM admin_reply_mappings", fetch="one")
-    reply_count = reply_row[0] if reply_row else 0
-
-    # 4. Question Bank
-    q_row = await _execute("SELECT COUNT(*) FROM questions WHERE is_active = 1 OR is_active = TRUE", fetch="one")
-    question_count = q_row[0] if q_row else 0
-
-    # 5. Top Champions
+    # 3. Top Champions
     monthly_lb = await get_monthly_leaderboard(season_id=season_id, limit=3)
     champions = monthly_lb.get("entries", [])
 
