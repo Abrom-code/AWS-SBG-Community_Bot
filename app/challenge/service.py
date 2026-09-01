@@ -1219,10 +1219,16 @@ async def record_answer_and_advance(
     if part["status"] != "IN_PROGRESS":
         return {"error": "Challenge is not active or already completed."}
 
-    # If the user already answered this question (e.g. from a quick double tap), gracefully advance
-    if part["current_question_index"] > question_index:
-        total_q = len(part["question_order"])
-        is_completed = (part["current_question_index"] >= total_q)
+    answered_positions = await get_answered_positions_for_participant(part["id"])
+    total_q = len(part["question_order"])
+
+    # If this specific question has already been answered, gracefully advance to next question
+    if question_index in answered_positions:
+        is_completed = (len(answered_positions) >= total_q)
+        next_idx = question_index + 1
+        if next_idx >= total_q and not is_completed:
+            unanswered = [i for i in range(total_q) if i not in answered_positions]
+            next_idx = unanswered[0] if unanswered else total_q
         return {
             "already_answered": True,
             "is_completed": is_completed,
@@ -1230,17 +1236,13 @@ async def record_answer_and_advance(
             "correct_count": part["correct_count"],
             "answered_count": part["answered_count"],
             "total_questions": total_q,
-            "next_question_index": part["current_question_index"],
+            "next_question_index": next_idx,
         }
-
-    # If out of order (attempting to jump ahead)
-    if part["current_question_index"] < question_index:
-        return {"error": "Question is out of order."}
 
     # Double-click lock check: if locked in-flight, gracefully return current progression
     if part.get("is_locked"):
-        total_q = len(part["question_order"])
-        is_completed = (part["current_question_index"] >= total_q)
+        is_completed = (len(answered_positions) >= total_q)
+        next_idx = question_index + 1 if question_index + 1 < total_q else 0
         return {
             "already_answered": True,
             "is_completed": is_completed,
@@ -1248,7 +1250,7 @@ async def record_answer_and_advance(
             "correct_count": part["correct_count"],
             "answered_count": part["answered_count"],
             "total_questions": total_q,
-            "next_question_index": part["current_question_index"],
+            "next_question_index": next_idx,
         }
 
     # Immediately engage atomic lock
@@ -1343,13 +1345,21 @@ async def record_answer_and_advance(
             ),
         )
 
-        # Advance participant state
+        # Advance participant state to the next question (e.g. Q1 -> Q2, Q2 -> Q3)
         new_index = question_index + 1
         raw_accumulated_score = round(part["score"] + points_awarded, 2)
         new_correct = part["correct_count"] + (1 if is_correct else 0)
         new_answered = part["answered_count"] + 1
         total_q = len(part["question_order"])
-        is_completed = (new_index >= total_q)
+
+        new_answered_set = set(answered_positions)
+        new_answered_set.add(question_index)
+        is_completed = (len(new_answered_set) >= total_q)
+
+        if not is_completed and new_index >= total_q:
+            # Wrap around to first unanswered question if user answered out-of-order
+            unanswered = [i for i in range(total_q) if i not in new_answered_set]
+            new_index = unanswered[0] if unanswered else total_q
 
         now_iso_completed = datetime.now(timezone.utc).isoformat() if is_completed else None
 

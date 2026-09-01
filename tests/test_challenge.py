@@ -568,6 +568,41 @@ def test_question_bottom_navigation_bar_and_jumping():
     assert "⬅️ Prev Q" in all_buttons3
 
 
+def test_answer_question_2_navigates_to_question_3():
+    """Explicitly verifies: when a student answers question 2 (index 1), it navigates to question 3 (index 2)."""
+    asyncio.run(db.reset_db())
+    asyncio.run(service.import_questions_from_csv(SAMPLE_CSV))
+
+    ch_id = asyncio.run(service.create_challenge(title="Sequential Navigation Test"))
+    asyncio.run(service.link_questions_to_challenge(ch_id))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    user_id = 554433
+    asyncio.run(service.register_or_get_participant(ch_id, user_id, "Bob"))
+    asyncio.run(service.start_participant_quiz(ch_id, user_id))
+
+    # Step 1: User starts on Question 1, answers Question 1
+    q1 = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, question_index=0))
+    assert q1["question_number"] == 1
+    p1 = asyncio.run(service.register_or_get_participant(ch_id, user_id))
+    res1 = asyncio.run(service.record_answer_and_advance(ch_id, user_id, p1["current_option_order"]["_display_correct"], 0))
+    assert res1["next_question_index"] == 1  # Navigates to index 1 (Question 2)
+
+    # Step 2: User is on Question 2, answers Question 2
+    q2 = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, question_index=res1["next_question_index"]))
+    assert q2["question_number"] == 2
+    p2 = asyncio.run(service.register_or_get_participant(ch_id, user_id))
+    res2 = asyncio.run(service.record_answer_and_advance(ch_id, user_id, p2["current_option_order"]["_display_correct"], 1))
+    assert res2["next_question_index"] == 2  # Navigates to index 2 (Question 3)
+
+    # Step 3: Question 3 is loaded
+    q3 = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, question_index=res2["next_question_index"]))
+    assert q3["question_number"] == 3
+    assert 0 in q3["answered_indices"]
+    assert 1 in q3["answered_indices"]
+
+
+
 
 
 

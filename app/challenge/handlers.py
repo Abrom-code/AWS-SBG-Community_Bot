@@ -445,8 +445,9 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         )
         return
 
-    # Fetch and render next question immediately
-    next_q = await get_next_question_for_participant(ch_id, user_id)
+    # Fetch and render next question immediately (e.g. Q1 -> Q2, Q2 -> Q3)
+    next_target_idx = result.get("next_question_index")
+    next_q = await get_next_question_for_participant(ch_id, user_id, question_index=next_target_idx)
     if not next_q:
         part = await register_or_get_participant(ch_id, user_id)
         score = part["score"]
