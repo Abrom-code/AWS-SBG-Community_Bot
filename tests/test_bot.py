@@ -467,12 +467,11 @@ def test_guidelines_command_and_callback():
     assert "Screenshots Disabled" in call["text"]
     assert call["reply_markup"] is not None
 
-    # Test start keyboard has guidelines button
+    # Test start keyboard only has the contextual Start button (other actions on bottom menu)
     kb = get_challenge_start_keyboard(challenge_id=99)
     button_texts = [btn.text for row in kb.inline_keyboard for btn in row]
-    assert "Community Guidelines" in button_texts
     assert "Start Challenge" in button_texts
-    assert "Scoring Rules" in button_texts
+    assert len(button_texts) == 1
 
     # Test callback query
     cb_query = FakeCallbackQuery(data="ch_guidelines", user_id=123)
