@@ -411,8 +411,49 @@ def test_direct_feedback_and_support_navigation():
 
 
 def test_scoring_rules_command_renders_guide():
+    from app.challenge.handlers import scoring_rules_command
     update = FakeUpdate(user_id=123)
     context = FakeContext()
+    asyncio.run(scoring_rules_command(update, context))
+    assert len(update.message.reply_text_calls) == 1
+    call = update.message.reply_text_calls[0]
+    assert "How Scoring Works" in call["text"]
+    assert "Two-Factor Scoring Formula" in call["text"]
+    assert call["reply_markup"] is not None
+
+
+def test_guidelines_command_and_callback():
+    from app.challenge.handlers import guidelines_command, handle_guidelines_callback, challenge_command
+    from app.challenge.keyboards import get_challenge_start_keyboard
+    from app.challenge.service import create_challenge, update_challenge_status
+
+    # Test /guidelines command
+    update = FakeUpdate(user_id=123)
+    context = FakeContext()
+    asyncio.run(guidelines_command(update, context))
+    assert len(update.message.reply_text_calls) == 1
+    call = update.message.reply_text_calls[0]
+    assert "Community Guidelines & Code of Conduct" in call["text"]
+    assert "Strictly One Account" in call["text"]
+    assert "No AI or Automation" in call["text"]
+    assert "Screenshots Disabled" in call["text"]
+    assert call["reply_markup"] is not None
+
+    # Test start keyboard has guidelines button
+    kb = get_challenge_start_keyboard(challenge_id=99)
+    button_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert "🛡️ Community Guidelines" in button_texts
+    assert "🚀 Start Challenge Now" in button_texts
+    assert "📖 How Scoring Works" in button_texts
+
+    # Test callback query
+    cb_query = FakeCallbackQuery(data="ch_guidelines", user_id=123)
+    cb_update = FakeUpdate(callback_query=cb_query)
+    asyncio.run(handle_guidelines_callback(cb_update, context))
+    assert cb_query.answered is True
+    assert cb_query.edited_text is not None
+    assert "Community Guidelines & Code of Conduct" in cb_query.edited_text
+
 
 def test_admin_command_security_restrictions(monkeypatch):
     from app.challenge.admin import admin_command

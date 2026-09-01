@@ -12,6 +12,9 @@ def get_challenge_start_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("🏆 Leaderboard", callback_data=f"lb_weekly:{challenge_id}"),
                 InlineKeyboardButton("📖 How Scoring Works", callback_data="ch_rules"),
             ],
+            [
+                InlineKeyboardButton("🛡️ Community Guidelines", callback_data="ch_guidelines"),
+            ],
             [InlineKeyboardButton("🔙 Back to Challenge Center", callback_data="ch_hub")],
         ]
     )
@@ -96,6 +99,18 @@ def get_scoring_rules_keyboard(challenge_id: Optional[int] = None) -> InlineKeyb
         buttons.append([InlineKeyboardButton("🏆 View Leaderboard", callback_data=f"lb_weekly:{ch_id}:1")])
     else:
         buttons.append([InlineKeyboardButton("📅 Monthly Cumulative Leaderboard", callback_data="lb_monthly:0:1")])
+    buttons.append([InlineKeyboardButton("🛡️ Community Guidelines", callback_data="ch_guidelines")])
+    buttons.append([InlineKeyboardButton("🔙 Back to Challenge Center", callback_data="ch_hub")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_guidelines_keyboard(challenge_id: Optional[int] = None) -> InlineKeyboardMarkup:
+    """Navigation keyboard displayed on the Community Guidelines page."""
+    ch_id = challenge_id or 0
+    buttons = []
+    if ch_id > 0:
+        buttons.append([InlineKeyboardButton("🚀 Start Challenge Now", callback_data=f"ch_start:{ch_id}")])
+    buttons.append([InlineKeyboardButton("📖 How Scoring Works", callback_data="ch_rules")])
     buttons.append([InlineKeyboardButton("🔙 Back to Challenge Center", callback_data="ch_hub")])
     return InlineKeyboardMarkup(buttons)
 
@@ -137,7 +152,10 @@ def get_challenge_hub_inline_keyboard() -> InlineKeyboardMarkup:
             ],
             [
                 InlineKeyboardButton("📚 Past Challenges", callback_data="ch_past_list"),
-                InlineKeyboardButton("📖 Scoring Rules", callback_data="ch_rules"),
+                InlineKeyboardButton("📖 How Scoring Works", callback_data="ch_rules"),
+            ],
+            [
+                InlineKeyboardButton("🛡️ Community Guidelines", callback_data="ch_guidelines"),
             ],
         ]
     )

@@ -25,11 +25,13 @@ from app.challenge.handlers import (
     challenge_command,
     leaderboard_command,
     scoring_rules_command,
+    guidelines_command,
     past_challenges_command,
     handle_challenge_start_callback,
     handle_challenge_answer_callback,
     handle_leaderboard_callback,
     handle_challenge_rules_callback,
+    handle_guidelines_callback,
     handle_past_challenges_callback,
 )
 from app.challenge.service import (
@@ -247,6 +249,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• /archive — Browse & practice past challenges\n"
         "• /leaderboard — View weekly & monthly championship rankings\n"
         "• /rules — See how speed & accuracy scoring is calculated\n"
+        "• /guidelines — Read community rules & code of conduct\n"
         "• /feedback — Drop a suggestion or issue for the core team\n"
         "• /about — Learn more about what we do\n"
         "• /cancel — Return to the main menu\n\n"
@@ -360,8 +363,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await leaderboard_command(update, context)
     elif text in ("📚 Past Challenges", "📚 Archive", "📚 Past Quizzes", "/archive"):
         return await past_challenges_command(update, context)
-    elif text in ("📖 Scoring & Rules", "📖 Rules", "ℹ️ Scoring Rules"):
+    elif text in ("📖 Scoring & Rules", "📖 Rules", "ℹ️ Scoring Rules", "📖 How Scoring Works"):
         return await scoring_rules_command(update, context)
+    elif text in ("🛡️ Community Guidelines", "🛡️ Guidelines", "Guidelines", "Code of Conduct"):
+        return await guidelines_command(update, context)
 
     # Check user state
     current_state = await get_user_state(user_id)
@@ -1053,12 +1058,14 @@ def create_application(token: str = None):
     app.add_handler(CommandHandler("past", past_challenges_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
     app.add_handler(CommandHandler("rules", scoring_rules_command))
+    app.add_handler(CommandHandler("guidelines", guidelines_command))
     app.add_handler(CommandHandler("admin", admin_command))
 
     # Challenge Callbacks
     app.add_handler(CallbackQueryHandler(handle_challenge_start_callback, pattern=r"^ch_start:"))
     app.add_handler(CallbackQueryHandler(handle_challenge_answer_callback, pattern=r"^ch_ans:"))
     app.add_handler(CallbackQueryHandler(handle_challenge_rules_callback, pattern=r"^ch_rules$"))
+    app.add_handler(CallbackQueryHandler(handle_guidelines_callback, pattern=r"^ch_guidelines$"))
     app.add_handler(CallbackQueryHandler(challenge_command, pattern=r"^ch_active_view$"))
     app.add_handler(CallbackQueryHandler(handle_past_challenges_callback, pattern=r"^ch_past"))
     app.add_handler(CallbackQueryHandler(challenge_hub_command, pattern=r"^ch_hub$"))
