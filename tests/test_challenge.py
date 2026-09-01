@@ -619,6 +619,51 @@ def test_answer_question_2_navigates_to_question_3():
     assert 1 in q3["answered_indices"]
 
 
+def test_challenge_review_questions_and_explanations():
+    asyncio.run(db.reset_db())
+    asyncio.run(service.import_questions_from_csv(SAMPLE_CSV))
+
+    ch_id = asyncio.run(service.create_challenge(title="Review Test Challenge"))
+    asyncio.run(service.link_questions_to_challenge(ch_id))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    user_id = 98765
+    asyncio.run(service.register_or_get_participant(ch_id, user_id, "Reviewer"))
+    asyncio.run(service.start_participant_quiz(ch_id, user_id))
+
+    # 1. While in progress, review is locked
+    locked_review = asyncio.run(service.get_challenge_review_data(ch_id, user_id, question_index=0))
+    assert locked_review.get("error") == "locked"
+
+    # 2. Answer all 3 questions and complete the challenge
+    for q_idx in range(3):
+        asyncio.run(service.get_next_question_for_participant(ch_id, user_id, question_index=q_idx))
+        part = asyncio.run(service.register_or_get_participant(ch_id, user_id))
+        correct_key = part["current_option_order"]["_display_correct"]
+        # Answer Q0 correct, Q1 wrong, Q2 correct
+        ans = correct_key if q_idx != 1 else "INVALID"
+        asyncio.run(service.record_answer_and_advance(ch_id, user_id, ans, q_idx))
+
+    # 3. Now review is unlocked
+    rev0 = asyncio.run(service.get_challenge_review_data(ch_id, user_id, question_index=0))
+    assert "error" not in rev0
+    assert rev0["question_number"] == 1
+    assert rev0["total_questions"] == 3
+    assert rev0["is_correct"] is True
+    assert rev0["explanation"] != ""
+
+    rev1 = asyncio.run(service.get_challenge_review_data(ch_id, user_id, question_index=1))
+    assert rev1["question_number"] == 2
+    assert rev1["is_correct"] is False
+
+    # 4. Review card formatting
+    from app.challenge.handlers import _format_review_card
+    card = _format_review_card(rev0)
+    assert "Question Review" in card
+    assert "Explanation" in card
+    assert "Correct" in card
+
+
 
 
 

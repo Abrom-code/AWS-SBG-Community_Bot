@@ -798,6 +798,85 @@ async def add_question_to_challenge(challenge_id: int, question_data: Dict[str, 
     return q_id
 
 
+async def get_challenge_review_data(challenge_id: int, user_id: int, question_index: int = 0) -> Dict[str, Any]:
+    """Retrieves question details, correct options, user responses, and explanations for completed or archived challenges."""
+    challenge = await get_challenge(challenge_id)
+    if not challenge:
+        return {"error": "Challenge not found."}
+
+    # 1. Verify access permissions: participant completed OR challenge ended/cancelled/past deadline
+    part_row = await _execute(
+        "SELECT id, status FROM challenge_participants WHERE challenge_id = ? AND telegram_user_id = ?",
+        (challenge_id, user_id),
+        fetch="one",
+    )
+    part_id = part_row[0] if part_row else None
+    part_status = part_row[1] if part_row else None
+
+    remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(challenge, None)
+    is_ended = (challenge["status"] in ("ENDED", "CANCELLED") or (ends_at_str is not None and remaining_sec <= 0))
+    is_completed = (part_status == "COMPLETED")
+
+    if not is_completed and not is_ended:
+        return {
+            "error": "locked",
+            "message": "🔒 Questions, answers, and explanations are unlocked only after you complete your challenge attempt!",
+        }
+
+    # 2. Retrieve questions for this challenge
+    questions = await get_challenge_questions(challenge_id)
+    if not questions:
+        return {"error": "No questions attached to this challenge."}
+
+    total_q = len(questions)
+    q_idx = max(0, min(question_index, total_q - 1))
+    target_q = questions[q_idx]
+
+    # 3. Retrieve user's answer history for this participant
+    answers_by_qid = {}
+    if part_id:
+        ans_rows = await _execute(
+            "SELECT question_id, selected_option, is_correct FROM challenge_answers WHERE participant_id = ? AND challenge_id = ?",
+            (part_id, challenge_id),
+            fetch="all",
+        )
+        for r in ans_rows or []:
+            answers_by_qid[r[0]] = {
+                "selected_option": r[1],
+                "is_correct": bool(r[2]),
+            }
+
+    # Build status mapping for navigation buttons
+    answered_status = {}
+    for i, q in enumerate(questions):
+        q_id = q.get("id")
+        if q_id in answers_by_qid:
+            answered_status[i] = answers_by_qid[q_id]["is_correct"]
+
+    target_qid = target_q.get("id")
+    target_ans = answers_by_qid.get(target_qid, {})
+
+    return {
+        "challenge_id": challenge_id,
+        "challenge_title": challenge["title"],
+        "question_index": q_idx,
+        "question_number": q_idx + 1,
+        "total_questions": total_q,
+        "question_text": target_q.get("question_text", ""),
+        "category": target_q.get("category", "General"),
+        "difficulty": target_q.get("difficulty", "MEDIUM"),
+        "option_a": target_q.get("option_a", ""),
+        "option_b": target_q.get("option_b", ""),
+        "option_c": target_q.get("option_c", ""),
+        "option_d": target_q.get("option_d", ""),
+        "correct_option": target_q.get("correct_option", "A"),
+        "explanation": target_q.get("explanation") or "AWS Cloud best practices and architectural patterns.",
+        "user_selected_option": target_ans.get("selected_option"),
+        "is_correct": target_ans.get("is_correct"),
+        "answered_status": answered_status,
+    }
+
+
 async def import_questions_for_challenge(challenge_id: int, csv_text: str) -> Dict[str, Any]:
     """Bulk imports questions from CSV or multiline text and links them directly to the specified challenge."""
     text_clean = csv_text.strip()

@@ -103,12 +103,69 @@ def get_leaderboard_keyboard(
 
     # 3. Action and info shortcuts
     if ch_id > 0:
+        buttons.append([InlineKeyboardButton("Review Questions & Answers", callback_data=f"ch_review:{ch_id}:0")])
         buttons.append([InlineKeyboardButton("Take Challenge", callback_data=f"ch_start:{ch_id}")])
     buttons.append([InlineKeyboardButton("Scoring Rules", callback_data="ch_rules")])
 
     # 4. Context-aware Back navigation
     if ch_id > 0:
         buttons.append([InlineKeyboardButton("Back to Challenge", callback_data=f"ch_past:{ch_id}")])
+    buttons.append([InlineKeyboardButton("Challenge Center", callback_data="ch_hub")])
+
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_review_navigation_keyboard(
+    challenge_id: int,
+    question_index: int,
+    total_questions: int,
+    answered_status: Optional[Dict[int, bool]] = None,
+) -> InlineKeyboardMarkup:
+    """Bottom navigation keyboard for reviewing questions and explanations."""
+    answered_status = answered_status or {}
+    buttons = []
+
+    # 1. Previous / Next Navigation Row
+    nav_row = []
+    if question_index > 0:
+        nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"ch_review:{challenge_id}:{question_index - 1}"))
+    nav_row.append(InlineKeyboardButton(f"{question_index + 1}/{total_questions}", callback_data="noop"))
+    if question_index < total_questions - 1:
+        nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"ch_review:{challenge_id}:{question_index + 1}"))
+    buttons.append(nav_row)
+
+    # 2. Chunked Question Number Buttons (chunks of 5: 1-5, 6-10, etc.)
+    if total_questions > 1:
+        chunk_size = 5
+        chunk_page = question_index // chunk_size
+        start_num = chunk_page * chunk_size
+        end_num = min(total_questions, start_num + chunk_size)
+
+        num_row = []
+        for i in range(start_num, end_num):
+            q_num = i + 1
+            if i in answered_status:
+                icon = "✅" if answered_status[i] else "❌"
+                label = f"• {q_num}{icon} •" if i == question_index else f"{q_num}{icon}"
+            else:
+                label = f"• {q_num} •" if i == question_index else f"{q_num}"
+            num_row.append(InlineKeyboardButton(label, callback_data=f"ch_review:{challenge_id}:{i}"))
+        buttons.append(num_row)
+
+        # Chunk Paging Row if needed
+        chunk_nav = []
+        if start_num > 0:
+            prev_start = start_num - chunk_size
+            chunk_nav.append(InlineKeyboardButton(f"◀️ Q{prev_start + 1}-{start_num}", callback_data=f"ch_review:{challenge_id}:{prev_start}"))
+        if end_num < total_questions:
+            next_start = end_num
+            next_end = min(total_questions, next_start + chunk_size)
+            chunk_nav.append(InlineKeyboardButton(f"Q{next_start + 1}-{next_end} ▶️", callback_data=f"ch_review:{challenge_id}:{next_start}"))
+        if chunk_nav:
+            buttons.append(chunk_nav)
+
+    # 3. Action Shortcuts
+    buttons.append([InlineKeyboardButton("Leaderboard", callback_data=f"lb_weekly:{challenge_id}:1")])
     buttons.append([InlineKeyboardButton("Challenge Center", callback_data="ch_hub")])
 
     return InlineKeyboardMarkup(buttons)
@@ -152,11 +209,11 @@ def get_past_challenges_keyboard(challenges: List[Dict[str, Any]]) -> InlineKeyb
 
 
 def get_past_challenge_detail_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
-    """Options for an inspected past challenge: View Leaderboard or Practice Questions."""
+    """Options for an inspected past challenge: Review Questions, Leaderboard, or Challenge Center."""
     return InlineKeyboardMarkup(
         [
+            [InlineKeyboardButton("Review Questions & Explanations", callback_data=f"ch_review:{challenge_id}:0")],
             [InlineKeyboardButton("Leaderboard", callback_data=f"lb_weekly:{challenge_id}:1")],
-            [InlineKeyboardButton("Practice Quiz", callback_data=f"ch_start:{challenge_id}")],
             [InlineKeyboardButton("Past Challenges", callback_data="ch_past_list")],
             [InlineKeyboardButton("Challenge Center", callback_data="ch_hub")],
         ]

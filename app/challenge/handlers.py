@@ -20,6 +20,7 @@ from app.challenge.service import (
     get_challenge_questions,
     list_past_challenges,
     calculate_remaining_exam_seconds,
+    get_challenge_review_data,
 )
 from app.challenge.keyboards import (
     get_challenge_start_keyboard,
@@ -30,6 +31,7 @@ from app.challenge.keyboards import (
     get_past_challenge_detail_keyboard,
     get_challenge_hub_inline_keyboard,
     get_guidelines_keyboard,
+    get_review_navigation_keyboard,
 )
 from app.db import register_or_update_bot_user
 
@@ -106,6 +108,88 @@ def _format_question_card(q_data: dict) -> str:
         f"<b>D.</b> {opt_d}\n\n"
         f"{prompt_line}"
     )
+
+
+def _format_review_card(q_data: dict) -> str:
+    """Formats a question review card with correct answers, user selection, and explanation."""
+    q_num = q_data["question_number"]
+    total = q_data["total_questions"]
+    q_text = html.escape(q_data.get("question_text", ""))
+    cat = html.escape(q_data.get("category", "General"))
+    diff = html.escape(q_data.get("difficulty", "MEDIUM"))
+    correct_opt = (q_data.get("correct_option") or "A").upper()
+    user_opt = (q_data.get("user_selected_option") or "").upper()
+    is_correct = q_data.get("is_correct")
+    explanation = html.escape(q_data.get("explanation") or "AWS Cloud architecture and service best practice.")
+
+    options = {
+        "A": q_data.get("option_a", ""),
+        "B": q_data.get("option_b", ""),
+        "C": q_data.get("option_c", ""),
+        "D": q_data.get("option_d", ""),
+    }
+
+    opt_lines = []
+    for key in ["A", "B", "C", "D"]:
+        opt_text = html.escape(options.get(key, ""))
+        if key == correct_opt:
+            prefix = "✅ <b>Option " + key + ":</b> "
+        elif user_opt and key == user_opt and not is_correct:
+            prefix = "❌ <b>Option " + key + ":</b> "
+        else:
+            prefix = "⚪ <b>Option " + key + ":</b> "
+        opt_lines.append(f"{prefix}{opt_text}")
+
+    if user_opt:
+        if is_correct:
+            result_badge = f"🎉 <b>Your Answer:</b> Option {user_opt} (Correct ✅)"
+        else:
+            result_badge = f"❌ <b>Your Answer:</b> Option {user_opt} (Incorrect — Correct: Option {correct_opt})"
+    else:
+        result_badge = f"⚪ <b>Correct Answer:</b> Option {correct_opt}"
+
+    card = (
+        f"📖 <b>Question Review ({q_num} of {total})</b> <i>[{cat} • {diff}]</i>\n\n"
+        f"<b>{q_text}</b>\n\n"
+        + "\n".join(opt_lines) + f"\n\n"
+        f"{result_badge}\n\n"
+        f"<blockquote><b>💡 Explanation:</b>\n{explanation}</blockquote>"
+    )
+    return card
+
+
+async def handle_challenge_review_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Displays question explanations and answer reviews for completed or ended challenges."""
+    query = update.callback_query
+    if not query:
+        return
+
+    data = query.data.split(":")
+    ch_id = int(data[1])
+    q_index = int(data[2]) if len(data) > 2 and data[2].isdigit() else 0
+    user_id = query.from_user.id
+
+    try:
+        await query.answer(f"📖 Loading Question {q_index + 1} review...", show_alert=False)
+    except Exception:
+        pass
+
+    review_data = await get_challenge_review_data(ch_id, user_id, question_index=q_index)
+    if "error" in review_data:
+        if review_data.get("error") == "locked":
+            await query.answer(review_data.get("message", "🔒 Complete the challenge first!"), show_alert=True)
+        else:
+            await query.answer(review_data.get("error", "⚠️ Could not load review."), show_alert=True)
+        return
+
+    text = _format_review_card(review_data)
+    kb = get_review_navigation_keyboard(
+        ch_id,
+        review_data["question_index"],
+        review_data["total_questions"],
+        review_data.get("answered_status"),
+    )
+    await _safe_edit_or_reply(query, text, reply_markup=kb)
 
 
 async def _safe_edit_or_reply(query, text: str, reply_markup=None):
@@ -307,11 +391,33 @@ async def handle_challenge_start_callback(update: Update, context: ContextTypes.
     # Check if challenge deadline has passed
     remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(challenge, None)
     if ends_at_str and remaining_sec <= 0:
-        await query.answer("❌ This challenge window has officially closed. The deadline has passed.", show_alert=True)
+        review_data = await get_challenge_review_data(ch_id, user_id, question_index=0)
+        if "error" not in review_data:
+            text = _format_review_card(review_data)
+            kb = get_review_navigation_keyboard(
+                ch_id,
+                0,
+                review_data["total_questions"],
+                review_data.get("answered_status"),
+            )
+            await _safe_edit_or_reply(query, text, reply_markup=kb)
+            return
+        await query.answer("❌ This challenge window has officially closed.", show_alert=True)
         return
 
     part = await register_or_get_participant(ch_id, user_id, user_name, username)
     if part["status"] == "COMPLETED":
+        review_data = await get_challenge_review_data(ch_id, user_id, question_index=0)
+        if "error" not in review_data:
+            text = _format_review_card(review_data)
+            kb = get_review_navigation_keyboard(
+                ch_id,
+                0,
+                review_data["total_questions"],
+                review_data.get("answered_status"),
+            )
+            await _safe_edit_or_reply(query, text, reply_markup=kb)
+            return
         await query.answer(f"🏁 You already completed this challenge! (Score: {part['score']} pts)", show_alert=True)
         return
 

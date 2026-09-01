@@ -34,6 +34,7 @@ from app.challenge.handlers import (
     handle_challenge_rules_callback,
     handle_guidelines_callback,
     handle_past_challenges_callback,
+    handle_challenge_review_callback,
 )
 from app.challenge.service import (
     create_challenge,
@@ -1338,6 +1339,7 @@ def create_application(token: str = None):
     app.add_handler(CallbackQueryHandler(handle_guidelines_callback, pattern=r"^ch_guidelines$"))
     app.add_handler(CallbackQueryHandler(challenge_command, pattern=r"^ch_active_view$"))
     app.add_handler(CallbackQueryHandler(handle_past_challenges_callback, pattern=r"^ch_past"))
+    app.add_handler(CallbackQueryHandler(handle_challenge_review_callback, pattern=r"^ch_review:"))
     app.add_handler(CallbackQueryHandler(challenge_hub_command, pattern=r"^ch_hub$"))
     app.add_handler(CallbackQueryHandler(handle_leaderboard_callback, pattern=r"^lb_"))
     app.add_handler(CallbackQueryHandler(handle_admin_callback, pattern=r"^adm_"))
