@@ -547,7 +547,6 @@ def test_question_bottom_navigation_bar_and_jumping():
     assert "• 1 •" in all_buttons
     assert "2" in all_buttons
     assert "3" in all_buttons
-    assert "Next Q ➡️" in all_buttons
 
     # 3. Answer Question 1
     p1 = asyncio.run(service.register_or_get_participant(ch_id, user_id))
@@ -565,7 +564,25 @@ def test_question_bottom_navigation_bar_and_jumping():
     assert "1✅" in all_buttons3
     assert "2" in all_buttons3
     assert "• 3 •" in all_buttons3
-    assert "⬅️ Prev Q" in all_buttons3
+
+    # 5. Verify 10-question chunked pagination (1-5 -> 6-10)
+    kb_10_p1 = get_question_options_keyboard(ch_id, 1, ["A", "B", "C", "D"], total_questions=10, answered_indices=[0, 1])
+    btns_p1 = [btn.text for row in kb_10_p1.inline_keyboard for btn in row]
+    assert "1✅" in btns_p1
+    assert "• 2✅ •" in btns_p1
+    assert "3" in btns_p1
+    assert "4" in btns_p1
+    assert "5" in btns_p1
+    assert "Q6-10 ▶️" in btns_p1
+
+    kb_10_p2 = get_question_options_keyboard(ch_id, 6, ["A", "B", "C", "D"], total_questions=10, answered_indices=[0, 1])
+    btns_p2 = [btn.text for row in kb_10_p2.inline_keyboard for btn in row]
+    assert "6" in btns_p2
+    assert "• 7 •" in btns_p2
+    assert "8" in btns_p2
+    assert "9" in btns_p2
+    assert "10" in btns_p2
+    assert "◀️ Q1-5" in btns_p2
 
 
 def test_answer_question_2_navigates_to_question_3():

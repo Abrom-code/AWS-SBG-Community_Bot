@@ -82,6 +82,11 @@ def _format_question_card(q_data: dict) -> str:
     opt_c = html.escape(opts["C"])
     opt_d = html.escape(opts["D"])
 
+    idx = q_data.get("question_index", q_num - 1)
+    is_answered = idx in q_data.get("answered_indices", [])
+    status_tag = " • ✅ <i>Answered</i>" if is_answered else ""
+    prompt_line = "✅ <i>You have submitted an answer for this question.</i>" if is_answered else "👉 <i>Select your answer below:</i>"
+
     if timer_str:
         if is_capped:
             timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code> ⚠️ <i>(Capped by Challenge Deadline)</i>\n\n"
@@ -91,14 +96,14 @@ def _format_question_card(q_data: dict) -> str:
         timer_line = ""
 
     return (
-        f"🧩 <b>Question {q_num} of {total}</b> <i>[{cat} • {diff}]</i>\n"
+        f"🧩 <b>Question {q_num} of {total}</b> <i>[{cat} • {diff}]</i>{status_tag}\n"
         f"{timer_line}"
         f"<b>{q_text}</b>\n\n"
         f"<b>A.</b> {opt_a}\n"
         f"<b>B.</b> {opt_b}\n"
         f"<b>C.</b> {opt_c}\n"
         f"<b>D.</b> {opt_d}\n\n"
-        f"👉 <i>Select your answer below:</i>"
+        f"{prompt_line}"
     )
 
 
