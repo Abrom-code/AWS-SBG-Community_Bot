@@ -143,7 +143,8 @@ def test_get_main_menu_keyboard_contains_expected_actions():
 
     assert labels == [
         ["⚡ Challenge Center", "💬 Feedback & Support"],
-        ["ℹ️ About Us", "❓ Help"],
+        ["🛡️ Community Guidelines", "ℹ️ About Us"],
+        ["❓ Help"],
     ]
 
     ch_keyboard = bot.get_challenge_menu_keyboard()
@@ -220,7 +221,8 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
     ]
     assert labels == [
         ["⚡ Challenge Center", "💬 Feedback & Support"],
-        ["ℹ️ About Us", "❓ Help"],
+        ["🛡️ Community Guidelines", "ℹ️ About Us"],
+        ["❓ Help"],
     ]
 
 

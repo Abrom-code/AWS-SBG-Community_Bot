@@ -96,7 +96,8 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             ["⚡ Challenge Center", "💬 Feedback & Support"],
-            ["ℹ️ About Us", "❓ Help"],
+            ["🛡️ Community Guidelines", "ℹ️ About Us"],
+            ["❓ Help"],
         ],
         resize_keyboard=True,
     )
@@ -148,8 +149,9 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "    ⚡ <b>Weekly Challenges:</b> Test your cloud skills, earn points, and climb the leaderboard\n"
         "    🏆 <b>Leaderboards:</b> View weekly and monthly season rankings\n"
         "    💬 <b>Feedback & Support:</b> Submit suggestions directly to the core team\n"
+        "    🛡️ <b>Community Guidelines:</b> Read our community rules & code of conduct\n"
         "    🤝 <b>Community Help:</b> Connect with AWS Student Builder leads\n\n"
-        "Tap <b>⚡ Challenge Center</b> or <b>💬 Feedback & Support</b> below to get started!\n\n"
+        "Tap <b>⚡ Challenge Center</b>, <b>🛡️ Community Guidelines</b>, or <b>💬 Feedback & Support</b> below to get started!\n\n"
         "📢 <b>Join our community:</b> @AWSAASTU"
     )
 
