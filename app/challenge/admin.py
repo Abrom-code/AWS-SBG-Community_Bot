@@ -317,12 +317,14 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             pass
         await set_user_state(user.id, "WAITING_FOR_CHALLENGE_TITLE")
         await query.edit_message_text(
-            "➕ <b>Create Challenge Wizard (Step 1/2: Details)</b>\n\n"
+            "➕ <b>Create Challenge Wizard (Step 1/2: Details & Duration)</b>\n\n"
             "Please enter the challenge details in this format:\n"
-            "<code>Title | Category | Description</code>\n\n"
-            "<i>Example:</i>\n"
-            "<code>AWS Serverless Sprint | Serverless | Master Lambda, DynamoDB, API Gateway, and EventBridge architectures.</code>\n\n"
-            "<i>(Or simply send the Title: <code>AWS Serverless Sprint</code>)</i>\n\n"
+            "<code>Title | Category | Description | Duration in Minutes</code>\n\n"
+            "<i>Examples:</i>\n"
+            "• <code>AWS Serverless Sprint | Serverless | Master Lambda & DynamoDB | 15</code>\n"
+            "• <code>AWS Cloud Practitioner | Cloud Essentials | 50 Questions Exam | 30</code>\n"
+            "• <code>AWS Solutions Architect | Architecture | Multi-tier design | 45</code>\n\n"
+            "<i>(Or simply send the Title: <code>AWS Serverless Sprint</code> — default duration is 10 mins)</i>\n\n"
             "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
         )
@@ -517,13 +519,19 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_cr_sched:"):
         try:
-            await query.answer("⚙️ Creating challenge...", show_alert=False)
+            await query.answer("⚙️ Configuring challenge schedule...", show_alert=False)
         except Exception:
             pass
         parts = data.split(":")
-        start_opt = parts[1]
         from datetime import datetime, timezone, timedelta
         now_dt = datetime.now(timezone.utc)
+
+        if len(parts) >= 4:
+            ch_id = int(parts[1])
+            start_opt = parts[2]
+        else:
+            ch_id = None
+            start_opt = parts[1]
 
         if start_opt == "now":
             starts_at = now_dt.isoformat()
@@ -548,31 +556,45 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             status = "DRAFT"
             schedule_note = "🛠️ <b>Status:</b> DRAFT (Unscheduled)"
 
-        title = context.user_data.pop("wiz_title", "AWS Cloud Architecture Challenge")
-        category = context.user_data.pop("wiz_category", "Architecture")
-        description = context.user_data.pop("wiz_description", "Weekly test on AWS core compute, storage, security, and networking services.")
-
-        ch_id = await create_challenge(
-            title=title,
-            description=description,
-            category=category,
-            starts_at=starts_at,
-            ends_at=ends_at,
-            question_time_limit_seconds=60,
-            duration_seconds=600,
-            accuracy_weight=0.70,
-            speed_weight=0.30,
-        )
-        if status != "DRAFT":
+        if ch_id:
+            await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
             await update_challenge_status(ch_id, status)
+            ch = await get_challenge(ch_id)
+            title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+            category = ch.get("category", "General") if ch else "General"
+            dur_secs = ch.get("duration_seconds") or 600 if ch else 600
+            exam_mins = int(dur_secs // 60)
+            questions = await get_challenge_questions(ch_id)
+            q_count = len(questions)
+        else:
+            title = context.user_data.pop("wiz_title", "AWS Cloud Architecture Challenge")
+            category = context.user_data.pop("wiz_category", "Architecture")
+            description = context.user_data.pop("wiz_description", "Weekly test on AWS core compute, storage, security, and networking services.")
+            dur_mins = context.user_data.pop("wiz_duration_mins", 10)
+            dur_secs = dur_mins * 60
+            exam_mins = dur_mins
+            ch_id = await create_challenge(
+                title=title,
+                description=description,
+                category=category,
+                starts_at=starts_at,
+                ends_at=ends_at,
+                question_time_limit_seconds=60,
+                duration_seconds=dur_secs,
+                accuracy_weight=0.70,
+                speed_weight=0.30,
+            )
+            if status != "DRAFT":
+                await update_challenge_status(ch_id, status)
+            q_count = 0
 
         await query.edit_message_text(
-            f"✅ <b>Challenge #{ch_id} Created! (Step 2/2: Add Questions)</b>\n\n"
+            f"✅ <b>Challenge #{ch_id} Configured! (Step 2/2: Add Questions)</b>\n\n"
             f"⚡ <b>Title:</b> {html.escape(title)}\n"
             f"🏗️ <b>Category:</b> {html.escape(category)}\n"
             f"{schedule_note}\n"
-            f"⏱️ <b>Exam Time:</b> 10 minutes\n"
-            f"📊 <b>Questions Attached:</b> <code>0</code>\n\n"
+            f"⏱️ <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
+            f"📊 <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"👉 <b>Next step: Attach questions to this challenge.</b>\n"
             f"Add them one-by-one or bulk import via CSV file below:",

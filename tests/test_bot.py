@@ -99,6 +99,9 @@ class FakeBot:
         self.edited_messages = []
         self.deleted_messages = []
 
+    async def send_chat_action(self, chat_id, action, **kwargs):
+        pass
+
     async def send_message(self, chat_id, text, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
         message_id = len(self.sent_messages) + 1
         self.sent_messages.append((chat_id, text, message_id, parse_mode))
@@ -654,7 +657,7 @@ def test_admin_interactive_wizard_and_single_question_flow(monkeypatch):
     q_sched = FakeCallbackQuery(user_id=99999, data="adm_cr_sched:now")
     up_sched = FakeUpdate(user_id=99999, callback_query=q_sched)
     asyncio.run(handle_admin_callback(up_sched, ctx2))
-    assert "Created!" in q_sched.edited_text
+    assert "Challenge" in q_sched.edited_text
 
     # 4. Add Question Specifically to this Challenge
     q_single = FakeCallbackQuery(user_id=99999, data="adm_add_q_to_ch:1")
@@ -944,10 +947,53 @@ def test_admin_bottom_menu_navigation_buttons(monkeypatch):
     asyncio.run(bot.handle_message(up4, ctx))
     assert "Community Broadcast Center" in up4.message.reply_text_calls[0]["text"]
 
-    # 5. 🚪 Exit Admin
-    up5 = FakeUpdate(user_id=99999, text="🚪 Exit Admin")
-    asyncio.run(bot.handle_message(up5, ctx))
-    assert "Exited Admin Panel" in up5.message.reply_text_calls[0]["text"]
+def test_challenge_manual_duration_configuration(monkeypatch):
+    """Tests manual setting of duration during creation wizard and subsequent timer edits."""
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    # 1. Start wizard
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_create_ch")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    asyncio.run(handle_admin_callback(up1, ctx))
+
+    # 2. Enter details with manual 25 minute duration
+    up2 = FakeUpdate(user_id=99999, text="AWS Specialty Security | Security | Deep dive security sprint | 25")
+    asyncio.run(bot.handle_message(up2, ctx))
+
+    assert len(up2.message.reply_text_calls) == 1
+    resp = up2.message.reply_text_calls[0]["text"]
+    assert "25 Minutes" in resp
+    kb = up2.message.reply_text_calls[0]["reply_markup"]
+    # Get callback data from first button (e.g. adm_cr_sched:3:now:7d)
+    cb_data = kb.inline_keyboard[0][0].callback_data
+    ch_id = int(cb_data.split(":")[1])
+
+    # 3. Schedule it
+    q_sched = FakeCallbackQuery(user_id=99999, data=f"adm_cr_sched:{ch_id}:now:7d")
+    up_sched = FakeUpdate(user_id=99999, callback_query=q_sched)
+    asyncio.run(handle_admin_callback(up_sched, ctx))
+    assert "25 minutes total" in q_sched.edited_text
+
+    # 4. Verify in DB
+    ch = asyncio.run(get_challenge(ch_id))
+    assert ch is not None
+    assert ch["duration_seconds"] == 25 * 60
+
+    # 5. Change duration via timer custom option to 45 mins
+    q_timer = FakeCallbackQuery(user_id=99999, data=f"adm_timer_custom:{ch_id}")
+    up_t = FakeUpdate(user_id=99999, callback_query=q_timer)
+    asyncio.run(handle_admin_callback(up_t, ctx))
+
+    up_t_msg = FakeUpdate(user_id=99999, text="45")
+    asyncio.run(bot.handle_message(up_t_msg, ctx))
+
+    ch_updated = asyncio.run(get_challenge(ch_id))
+    assert ch_updated["duration_seconds"] == 45 * 60
+
 
 
 

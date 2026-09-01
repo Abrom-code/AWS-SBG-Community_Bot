@@ -3,7 +3,7 @@ import html
 import os
 import logging
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
-from telegram.constants import ParseMode
+from telegram.constants import ParseMode, ChatAction
 from telegram.ext import (
     ContextTypes,
 )
@@ -36,6 +36,7 @@ from app.challenge.handlers import (
 )
 from app.challenge.service import (
     create_challenge,
+    get_challenge,
     link_questions_to_challenge,
     update_challenge_status,
     update_challenge_details,
@@ -477,10 +478,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await set_user_state(user_id, None)
             return
 
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         await set_user_state(user_id, None)
         raw = text.strip()
         parts = [p.strip() for p in raw.split("|")]
-        if len(parts) >= 3:
+        duration_mins = 10
+        if len(parts) >= 4:
+            title = parts[0]
+            category = parts[1] or "Architecture"
+            description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
+            try:
+                duration_mins = int(parts[3].lower().replace("mins", "").replace("min", "").replace("m", "").strip())
+            except Exception:
+                duration_mins = 10
+        elif len(parts) == 3:
             title = parts[0]
             category = parts[1] or "Architecture"
             description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
@@ -493,30 +504,49 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             category = "Architecture"
             description = "Weekly test on AWS core services and cloud architecture patterns."
 
+        duration_mins = max(1, min(300, duration_mins))
+
+        ch_id = await create_challenge(
+            title=title,
+            description=description,
+            category=category,
+            starts_at=None,
+            ends_at=None,
+            question_time_limit_seconds=60,
+            duration_seconds=duration_mins * 60,
+            accuracy_weight=0.70,
+            speed_weight=0.30,
+            created_by=user_id,
+        )
+
         context.user_data["wiz_title"] = title
         context.user_data["wiz_category"] = category
         context.user_data["wiz_description"] = description
+        context.user_data["wiz_duration_mins"] = duration_mins
 
         await update.message.reply_text(
-            f"⚡ <b>Challenge Details Configured:</b>\n\n"
+            f"⚡ <b>Challenge #{ch_id} Details Configured:</b>\n\n"
             f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
             f"🏗️ <b>Category:</b> {html.escape(category)}\n"
+            f"⏱️ <b>Exam Time Limit:</b> <code>{duration_mins} Minutes</code>\n"
             f"📝 <b>Description:</b> <i>{html.escape(description)}</i>\n\n"
-            f"⏰ <b>Select Start Schedule & Duration:</b>",
+            f"⏰ <b>Select Start Schedule:</b>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_schedule_presets_keyboard(),
+            reply_markup=get_admin_schedule_presets_keyboard(ch_id, duration_mins),
         )
         return
 
     # Check if admin is editing challenge title/category
-    if current_state == "WAITING_FOR_EDIT_CHALLENGE_TITLE":
+    if current_state and current_state.startswith("WAITING_FOR_EDIT_CHALLENGE_TITLE"):
         chat_id = update.effective_chat.id if update.effective_chat else None
         if not await is_admin_user(user_id, chat_id, context.bot):
             await set_user_state(user_id, None)
             return
 
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         await set_user_state(user_id, None)
-        ch_id = context.user_data.pop("edit_ch_id", None)
+        parts = current_state.split(":")
+        ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
             await update.message.reply_text("⚠️ No challenge selected for editing.", reply_markup=get_main_menu_keyboard())
             return
@@ -531,23 +561,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             category = "General"
 
         await update_challenge_details(ch_id, title=title, category=category)
+        ch = await get_challenge(ch_id)
+        status = ch.get("status", "LIVE") if ch else "LIVE"
         await update.message.reply_text(
             f"✅ <b>Challenge #{ch_id} Updated!</b>\n\n"
             f"⚡ <b>New Title:</b> {html.escape(title)}\n"
             f"🏗️ <b>New Category:</b> {html.escape(category)}",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_manage_keyboard(ch_id, "LIVE"),
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
         return
 
     # Check if admin is updating schedule with custom dates
-    if current_state == "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE":
+    if current_state and current_state.startswith("WAITING_FOR_EDIT_CHALLENGE_SCHEDULE"):
         chat_id = update.effective_chat.id if update.effective_chat else None
         if not await is_admin_user(user_id, chat_id, context.bot):
             await set_user_state(user_id, None)
             return
 
-        ch_id = context.user_data.pop("edit_ch_id", None)
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        parts = current_state.split(":")
+        ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
             await set_user_state(user_id, None)
             await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
@@ -603,13 +637,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     # Check if admin is updating allowed exam time limit
-    if current_state == "WAITING_FOR_EDIT_CHALLENGE_TIMER":
+    if current_state and current_state.startswith("WAITING_FOR_EDIT_CHALLENGE_TIMER"):
         chat_id = update.effective_chat.id if update.effective_chat else None
         if not await is_admin_user(user_id, chat_id, context.bot):
             await set_user_state(user_id, None)
             return
 
-        ch_id = context.user_data.pop("edit_ch_id", None)
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        parts = current_state.split(":")
+        ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
             await set_user_state(user_id, None)
             await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
@@ -631,12 +667,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await set_user_state(user_id, None)
         dur_secs = mins * 60
         await update_challenge_details(ch_id, duration_seconds=dur_secs)
+        ch = await get_challenge(ch_id)
+        status = ch.get("status", "DRAFT") if ch else "DRAFT"
 
         await update.message.reply_text(
             f"✅ <b>Exam Time Limit Updated for Challenge #{ch_id}!</b>\n\n"
             f"⏱️ <b>Allowed Test Duration:</b> <code>{mins} minutes total</code>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_manage_keyboard(ch_id, "DRAFT"),
+            reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
         return
 
@@ -734,6 +772,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await set_user_state(user_id, None)
             return
 
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         parts = current_state.split(":")
         target_ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("target_ch_id")
         if not target_ch_id:
@@ -786,6 +825,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await set_user_state(user_id, None)
             return
 
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
         parts = current_state.split(":")
         target_ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("target_ch_id")
         if not target_ch_id:
