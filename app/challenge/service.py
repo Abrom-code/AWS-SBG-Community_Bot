@@ -524,7 +524,7 @@ async def create_question(
         INSERT INTO questions (
             question_text, category, difficulty, option_a, option_b, option_c, option_d,
             correct_option, base_points, explanation, is_active, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
         """,
         (
             question_text.strip(),
@@ -675,7 +675,7 @@ async def list_questions(category: Optional[str] = None, limit: int = 50) -> Lis
             """
             SELECT id, question_text, category, difficulty, option_a, option_b, option_c, option_d,
                    correct_option, base_points, explanation
-            FROM questions WHERE is_active = 1 AND category = ? ORDER BY id DESC LIMIT ?
+            FROM questions WHERE is_active = TRUE AND category = ? ORDER BY id DESC LIMIT ?
             """,
             (category, limit),
             fetch="all",
@@ -685,7 +685,7 @@ async def list_questions(category: Optional[str] = None, limit: int = 50) -> Lis
             """
             SELECT id, question_text, category, difficulty, option_a, option_b, option_c, option_d,
                    correct_option, base_points, explanation
-            FROM questions WHERE is_active = 1 ORDER BY id DESC LIMIT ?
+            FROM questions WHERE is_active = TRUE ORDER BY id DESC LIMIT ?
             """,
             (limit,),
             fetch="all",
@@ -1252,7 +1252,7 @@ async def record_answer_and_advance(
     base_points = float(mapping.get("_base_points", 10.0))
 
     is_correct = (selected_option_key.upper() == display_correct.upper())
-    points_awarded = base_points if is_correct else 0.0
+    points_awarded = base_points if is_correct else 0
 
     # Insert detailed answer audit log
     await _execute(
@@ -1271,7 +1271,7 @@ async def record_answer_and_advance(
             question_index + 1,
             selected_option_key.upper(),
             canonical_correct,
-            1 if is_correct else 0,
+            bool(is_correct),
             sent_at_str,
             now_iso,
             response_time_ms,
@@ -1288,54 +1288,47 @@ async def record_answer_and_advance(
     new_correct = part["correct_count"] + (1 if is_correct else 0)
     new_answered = part["answered_count"] + 1
     total_q = len(part["question_order"])
-    is_completed = new_index >= total_q
+    is_completed = (new_index >= total_q)
 
-    if is_completed:
-        # Final exam score combining raw points and overall test completion speed bonus
-        final_score = calculate_exam_score(
-            raw_points_earned=raw_accumulated_score,
-            total_time_taken_seconds=total_time_taken,
-            total_time_limit_seconds=test_limit,
-            accuracy_weight=acc_weight,
-            speed_weight=spd_weight,
-        )
-        await _execute(
-            """
-            UPDATE challenge_participants
-            SET current_question_index = ?, score = ?, correct_count = ?,
-                answered_count = ?, status = 'COMPLETED', completed_at = ?, is_locked = 0
-            WHERE id = ?
-            """,
-            (new_index, final_score, new_correct, new_answered, now_iso, part["id"]),
-        )
-        display_score = final_score
-    else:
-        await _execute(
-            """
-            UPDATE challenge_participants
-            SET current_question_index = ?, score = ?, correct_count = ?,
-                answered_count = ?, is_locked = 0
-            WHERE id = ?
-            """,
-            (new_index, raw_accumulated_score, new_correct, new_answered, part["id"]),
-        )
-        display_score = raw_accumulated_score
+    now_iso_completed = datetime.now(timezone.utc).isoformat() if is_completed else None
+
+    # Update database record
+    await _execute(
+        """
+        UPDATE challenge_participants
+        SET current_question_index = ?,
+            score = ?,
+            correct_count = ?,
+            answered_count = ?,
+            completed_at = COALESCE(?, completed_at),
+            status = CASE WHEN ? THEN 'COMPLETED' ELSE 'IN_PROGRESS' END,
+            current_question_sent_at = NULL
+        WHERE id = ?
+        """,
+        (
+            new_index,
+            raw_accumulated_score,
+            new_correct,
+            new_answered,
+            now_iso_completed,
+            is_completed,
+            part["id"],
+        ),
+    )
 
     return {
-        "is_correct": is_correct,
-        "points_awarded": points_awarded,
-        "response_time_seconds": round(response_time_seconds, 1),
-        "response_time_ms": response_time_ms,
-        "current_score": display_score,
-        "correct_count": new_correct,
-        "answered_count": new_answered,
-        "total_questions": total_q,
         "is_completed": is_completed,
+        "current_score": raw_accumulated_score,
+        "correct_count": new_correct,
+        "total_questions": total_q,
+        "next_question_index": new_index,
+        "points_awarded": points_awarded,
+        "is_correct": is_correct,
     }
 
 
 # ---------------------------------------------------------------------------
-# Leaderboards
+# Leaderboards & Analytics
 # ---------------------------------------------------------------------------
 async def get_weekly_leaderboard(
     challenge_id: int, limit: int = 10, page: int = 1
@@ -1455,7 +1448,7 @@ async def get_monthly_analytics_report(season_id: Optional[int] = None) -> Dict[
             (SELECT COUNT(*) FROM challenges),
             (SELECT COUNT(*) FROM feedback_submissions),
             (SELECT COUNT(*) FROM admin_reply_mappings),
-            (SELECT COUNT(*) FROM questions WHERE is_active = 1 OR is_active = TRUE)
+            (SELECT COUNT(*) FROM questions WHERE is_active = TRUE)
         """,
         fetch="one",
     )

@@ -120,14 +120,30 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes admin dashboard button actions with permission checks."""
-    query = update.callback_query
-    # Instantly answer the query to remove button loading highlight in <30ms
+    """Processes admin dashboard button actions with permission checks and error boundary."""
     try:
-        await query.answer()
-    except Exception:
-        pass
+        await _handle_admin_callback_impl(update, context)
+    except Exception as e:
+        logger.error(f"Error in handle_admin_callback: {e}", exc_info=True)
+        query = update.callback_query
+        if query:
+            try:
+                await query.answer(f"⚠️ Error: {str(e)[:40]}", show_alert=True)
+            except Exception:
+                pass
+            try:
+                await query.message.reply_text(
+                    f"⚠️ <b>An error occurred:</b> {html.escape(str(e))}\n\nPlease try again or check /admin.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=get_admin_panel_keyboard(),
+                )
+            except Exception:
+                pass
 
+
+async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Internal router for admin dashboard button callbacks."""
+    query = update.callback_query
     user = query.from_user
     chat_id = query.message.chat_id if query.message else None
 
@@ -141,6 +157,10 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
     data = query.data
 
     if data == "adm_panel":
+        try:
+            await query.answer()
+        except Exception:
+            pass
         await query.edit_message_text(
             "👑 <b>AWS SBG Challenge Admin Panel</b>\n\n"
             "Select an action below to manage challenges and questions:",
@@ -149,6 +169,10 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         )
 
     elif data == "adm_list_ch":
+        try:
+            await query.answer("📋 Loading challenges...", show_alert=False)
+        except Exception:
+            pass
         from telegram import InlineKeyboardMarkup
         challenges = await list_challenges(limit=10)
         if not challenges:
