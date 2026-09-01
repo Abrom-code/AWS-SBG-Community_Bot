@@ -514,11 +514,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             elif len(parts) == 3:
                 title = parts[0]
                 category = parts[1] or "Architecture"
-                description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
+                description = parts[2] or "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
             else:
                 title = parts[0]
                 category = parts[1] or "Architecture"
-                description = "Weekly test on AWS core services and cloud architecture patterns."
+                description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
 
             duration_mins = max(1, min(300, duration_mins))
             ch_id = await create_challenge(
@@ -554,7 +554,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Single Title entered -> Step-by-Step Flow: proceed to Step 2 (Description)
         title = raw
         category = "Architecture"
-        description = "Weekly test on AWS core services and cloud architecture patterns."
+        description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
         duration_mins = 10
 
         ch_id = await create_challenge(

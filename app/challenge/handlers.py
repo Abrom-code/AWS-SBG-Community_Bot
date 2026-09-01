@@ -97,9 +97,9 @@ def _format_question_card(q_data: dict) -> str:
 
     if timer_str:
         if is_capped:
-            timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code> ⚠️ <i>(Capped by Challenge Deadline)</i>\n\n"
+            timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code> ⚠️ <i>(Capped by Deadline • 30% Speed Weight)</i>\n\n"
         else:
-            timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code>\n\n"
+            timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code> <i>(⚡ Speed bonus applies to remaining time)</i>\n\n"
     else:
         timer_line = ""
 
@@ -309,6 +309,11 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    acc_w = float(challenge.get("accuracy_weight") or 0.70)
+    spd_w = float(challenge.get("speed_weight") or 0.30)
+    acc_pct = int(round(acc_w * 100))
+    spd_pct = int(round(spd_w * 100))
+
     if status == "SCHEDULED":
         time_until = _format_time_until(challenge.get("starts_at"))
         starts_at = challenge.get("starts_at", "Soon")
@@ -320,8 +325,8 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"🏗️ <b>Category:</b>  {category}\n"
             f"⏳ <b>Starts:</b>  {time_until} <i>({starts_at})</i>\n"
             f"📊 <b>Questions:</b>  {total_q} questions\n"
-            f"⏱️ <b>Exam Time:</b>  {duration_str}\n"
-            f"🎯 <b>Scoring:</b>  70% Accuracy + 30% Speed Bonus\n\n"
+            f"⏱️ <b>Exam Time Limit:</b>  {duration_str}\n"
+            f"🎯 <b>Scoring Breakdown:</b>  {acc_pct}% Accuracy + {spd_pct}% Speed Bonus (faster completion = higher score)\n\n"
             f"<i>The challenge will automatically unlock at the scheduled start time.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_start_keyboard(ch_id),
@@ -357,11 +362,11 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"⚡ <b>{title}</b>\n\n"
         f"<blockquote>{desc}</blockquote>\n\n"
         f"📊 <b>Questions:</b>  {total_q} questions\n"
-        f"⏱️ <b>Exam Duration:</b>  {duration_str}\n"
-        f"🎯 <b>Scoring:</b>  70% Accuracy + 30% Speed Bonus\n"
+        f"⏱️ <b>Exam Time Limit:</b>  {duration_str}\n"
+        f"🎯 <b>Scoring Breakdown:</b>  {acc_pct}% Accuracy + {spd_pct}% Speed Bonus (faster answers & completion earn more points)\n"
         f"🏗️ <b>Category:</b>  {category}"
         f"{capped_notice}\n\n"
-        f"<i>Tap</i> <b>Start Challenge</b> <i>when you're ready — the timer begins immediately.</i>",
+        f"<i>Tap</i> <b>Start Challenge</b> <i>when you're ready — the exam timer begins immediately.</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=get_challenge_start_keyboard(ch_id),
     )
@@ -632,7 +637,7 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
             f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
             f"📊 <b>Total Questions:</b> {total}\n"
             f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
-            f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
+            f"🏆 <b>Final Score:</b> <code>{score} pts</code> <i>(Accuracy + Speed Bonus included)</i>\n\n"
             f"<i>Your score has been submitted to the leaderboard.</i>"
         )
         await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))

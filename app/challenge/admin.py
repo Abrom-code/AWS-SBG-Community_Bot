@@ -593,7 +593,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         else:
             title = context.user_data.pop("wiz_title", "AWS Cloud Architecture Challenge")
             category = context.user_data.pop("wiz_category", "Architecture")
-            description = context.user_data.pop("wiz_description", "Weekly test on AWS core compute, storage, security, and networking services.")
+            description = context.user_data.pop("wiz_description", "Weekly timed AWS challenge on core compute, storage, security, and networking (70% accuracy + 30% speed bonus).")
             dur_mins = context.user_data.pop("wiz_duration_mins", 10)
             dur_secs = dur_mins * 60
             exam_mins = dur_mins
