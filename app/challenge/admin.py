@@ -250,10 +250,12 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
     elif data == "adm_create_ch":
         await set_user_state(user.id, "WAITING_FOR_CHALLENGE_TITLE")
         await query.edit_message_text(
-            "✍️ <b>Create Challenge Wizard (Step 1/2)</b>\n\n"
-            "Please enter the <b>Challenge Title</b> and optional <b>Category</b>:\n\n"
-            "<i>Example:</i> <code>AWS Serverless Microservices | Compute</code>\n"
-            "<i>(Or just send the title: <code>AWS Serverless Microservices</code>)</i>\n\n"
+            "➕ <b>Create Challenge Wizard (Step 1/2: Details)</b>\n\n"
+            "Please enter the challenge details in this format:\n"
+            "<code>Title | Category | Description</code>\n\n"
+            "<i>Example:</i>\n"
+            "<code>AWS Serverless Sprint | Serverless | Master Lambda, DynamoDB, API Gateway, and EventBridge architectures.</code>\n\n"
+            "<i>(Or simply send the Title: <code>AWS Serverless Sprint</code>)</i>\n\n"
             "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
         )
@@ -441,12 +443,13 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             status = "DRAFT"
             schedule_note = "🛠️ <b>Status:</b> DRAFT (Unscheduled)"
 
-        title = context.user_data.get("wiz_title", "AWS Cloud Architecture Challenge")
-        category = context.user_data.get("wiz_category", "Architecture")
+        title = context.user_data.pop("wiz_title", "AWS Cloud Architecture Challenge")
+        category = context.user_data.pop("wiz_category", "Architecture")
+        description = context.user_data.pop("wiz_description", "Weekly test on AWS core compute, storage, security, and networking services.")
 
         ch_id = await create_challenge(
             title=title,
-            description="Weekly test on AWS core compute, storage, security, and networking services.",
+            description=description,
             category=category,
             starts_at=starts_at,
             ends_at=ends_at,
@@ -455,22 +458,21 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
             accuracy_weight=0.70,
             speed_weight=0.30,
         )
-        linked = await link_questions_to_challenge(ch_id)
         if status != "DRAFT":
             await update_challenge_status(ch_id, status)
 
-        context.user_data.pop("wiz_title", None)
-        context.user_data.pop("wiz_category", None)
-
         await query.edit_message_text(
-            f"✅ <b>Challenge #{ch_id} Created!</b>\n\n"
+            f"✅ <b>Challenge #{ch_id} Created! (Step 2/2: Add Questions)</b>\n\n"
             f"⚡ <b>Title:</b> {html.escape(title)}\n"
             f"🏗️ <b>Category:</b> {html.escape(category)}\n"
             f"{schedule_note}\n"
-            f"📊 <b>Linked Questions:</b> {linked}\n\n"
-            f"Participants can now view/access it according to the schedule!",
+            f"⏱️ <b>Exam Time:</b> 10 minutes\n"
+            f"📊 <b>Questions Attached:</b> <code>0</code>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👉 <b>Next step: Attach questions to this challenge.</b>\n"
+            f"Add them one-by-one or bulk import via CSV file below:",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_manage_keyboard(ch_id, status),
+            reply_markup=get_wizard_questions_keyboard(ch_id),
         )
 
     elif data.startswith("adm_add_q_to_ch:"):
@@ -644,9 +646,14 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
 
     elif data.startswith("adm_pub:"):
         ch_id = int(data.split(":")[1])
+        questions = await get_challenge_questions(ch_id)
+        if not questions:
+            await query.answer("⚠️ Please attach at least 1 question before publishing!", show_alert=True)
+            return
         await update_challenge_status(ch_id, "LIVE")
         await query.edit_message_text(
             f"🚀 <b>Challenge #{ch_id} is now LIVE!</b>\n\n"
+            f"📊 <b>Questions:</b> <code>{len(questions)}</code>\n\n"
             f"Community members can now participate using /challenge.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, "LIVE"),

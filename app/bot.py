@@ -51,6 +51,7 @@ from app.challenge.keyboards import (
     get_admin_broadcast_confirm_keyboard,
     get_challenge_manage_keyboard,
     get_admin_schedule_presets_keyboard,
+    get_wizard_questions_keyboard,
     get_question_bank_actions_keyboard,
 )
 from app.challenge.admin import (
@@ -380,21 +381,30 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await set_user_state(user_id, None)
         raw = text.strip()
-        if "|" in raw:
-            title_part, cat_part = raw.split("|", 1)
-            title = title_part.strip()
-            category = cat_part.strip() or "Architecture"
+        parts = [p.strip() for p in raw.split("|")]
+        if len(parts) >= 3:
+            title = parts[0]
+            category = parts[1] or "Architecture"
+            description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
+        elif len(parts) == 2:
+            title = parts[0]
+            category = parts[1] or "Architecture"
+            description = "Weekly test on AWS core services and cloud architecture patterns."
         else:
             title = raw
             category = "Architecture"
+            description = "Weekly test on AWS core services and cloud architecture patterns."
 
         context.user_data["wiz_title"] = title
         context.user_data["wiz_category"] = category
+        context.user_data["wiz_description"] = description
 
         await update.message.reply_text(
-            f"⚡ <b>Challenge:</b> <b>{html.escape(title)}</b>\n"
-            f"🏗️ <b>Category:</b> {html.escape(category)}\n\n"
-            f"📅 <b>Step 2/2: Select Start Schedule & Duration:</b>",
+            f"⚡ <b>Challenge Details Configured:</b>\n\n"
+            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"🏗️ <b>Category:</b> {html.escape(category)}\n"
+            f"📝 <b>Description:</b> <i>{html.escape(description)}</i>\n\n"
+            f"⏰ <b>Select Start Schedule & Duration:</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_schedule_presets_keyboard(),
         )
@@ -753,32 +763,40 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         status = "LIVE" if datetime.fromisoformat(starts_at.replace("Z", "+00:00")) <= now_dt else "SCHEDULED"
 
+        title = context.user_data.pop("wiz_title", "AWS Cloud Architecture Challenge")
+        category = context.user_data.pop("wiz_category", "Architecture")
+        description = context.user_data.pop("wiz_description", "Weekly test on AWS core services and cloud architecture patterns.")
+
         ch_id = await create_challenge(
-            title="AWS Cloud Architecture Challenge",
-            description="Weekly test on AWS core services and cloud architecture patterns.",
-            category="Architecture",
+            title=title,
+            description=description,
+            category=category,
             starts_at=starts_at,
             ends_at=ends_at,
             question_time_limit_seconds=60,
-            duration_seconds=604800,
+            duration_seconds=600,
             accuracy_weight=0.70,
             speed_weight=0.30,
         )
-        linked = await link_questions_to_challenge(ch_id)
-        await update_challenge_status(ch_id, status)
+        if status != "DRAFT":
+            await update_challenge_status(ch_id, status)
 
         status_text = "🟢 <b>LIVE</b>" if status == "LIVE" else "⏳ <b>SCHEDULED</b>"
 
         await update.message.reply_text(
-            f"✅ <b>Challenge #{ch_id} Created with Custom Schedule!</b>\n\n"
-            f"⚡ <b>Title:</b> AWS Cloud Architecture Challenge\n"
+            f"✅ <b>Challenge #{ch_id} Created! (Step 2/2: Add Questions)</b>\n\n"
+            f"⚡ <b>Title:</b> {html.escape(title)}\n"
+            f"🏗️ <b>Category:</b> {html.escape(category)}\n"
             f"🚦 <b>Status:</b> {status_text}\n"
             f"⏳ <b>Starts:</b> <code>{starts_at}</code>\n"
             f"🏁 <b>Ends:</b> <code>{ends_at}</code>\n"
-            f"📊 <b>Questions Attached:</b> <code>{linked}</code>\n\n"
-            f"Participants can now access the challenge according to the schedule!",
+            f"⏱️ <b>Exam Time:</b> 10 minutes\n"
+            f"📊 <b>Questions Attached:</b> <code>0</code>\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"👉 <b>Next step: Attach questions to this challenge.</b>\n"
+            f"You can add questions one-by-one or bulk import via CSV file below:",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_manage_keyboard(ch_id, status),
+            reply_markup=get_wizard_questions_keyboard(ch_id),
         )
         return
 

@@ -176,21 +176,14 @@ def get_admin_schedule_presets_keyboard() -> InlineKeyboardMarkup:
 
 
 def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
-    """Admin dashboard navigation."""
+    """Admin dashboard navigation in formal sequence: Create, Manage, Leaderboards, Report, Broadcast."""
     return InlineKeyboardMarkup(
         [
-            [
-                InlineKeyboardButton("➕ Create Challenge", callback_data="adm_create_ch"),
-                InlineKeyboardButton("📋 Manage Challenges", callback_data="adm_list_ch"),
-            ],
-            [
-                InlineKeyboardButton("🏆 Leaderboards", callback_data="adm_leaderboards"),
-                InlineKeyboardButton("📊 Monthly Report", callback_data="adm_report"),
-            ],
-            [
-                InlineKeyboardButton("❓ Question Bank", callback_data="adm_qbank"),
-                InlineKeyboardButton("📢 Broadcast Notification", callback_data="adm_broadcast"),
-            ],
+            [InlineKeyboardButton("➕ Create Challenge", callback_data="adm_create_ch")],
+            [InlineKeyboardButton("📋 Manage Challenges", callback_data="adm_list_ch")],
+            [InlineKeyboardButton("🏆 Leaderboards", callback_data="adm_leaderboards")],
+            [InlineKeyboardButton("📊 Monthly Report", callback_data="adm_report")],
+            [InlineKeyboardButton("📢 Broadcast Notification", callback_data="adm_broadcast")],
         ]
     )
 

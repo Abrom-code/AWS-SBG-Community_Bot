@@ -599,9 +599,32 @@ def test_custom_date_challenge_creation_flow(monkeypatch):
 
     assert len(up_msg.message.reply_text_calls) == 1
     resp = up_msg.message.reply_text_calls[0]["text"]
-    assert "Created with Custom Schedule" in resp
+    assert "Created" in resp
     assert "2026-09-10" in resp
     assert up_msg.message.reply_text_calls[0]["reply_markup"] is not None
+
+
+def test_admin_panel_keyboard_layout_and_no_question_bank():
+    from app.challenge.keyboards import get_admin_panel_keyboard
+    kb = get_admin_panel_keyboard()
+    button_rows = [[btn.text for btn in row] for row in kb.inline_keyboard]
+    flat_buttons = [btn.text for row in kb.inline_keyboard for btn in row]
+
+    # Verify exact required order:
+    # 1. ➕ Create Challenge
+    # 2. 📋 Manage Challenges
+    # 3. 🏆 Leaderboards
+    # 4. 📊 Monthly Report
+    # 5. 📢 Broadcast Notification
+    assert flat_buttons == [
+        "➕ Create Challenge",
+        "📋 Manage Challenges",
+        "🏆 Leaderboards",
+        "📊 Monthly Report",
+        "📢 Broadcast Notification",
+    ]
+    # Question Bank must NOT be in the admin panel
+    assert not any("Question Bank" in b for b in flat_buttons)
 
 
 def test_admin_interactive_wizard_and_single_question_flow(monkeypatch):
