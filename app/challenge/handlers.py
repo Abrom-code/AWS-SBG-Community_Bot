@@ -461,7 +461,11 @@ async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFA
         if ch_id == 0:
             active = await get_active_challenge()
             ch_id = active["id"] if active else 0
-        await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page, is_admin=is_admin)
+        # If still no active challenge, show monthly cumulative instead of an empty weekly view
+        if ch_id == 0:
+            await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin)
+        else:
+            await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page, is_admin=is_admin)
     elif mode_prefix == "lb_monthly":
         page = int(data[2]) if len(data) > 2 and data[2].isdigit() else (int(data[1]) if len(data) > 1 and data[1].isdigit() else 1)
         await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin)

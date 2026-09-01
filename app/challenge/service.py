@@ -168,7 +168,11 @@ async def _execute(query: str, params: tuple = (), fetch: str = "none") -> Any:
         try:
             async with await psycopg.AsyncConnection.connect(url) as conn:
                 async with conn.cursor() as cur:
-                    await cur.execute(query.replace("?", "%s"), params)
+                    pg_query = query.replace("?", "%s")
+                    # PostgreSQL requires RETURNING id to get the inserted row's ID
+                    if fetch == "id" and "RETURNING" not in pg_query.upper():
+                        pg_query = pg_query.rstrip().rstrip(";") + " RETURNING id"
+                    await cur.execute(pg_query, params)
                     if fetch == "one":
                         return await cur.fetchone()
                     elif fetch == "all":
