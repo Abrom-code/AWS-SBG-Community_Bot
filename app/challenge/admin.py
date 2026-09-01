@@ -31,6 +31,7 @@ from app.challenge.service import (
     remove_question_from_challenge,
 )
 from app.challenge.keyboards import (
+    get_admin_menu_keyboard,
     get_admin_panel_keyboard,
     get_challenge_manage_keyboard,
     get_admin_schedule_presets_keyboard,
@@ -105,11 +106,11 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    # Render admin dashboard
+    # Render admin dashboard with inline keyboard panel
     text = (
         "👑 <b>AWS SBG Challenge Admin Panel</b>\n\n"
         "Welcome to the challenge operations center. You can schedule weekly competitions, "
-        "manage questions, and publish live quizzes."
+        "manage questions, view leaderboards, and publish live quizzes."
     )
     await update.message.reply_text(
         text,
@@ -121,14 +122,21 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Processes admin dashboard button actions with permission checks."""
     query = update.callback_query
+    # Instantly answer the query to remove button loading highlight in <30ms
+    try:
+        await query.answer()
+    except Exception:
+        pass
+
     user = query.from_user
     chat_id = query.message.chat_id if query.message else None
 
     if not await is_admin_user(user.id, chat_id, context.bot):
-        await query.answer("⛔ Access Denied: Admin privileges required.", show_alert=True)
+        try:
+            await query.answer("⛔ Access Denied: Admin privileges required.", show_alert=True)
+        except Exception:
+            pass
         return
-
-    await query.answer()
 
     data = query.data
 

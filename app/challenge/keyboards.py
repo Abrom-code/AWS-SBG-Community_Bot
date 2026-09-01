@@ -1,6 +1,6 @@
 import math
 from typing import Dict, Optional, List, Any
-from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
 
 def get_challenge_start_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
@@ -172,6 +172,18 @@ def get_admin_schedule_presets_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton("🛠️ Save as Draft (No Schedule)", callback_data="adm_cr_sched:draft:0")],
             [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
         ]
+    )
+
+
+def get_admin_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Returns persistent bottom keyboard buttons for Admin operations."""
+    return ReplyKeyboardMarkup(
+        [
+            ["➕ Create Challenge", "📋 Manage Challenges"],
+            ["🏆 Leaderboards", "📊 Monthly Report"],
+            ["📢 Broadcast Notification", "🚪 Exit Admin"],
+        ],
+        resize_keyboard=True,
     )
 
 

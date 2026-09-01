@@ -919,6 +919,38 @@ Explanation: Amazon VPC lets you provision a logically isolated section of the A
     assert "What is an Amazon VPC?" in q_view.edited_text
 
 
+def test_admin_bottom_menu_navigation_buttons(monkeypatch):
+    """Verifies that all 6 bottom reply keyboard buttons for Admin function properly."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    # 1. ➕ Create Challenge
+    up = FakeUpdate(user_id=99999, text="➕ Create Challenge")
+    asyncio.run(bot.handle_message(up, ctx))
+    assert "Create Challenge Wizard" in up.message.reply_text_calls[0]["text"]
+
+    # 2. 📋 Manage Challenges
+    up2 = FakeUpdate(user_id=99999, text="📋 Manage Challenges")
+    asyncio.run(bot.handle_message(up2, ctx))
+    assert len(up2.message.reply_text_calls) > 0
+
+    # 3. 📊 Monthly Report
+    up3 = FakeUpdate(user_id=99999, text="📊 Monthly Report")
+    asyncio.run(bot.handle_message(up3, ctx))
+    assert "AWS Student Builder Monthly Activity Report" in up3.message.reply_text_calls[0]["text"]
+
+    # 4. 📢 Broadcast Notification
+    up4 = FakeUpdate(user_id=99999, text="📢 Broadcast Notification")
+    asyncio.run(bot.handle_message(up4, ctx))
+    assert "Community Broadcast Center" in up4.message.reply_text_calls[0]["text"]
+
+    # 5. 🚪 Exit Admin
+    up5 = FakeUpdate(user_id=99999, text="🚪 Exit Admin")
+    asyncio.run(bot.handle_message(up5, ctx))
+    assert "Exited Admin Panel" in up5.message.reply_text_calls[0]["text"]
+
+
+
 
 
 

@@ -45,6 +45,9 @@ from app.challenge.service import (
     add_question_to_challenge,
     import_questions_for_challenge,
     get_challenge_questions,
+    get_monthly_analytics_report,
+    list_challenges,
+    get_active_challenge,
 )
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
@@ -53,6 +56,11 @@ from app.challenge.keyboards import (
     get_admin_schedule_presets_keyboard,
     get_wizard_questions_keyboard,
     get_question_bank_actions_keyboard,
+    get_admin_menu_keyboard,
+    get_admin_panel_keyboard,
+    get_admin_report_keyboard,
+    get_admin_broadcast_presets_keyboard,
+    get_admin_leaderboard_keyboard,
 )
 from app.challenge.admin import (
     admin_command,
@@ -368,6 +376,96 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await scoring_rules_command(update, context)
     elif text in ("🛡️ Community Guidelines", "🛡️ Guidelines", "Guidelines", "Code of Conduct"):
         return await guidelines_command(update, context)
+
+    # Handle Admin Bottom Navigation Buttons
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if await is_admin_user(user_id, chat_id, context.bot):
+        if text in ("➕ Create Challenge", "➕ Create New Challenge"):
+            await set_user_state(user_id, "WAITING_FOR_CHALLENGE_TITLE")
+            await update.message.reply_text(
+                "➕ <b>Create Challenge Wizard (Step 1/2: Details)</b>\n\n"
+                "Please enter the challenge details in this format:\n"
+                "<code>Title | Category | Description</code>\n\n"
+                "<b>Example:</b>\n"
+                "<code>AWS Serverless Sprint | Serverless | Master Lambda, DynamoDB, API Gateway, and EventBridge.</code>\n\n"
+                "<i>Tip: You can also just type the title.</i>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+        elif text in ("📋 Manage Challenges", "📋 Challenge List"):
+            challenges = await list_challenges(limit=10)
+            if not challenges:
+                await update.message.reply_text(
+                    "📋 <b>Challenge Management</b>\n\n<i>No challenges found. Create one first!</i>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=get_admin_panel_keyboard(),
+                )
+            else:
+                from telegram import InlineKeyboardMarkup, InlineKeyboardButton
+                buttons = []
+                for ch in challenges:
+                    status_emoji = {"LIVE": "🟢", "SCHEDULED": "⏳", "DRAFT": "🛠️", "ENDED": "🏁"}.get(ch["status"], "⚡")
+                    buttons.append([InlineKeyboardButton(f"{status_emoji} {ch['title'][:30]} ({ch['status']})", callback_data=f"adm_manage_ch:{ch['id']}")])
+                buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
+                await update.message.reply_text(
+                    "📋 <b>Select a Challenge to Manage:</b>",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=InlineKeyboardMarkup(buttons),
+                )
+            return
+        elif text in ("📊 Monthly Report", "📊 Analytics Report"):
+            rep = await get_monthly_analytics_report()
+            champions = rep.get("champions", [])
+            champs_text = ""
+            if champions:
+                medals = ["🥇", "🥈", "🥉"]
+                for idx, c in enumerate(champions[:3]):
+                    name = html.escape(c["user_name"])
+                    uname = f" (@{html.escape(c['username'])})" if c.get("username") else ""
+                    champs_text += f"• {medals[idx]} <b>{name}</b>{uname} — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
+            else:
+                champs_text = "• <i>No completed challenge attempts recorded yet this month.</i>\n"
+
+            report_card = (
+                f"📊 <b>AWS Student Builder Monthly Activity Report</b>\n"
+                f"📅 <b>Period:</b> {rep['month_name']}\n\n"
+                f"👥 <b>Community Engagement:</b>\n"
+                f"• Registered Bot Members: <code>{rep['total_users']}</code>\n"
+                f"• Feedback Tickets Received: <code>{rep['feedback_count']}</code>\n"
+                f"• Staff Replies Delivered: <code>{rep['reply_count']}</code>\n\n"
+                f"⚡ <b>Challenges & Competitions:</b>\n"
+                f"• Total Challenges: <code>{rep['total_challenges']}</code>\n"
+                f"• Total Submissions: <code>{rep['total_attempts']}</code>\n"
+                f"• Community Accuracy: <code>{rep['accuracy_pct']}%</code> ({rep['total_correct']}/{rep['total_answered']})\n"
+                f"• Average Score: <code>{rep['avg_score']} pts</code>\n"
+                f"• Total Points Earned: <code>{rep['total_score']} pts</code>\n\n"
+                f"🏆 <b>Top 3 Builders of the Month:</b>\n"
+                f"{champs_text}"
+            )
+            await update.message.reply_text(
+                report_card,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_report_keyboard(),
+            )
+            return
+        elif text in ("📢 Broadcast Notification", "📢 Broadcast"):
+            users = await get_all_broadcast_user_ids()
+            count = len(users)
+            await update.message.reply_text(
+                f"📢 <b>Community Broadcast Center</b>\n\n"
+                f"👥 <b>Target Audience:</b> <code>{count}</code> registered members\n\n"
+                f"Select an announcement preset or compose a custom broadcast:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_broadcast_presets_keyboard(),
+            )
+            return
+        elif text in ("🚪 Exit Admin", "🚪 Leave Admin"):
+            await update.message.reply_text(
+                "🔙 <b>Exited Admin Panel.</b>\n\nReturning to member menu:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_main_menu_keyboard(),
+            )
+            return
 
     # Check user state
     current_state = await get_user_state(user_id)
