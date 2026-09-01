@@ -97,8 +97,7 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             ["Challenges", "Feedback"],
-            ["Guidelines", "About"],
-            ["Help"],
+            ["About", "Help"],
         ],
         resize_keyboard=True,
     )
@@ -110,7 +109,7 @@ def get_challenge_menu_keyboard() -> ReplyKeyboardMarkup:
         [
             ["Take Challenge", "Leaderboards"],
             ["Past Challenges", "Scoring Rules"],
-            ["Main Menu"],
+            ["Guidelines", "Main Menu"],
         ],
         resize_keyboard=True,
     )

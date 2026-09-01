@@ -168,8 +168,7 @@ def test_get_main_menu_keyboard_contains_expected_actions():
 
     assert labels == [
         ["Challenges", "Feedback"],
-        ["Guidelines", "About"],
-        ["Help"],
+        ["About", "Help"],
     ]
 
     ch_keyboard = bot.get_challenge_menu_keyboard()
@@ -177,7 +176,7 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     assert ch_labels == [
         ["Take Challenge", "Leaderboards"],
         ["Past Challenges", "Scoring Rules"],
-        ["Main Menu"],
+        ["Guidelines", "Main Menu"],
     ]
 
     fb_keyboard = bot.get_feedback_menu_keyboard()
@@ -246,8 +245,7 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
     ]
     assert labels == [
         ["Challenges", "Feedback"],
-        ["Guidelines", "About"],
-        ["Help"],
+        ["About", "Help"],
     ]
 
 
