@@ -32,8 +32,10 @@ def get_active_challenges_nav_keyboard(
 
     # 1. Action Buttons for the current challenge
     if is_completed:
-        buttons.append([InlineKeyboardButton("🏆 View Leaderboard", callback_data=f"lb_weekly:{challenge_id}:1")])
-        buttons.append([InlineKeyboardButton("📖 Review Answers", callback_data=f"ch_review:{challenge_id}:0")])
+        buttons.append([
+            InlineKeyboardButton("Leaderboard", callback_data=f"lb_weekly:{challenge_id}:1"),
+            InlineKeyboardButton("Review Answers", callback_data=f"ch_review:{challenge_id}:0"),
+        ])
         buttons.append([InlineKeyboardButton("Refresh Status", callback_data=f"ch_refresh:{challenge_id}:{current_index}")])
     elif is_scheduled:
         btn_label = f"Opens {scheduled_countdown}" if scheduled_countdown else "Scheduled Challenge"
@@ -228,18 +230,16 @@ def get_leaderboard_keyboard(
 
 
 def get_challenge_completion_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
-    """Action buttons displayed on the challenge completion screen."""
+    """Action buttons displayed on the challenge completion screen in clean rows without emojis."""
     ch_id = challenge_id or 0
     return InlineKeyboardMarkup([
         [
-            InlineKeyboardButton("🏆 Weekly Leaderboard", callback_data=f"lb_weekly:{ch_id}:1"),
-            InlineKeyboardButton("📅 Monthly Leaderboard", callback_data=f"lb_monthly:{ch_id}:1"),
+            InlineKeyboardButton("Weekly Board", callback_data=f"lb_weekly:{ch_id}:1"),
+            InlineKeyboardButton("Monthly Board", callback_data=f"lb_monthly:{ch_id}:1"),
         ],
         [
-            InlineKeyboardButton("📖 Review Questions & Answers", callback_data=f"ch_review:{ch_id}:0"),
-        ],
-        [
-            InlineKeyboardButton("« Back to Challenges", callback_data="ch_active_view"),
+            InlineKeyboardButton("Review Answers", callback_data=f"ch_review:{ch_id}:0"),
+            InlineKeyboardButton("Back to Challenges", callback_data="ch_active_view"),
         ],
     ])
 
