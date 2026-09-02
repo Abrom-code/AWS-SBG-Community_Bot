@@ -151,6 +151,14 @@ class FakeBot:
             self.deleted_messages.append((chat_id, mid))
         return True
 
+    async def set_my_commands(self, commands):
+        self.commands = commands
+        return True
+
+    async def set_chat_menu_button(self, menu_button=None, chat_id=None):
+        self.menu_button = menu_button
+        return True
+
 
 class FakeContext:
     def __init__(self):
@@ -168,15 +176,14 @@ def test_get_main_menu_keyboard_contains_expected_actions():
 
     assert labels == [
         ["Challenges", "Feedback"],
-        ["Guidelines", "About"],
-        ["Help"],
+        ["About", "Help"],
     ]
 
     ch_keyboard = bot.get_challenge_menu_keyboard()
     ch_labels = [[button.text for button in row] for row in ch_keyboard.keyboard]
     assert ch_labels == [
-        ["Take Challenge", "Leaderboards"],
-        ["Past Challenges", "Scoring Rules"],
+        ["Leaderboards", "Past Challenges"],
+        ["Scoring Rules", "Guidelines"],
         ["Main Menu"],
     ]
 
@@ -209,7 +216,7 @@ def test_help_command_returns_expected_shortcuts():
 
     asyncio.run(bot.help_command(update, context))
 
-    assert update.message.reply_text_calls[0]["text"].startswith("📘")
+    assert update.message.reply_text_calls[0]["text"].startswith("✦")
     assert "/start" in update.message.reply_text_calls[0]["text"]
     assert "/challenge" in update.message.reply_text_calls[0]["text"]
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
@@ -246,8 +253,7 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
     ]
     assert labels == [
         ["Challenges", "Feedback"],
-        ["Guidelines", "About"],
-        ["Help"],
+        ["About", "Help"],
     ]
 
 
@@ -272,7 +278,7 @@ def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
     
     submission = asyncio.run(db.get_feedback_submission(message_id))
     assert submission["sender_chat_id"] == 333
-    assert update.message.reply_text_calls[-1]["text"].startswith("✅ <b>Thank you!")
+    assert update.message.reply_text_calls[-1]["text"].startswith("✓ <b>Thank you!")
     assert update.message.reply_text_calls[-1]["parse_mode"] == ParseMode.HTML
     
     state = asyncio.run(db.get_user_state(333))
@@ -299,7 +305,7 @@ def test_handle_admin_reply_routes_multiple_staff_replies_to_original_member():
     chat_id, text, _, parse_mode = context.bot.sent_messages[0]
     assert chat_id == 444
     assert parse_mode == ParseMode.HTML
-    assert "💬 <b>Response from the AWS Student Builder Core Team</b>" in text
+    assert "✦ <b>Response from the AWS Student Builder Core Team</b>" in text
     assert "<blockquote>Thanks for sharing this.</blockquote>" in text
     
     # 2. Second admin reply to the same original message (ID 7)
@@ -413,18 +419,55 @@ def test_handle_user_edited_feedback_updates_admin_group_card():
     assert "<blockquote>Updated feedback description.</blockquote>" in text
 
 def test_challenge_hub_and_feedback_hub_commands():
+    asyncio.run(db.reset_db())
     update = FakeUpdate(user_id=123)
     context = FakeContext()
 
     asyncio.run(bot.challenge_hub_command(update, context))
-    assert len(update.message.reply_text_calls) == 1
-    assert "AWS Builder Challenge Center" in update.message.reply_text_calls[0]["text"]
-    assert "Take Challenge" in [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert len(update.message.reply_text_calls) == 2
+    assert "Challenge Center" in update.message.reply_text_calls[0]["text"]
+    assert "Leaderboards" in [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert "AWS Builder Challenges" in update.message.reply_text_calls[1]["text"]
 
     asyncio.run(bot.feedback_hub_command(update, context))
+    assert len(update.message.reply_text_calls) == 3
+    assert "Feedback & Community Support Hub" in update.message.reply_text_calls[2]["text"]
+    assert "Submit Feedback" in [b.text for row in update.message.reply_text_calls[2]["reply_markup"].keyboard for b in row]
+
+
+def test_main_menu_challenges_click_displays_active_challenges_directly():
+    """Verifies that clicking 'Challenges' or typing /challenges updates the bottom keyboard and displays the card."""
+    asyncio.run(db.reset_db())
+    from app.challenge import service
+    ch_id = asyncio.run(service.create_challenge(title="Direct Challenge Sprint", category="DevOps"))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    update = FakeUpdate(user_id=123, text="Challenges")
+    context = FakeContext()
+
+    asyncio.run(bot.handle_message(update, context))
     assert len(update.message.reply_text_calls) == 2
-    assert "Feedback & Community Support Hub" in update.message.reply_text_calls[1]["text"]
-    assert "Submit Feedback" in [b.text for row in update.message.reply_text_calls[1]["reply_markup"].keyboard for b in row]
+    # First call updates the bottom persistent keyboard
+    assert "Challenge Center" in update.message.reply_text_calls[0]["text"]
+    bottom_buttons = [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert "Leaderboards" in bottom_buttons
+    assert "Past Challenges" in bottom_buttons
+    assert "Main Menu" in bottom_buttons
+
+    # Second call displays the challenge card with inline buttons
+    resp = update.message.reply_text_calls[1]["text"]
+    assert "Direct Challenge Sprint" in resp
+    assert "Status: Live Now" in resp
+    btn_labels = [b.text for row in update.message.reply_text_calls[1]["reply_markup"].inline_keyboard for b in row]
+    assert any("Start Challenge" in b for b in btn_labels)
+    assert "Refresh Status" in btn_labels
+
+    # Also verify /challenges command directly
+    update_cmd = FakeUpdate(user_id=123)
+    asyncio.run(bot.challenge_command(update_cmd, context))
+    assert len(update_cmd.message.reply_text_calls) == 2
+    cmd_bottom = [b.text for row in update_cmd.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert "Leaderboards" in cmd_bottom
 
 
 def test_direct_feedback_and_support_navigation():
@@ -469,12 +512,11 @@ def test_guidelines_command_and_callback():
     assert "Screenshots Disabled" in call["text"]
     assert call["reply_markup"] is not None
 
-    # Test start keyboard has guidelines button
+    # Test start keyboard only has the contextual Start button (other actions on bottom menu)
     kb = get_challenge_start_keyboard(challenge_id=99)
     button_texts = [btn.text for row in kb.inline_keyboard for btn in row]
-    assert "Community Guidelines" in button_texts
     assert "Start Challenge" in button_texts
-    assert "Scoring Rules" in button_texts
+    assert len(button_texts) == 1
 
     # Test callback query
     cb_query = FakeCallbackQuery(data="ch_guidelines", user_id=123)
@@ -504,10 +546,9 @@ def test_admin_command_security_restrictions(monkeypatch):
     admin_context = FakeContext()
     asyncio.run(admin_command(admin_update, admin_context))
 
-    assert len(admin_update.message.reply_text_calls) == 2
+    assert len(admin_update.message.reply_text_calls) == 1
     assert "AWS SBG Challenge Admin Panel" in admin_update.message.reply_text_calls[0]["text"]
     assert admin_update.message.reply_text_calls[0]["reply_markup"] is not None
-    assert admin_update.message.reply_text_calls[1]["reply_markup"] is not None
 
 
 def test_past_challenges_command_and_shortcuts():
@@ -630,7 +671,7 @@ def test_custom_date_challenge_creation_flow(monkeypatch):
 
     resp = up_msg.message.reply_text_calls[0]["text"]
     assert "Challenge" in resp
-    assert "2026-09-10" in resp
+    assert "Sep 10, 2026" in resp
     assert up_msg.message.reply_text_calls[0]["reply_markup"] is not None
 
 
@@ -640,18 +681,10 @@ def test_admin_panel_keyboard_layout_and_no_question_bank():
     button_rows = [[btn.text for btn in row] for row in kb.inline_keyboard]
     flat_buttons = [btn.text for row in kb.inline_keyboard for btn in row]
 
-    # Verify exact required order:
-    # 1. ➕ Create Challenge
-    # 2. 📋 Manage Challenges
-    # 3. 🏆 Leaderboards
-    # 4. 📊 Monthly Report
-    # 5. 📢 Broadcast Notification
+    # Verify only contextual actions remain inline (rest on bottom menu)
     assert flat_buttons == [
         "Create Challenge",
         "Manage Challenges",
-        "Leaderboards",
-        "Monthly Report",
-        "Broadcast",
     ]
     # Question Bank must NOT be in the admin panel
     assert not any("Question Bank" in b for b in flat_buttons)
@@ -752,6 +785,12 @@ def test_admin_challenge_schedule_and_timer_edit_flow(monkeypatch):
     asyncio.run(db.reset_db())
 
     ch_id = asyncio.run(create_challenge(title="Schedule & Timer Test", category="Testing"))
+    from app.challenge.service import add_question_to_challenge
+    asyncio.run(add_question_to_challenge(ch_id, {
+        "question_text": "Sample test question?",
+        "option_a": "Option A", "option_b": "Option B", "option_c": "Option C", "option_d": "Option D",
+        "correct_option": "A", "category": "Testing", "explanation": "Explanation",
+    }))
 
     # 1. Edit Schedule via Preset
     q_s1 = FakeCallbackQuery(user_id=99999, data=f"adm_sched_set:{ch_id}:now:7d")
@@ -1048,21 +1087,39 @@ def test_modern_step_by_step_creation_wizard(monkeypatch):
     assert state.startswith("WAITING_FOR_CHALLENGE_DESC:")
     ch_id = int(state.split(":")[1])
 
+    # Test category picker & updating category
+    q_cat = FakeCallbackQuery(user_id=99999, data=f"adm_wiz_cat_menu:{ch_id}")
+    up_cat = FakeUpdate(user_id=99999, callback_query=q_cat)
+    asyncio.run(handle_admin_callback(up_cat, ctx))
+    assert "Choose Category" in q_cat.edited_text
+
+    q_set_cat = FakeCallbackQuery(user_id=99999, data=f"adm_wiz_set_cat:{ch_id}:DevOps")
+    up_set_cat = FakeUpdate(user_id=99999, callback_query=q_set_cat)
+    asyncio.run(handle_admin_callback(up_set_cat, ctx))
+    assert "DevOps" in q_set_cat.edited_text
+
     # Step 2: Enter Description
     up_desc = FakeUpdate(user_id=99999, text="Hands-on practice quiz covering DynamoDB, Lambda, CI/CD, and ECS architectures.")
     asyncio.run(bot.handle_message(up_desc, ctx))
 
     assert len(up_desc.message.reply_text_calls) == 1
     resp2 = up_desc.message.reply_text_calls[0]["text"]
-    assert "Step 3/4: Schedule & Start/End Time" in resp2
+    assert "Step 3/4: Exam Time Limit" in resp2
     assert "DynamoDB, Lambda, CI/CD" in resp2
 
-    # Step 3: Select Schedule preset
+    # Step 3: Select Exam Time Limit (15 Mins)
+    q_timer = FakeCallbackQuery(user_id=99999, data=f"adm_wiz_timer:{ch_id}:15")
+    up_t = FakeUpdate(user_id=99999, callback_query=q_timer)
+    asyncio.run(handle_admin_callback(up_t, ctx))
+    assert "Step 4/4: Schedule & Start/End Time" in q_timer.edited_text
+    assert "15 Minutes" in q_timer.edited_text
+
+    # Step 4: Select Schedule preset
     q_sched = FakeCallbackQuery(user_id=99999, data=f"adm_cr_sched:{ch_id}:now:7d")
     up_s = FakeUpdate(user_id=99999, callback_query=q_sched)
     asyncio.run(handle_admin_callback(up_s, ctx))
 
-    assert "Step 4/4: Add Questions" in q_sched.edited_text or "Add Questions" in q_sched.edited_text
+    assert "Add Questions" in q_sched.edited_text
 
     # Step 4: Add single question
     q_single = FakeCallbackQuery(user_id=99999, data=f"adm_add_q_to_ch:{ch_id}")
@@ -1087,6 +1144,12 @@ def test_modern_step_by_step_creation_wizard(monkeypatch):
     resp_q = up_q.message.reply_text_calls[0]["text"]
     assert f"Added to Challenge #{ch_id}!" in resp_q
 
+    # Step 5: Publish LIVE
+    q_pub = FakeCallbackQuery(user_id=99999, data=f"adm_pub:{ch_id}")
+    up_pub = FakeUpdate(user_id=99999, callback_query=q_pub)
+    asyncio.run(handle_admin_callback(up_pub, ctx))
+    assert "is now LIVE" in q_pub.edited_text
+
     # Verify final challenge state
     final_ch = asyncio.run(get_challenge(ch_id))
     assert final_ch["title"] == "AWS Developer Associate Sprint"
@@ -1095,6 +1158,262 @@ def test_modern_step_by_step_creation_wizard(monkeypatch):
 
     questions = asyncio.run(get_challenge_questions(ch_id))
     assert len(questions) == 1
+
+
+def test_power_user_challenge_creation_title_description_duration(monkeypatch):
+    """Tests power user single-line creation with format: Title | Description | Duration."""
+    import app.bot as bot
+    from app.challenge.service import get_challenge
+
+    asyncio.run(db.reset_db())
+    monkeypatch.setenv("ADMIN_USER_IDS", "88888")
+
+    ctx = FakeContext()
+
+    # Admin initiates create challenge
+    up_start = FakeUpdate(user_id=88888, text="Create Challenge")
+    asyncio.run(bot.handle_message(up_start, ctx))
+
+    state = asyncio.run(db.get_user_state(88888))
+    assert state == "WAITING_FOR_CHALLENGE_TITLE"
+
+    # Enter power-user multi-part format: Test | this   is test challeng | 20
+    up_power = FakeUpdate(user_id=88888, text="Test | this   is test challeng | 20")
+    asyncio.run(bot.handle_message(up_power, ctx))
+
+    assert len(up_power.message.reply_text_calls) == 1
+    resp = up_power.message.reply_text_calls[0]["text"]
+
+    # Must be Step 4/4
+    assert "Step 4/4: Schedule & Start/End Time" in resp
+    assert "Test" in resp
+    assert "this   is test challeng" in resp
+    assert "20 Minutes" in resp
+
+    # State must be reset
+    state_after = asyncio.run(db.get_user_state(88888))
+    assert state_after is None
+
+    # Verify challenge in database
+    from app.challenge.service import list_challenges
+    all_ch = asyncio.run(list_challenges(limit=1))
+    assert len(all_ch) == 1
+    ch_full = asyncio.run(get_challenge(all_ch[0]["id"]))
+    assert ch_full is not None
+    assert ch_full["title"] == "Test"
+    assert ch_full["description"] == "this   is test challeng"
+    assert ch_full["duration_seconds"] == 20 * 60
+
+
+def test_zero_question_challenge_remains_draft_and_independent_publishing(monkeypatch):
+    """Verifies that selecting Go LIVE with 0 questions leaves status as DRAFT,
+
+    rejects going LIVE on the next screen with an alert, and allows independent
+    publishing for Go LIVE and Schedule once questions are attached.
+    """
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import get_challenge, add_question_to_challenge
+
+    asyncio.run(db.reset_db())
+    monkeypatch.setenv("ADMIN_USER_IDS", "77777")
+    ctx = FakeContext()
+
+    # 1. Admin creates a challenge and selects 'Go LIVE' in Step 4
+    q_sched = FakeCallbackQuery(user_id=77777, data="adm_cr_sched:now:7d")
+    ctx.user_data["wiz_title"] = "Zero Question Challenge"
+    ctx.user_data["wiz_category"] = "Networking"
+    ctx.user_data["wiz_description"] = "Networking test quiz."
+    ctx.user_data["wiz_duration_mins"] = 15
+
+    up_s = FakeUpdate(user_id=77777, callback_query=q_sched)
+    asyncio.run(handle_admin_callback(up_s, ctx))
+
+    # Next screen shows Add Questions prompt
+    assert "Add Questions" in q_sched.edited_text
+
+    # Find created challenge
+    from app.challenge.service import list_challenges
+    all_ch = asyncio.run(list_challenges(limit=1))
+    assert len(all_ch) == 1
+    ch_id = all_ch[0]["id"]
+    ch = asyncio.run(get_challenge(ch_id))
+
+    # CRITICAL: Must be DRAFT, NEVER prematurely LIVE with 0 questions!
+    assert ch["status"] == "DRAFT"
+
+    # 2. Admin taps 'Go LIVE' on the next screen with 0 questions
+    q_pub_fail = FakeCallbackQuery(user_id=77777, data=f"adm_pub:{ch_id}:live")
+    up_pub_fail = FakeUpdate(user_id=77777, callback_query=q_pub_fail)
+    asyncio.run(handle_admin_callback(up_pub_fail, ctx))
+
+    # Must alert requiring at least 1 question, and remain DRAFT
+    assert q_pub_fail.answered is True
+    assert "attach at least 1 question" in q_pub_fail.answered_text
+    assert asyncio.run(get_challenge(ch_id))["status"] == "DRAFT"
+
+    # 3. Admin taps 'Publish (Schedule)' on the next screen with 0 questions
+    q_sched_fail = FakeCallbackQuery(user_id=77777, data=f"adm_pub:{ch_id}:sched")
+    up_sched_fail = FakeUpdate(user_id=77777, callback_query=q_sched_fail)
+    asyncio.run(handle_admin_callback(up_sched_fail, ctx))
+
+    # Must also alert requiring at least 1 question
+    assert q_sched_fail.answered is True
+    assert "attach at least 1 question" in q_sched_fail.answered_text
+    assert asyncio.run(get_challenge(ch_id))["status"] == "DRAFT"
+
+    # 4. Attach a question
+    asyncio.run(add_question_to_challenge(ch_id, {
+        "question_text": "What is Amazon VPC?",
+        "option_a": "Isolated virtual network",
+        "option_b": "Database",
+        "option_c": "Storage",
+        "option_d": "Monitoring",
+        "correct_option": "A",
+        "category": "Networking",
+        "explanation": "VPC provides isolated virtual cloud networking.",
+    }))
+
+    # 5. Now publish for Future (Schedule)
+    q_sched_ok = FakeCallbackQuery(user_id=77777, data=f"adm_pub:{ch_id}:sched")
+    up_sched_ok = FakeUpdate(user_id=77777, callback_query=q_sched_ok)
+    asyncio.run(handle_admin_callback(up_sched_ok, ctx))
+
+    ch_sched = asyncio.run(get_challenge(ch_id))
+    assert ch_sched["status"] == "SCHEDULED"
+
+    # 6. Now publish LIVE directly from manage
+    q_live_ok = FakeCallbackQuery(user_id=77777, data=f"adm_pub:{ch_id}:live")
+    up_live_ok = FakeUpdate(user_id=77777, callback_query=q_live_ok)
+    asyncio.run(handle_admin_callback(up_live_ok, ctx))
+
+    ch_live = asyncio.run(get_challenge(ch_id))
+    assert ch_live["status"] == "LIVE"
+
+
+def test_setup_bot_commands_and_notifications_command():
+    ctx = FakeContext()
+    asyncio.run(bot.setup_bot_commands(ctx.bot))
+    assert hasattr(ctx.bot, "commands")
+    assert any(c.command == "challenge" for c in ctx.bot.commands)
+    assert any(c.command == "notifications" for c in ctx.bot.commands)
+    assert any(c.command == "leaderboard" for c in ctx.bot.commands)
+    assert any(c.command == "admin" for c in ctx.bot.commands)
+    assert ctx.bot.menu_button is not None
+
+    up = FakeUpdate(user_id=12345, text="/notifications")
+    asyncio.run(bot.notifications_command(up, ctx))
+    assert len(up.message.reply_text_calls) == 1
+    assert "Community Notifications" in up.message.reply_text_calls[0]["text"]
+    assert up.message.reply_text_calls[0]["reply_markup"] is not None
+
+
+def test_step_by_step_title_and_category_input(monkeypatch):
+    """Tests entering 'Title | Category' in Step 1 proceeds to Step 2 with the specified category."""
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_create_ch")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    asyncio.run(handle_admin_callback(up1, ctx))
+
+    up_title = FakeUpdate(user_id=99999, text="AWS Security Specialty | Security")
+    asyncio.run(bot.handle_message(up_title, ctx))
+
+    assert len(up_title.message.reply_text_calls) == 1
+    resp = up_title.message.reply_text_calls[0]["text"]
+    assert "Step 2/4: Description" in resp
+    assert "AWS Security Specialty" in resp
+    assert "Security" in resp
+
+    state = asyncio.run(db.get_user_state(99999))
+    assert state.startswith("WAITING_FOR_CHALLENGE_DESC:")
+    ch_id = int(state.split(":")[1])
+
+    ch = asyncio.run(get_challenge(ch_id))
+    assert ch["title"] == "AWS Security Specialty"
+    assert ch["category"] == "Security"
+
+
+def test_wizard_custom_category_selection(monkeypatch):
+    """Tests choosing Custom Category in Step 2 and typing a custom category."""
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_create_ch")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    asyncio.run(handle_admin_callback(up1, ctx))
+
+    up_title = FakeUpdate(user_id=99999, text="AWS Bedrock & Titan Mastery")
+    asyncio.run(bot.handle_message(up_title, ctx))
+
+    state = asyncio.run(db.get_user_state(99999))
+    ch_id = int(state.split(":")[1])
+
+    # Click Custom Category
+    q_custom = FakeCallbackQuery(user_id=99999, data=f"adm_wiz_custom_cat:{ch_id}")
+    up_custom = FakeUpdate(user_id=99999, callback_query=q_custom)
+    asyncio.run(handle_admin_callback(up_custom, ctx))
+    assert "Custom Category" in q_custom.edited_text
+
+    # Type custom category
+    up_cat_input = FakeUpdate(user_id=99999, text="Generative AI")
+    asyncio.run(bot.handle_message(up_cat_input, ctx))
+
+    assert len(up_cat_input.message.reply_text_calls) == 1
+    resp = up_cat_input.message.reply_text_calls[0]["text"]
+    assert "Step 2/4: Description" in resp
+    assert "Generative AI" in resp
+
+    ch = asyncio.run(get_challenge(ch_id))
+    assert ch["category"] == "Generative AI"
+
+
+def test_edit_schedule_with_copied_chat_prefix_and_direct_input(monkeypatch):
+    """Tests entering dates directly on edit schedule screen even with copied chat prefixes."""
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import create_challenge, get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    ch_id = asyncio.run(create_challenge(
+        title="Copied Schedule Challenge",
+        description="Testing date parsing",
+        category="DevOps",
+        created_by=99999,
+    ))
+
+    # Admin opens Edit Schedule
+    q_edit = FakeCallbackQuery(user_id=99999, data=f"adm_edit_sched:{ch_id}")
+    up_edit = FakeUpdate(user_id=99999, callback_query=q_edit)
+    asyncio.run(handle_admin_callback(up_edit, ctx))
+
+    # Verify state is set so admin can directly send dates
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == f"WAITING_FOR_EDIT_CHALLENGE_SCHEDULE:{ch_id}"
+
+    # Admin sends date with chat copied prefix
+    copied_text = "[9/2/2026 3:23 PM] אַבְרָהָם: 2026-09-02 15:25 to 2026-09-02 15:50"
+    up_date = FakeUpdate(user_id=99999, text=copied_text)
+    asyncio.run(bot.handle_message(up_date, ctx))
+
+    assert len(up_date.message.reply_text_calls) == 1
+    resp = up_date.message.reply_text_calls[0]["text"]
+    assert f"Schedule Updated for Challenge #{ch_id}" in resp
+    assert "Sep 2, 2026 · 3:25 PM EAT" in resp
+    assert "Sep 2, 2026 · 3:50 PM EAT" in resp
+
+    ch = asyncio.run(get_challenge(ch_id))
+    assert "2026-09-02T12:25:00" in ch["starts_at"]
+    assert "2026-09-02T12:50:00" in ch["ends_at"]
+
+
 
 
 

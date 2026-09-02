@@ -11,6 +11,48 @@ SQLITE_DB_PATH = os.getenv("SQLITE_DB_PATH", "bot.db")
 _is_initialized = False
 _db_lock = asyncio.Lock()
 
+# ---------------------------------------------------------------------------
+# PostgreSQL Connection Pool (eliminates per-query TCP overhead)
+# ---------------------------------------------------------------------------
+_pg_pool = None
+
+
+def _normalize_url(url: str) -> str:
+    """Normalizes postgres:// to postgresql:// for psycopg compatibility."""
+    if url and url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql://", 1)
+    return url
+
+
+async def get_pg_pool():
+    """Returns (and lazily creates) a shared async connection pool for PostgreSQL."""
+    global _pg_pool
+    if _pg_pool is not None:
+        return _pg_pool
+
+    from psycopg_pool import AsyncConnectionPool
+
+    url = _normalize_url(DATABASE_URL)
+    _pg_pool = AsyncConnectionPool(
+        conninfo=url,
+        min_size=2,
+        max_size=10,
+        open=False,
+        kwargs={"prepare_threshold": None},
+    )
+    await _pg_pool.open()
+    logger.info("PostgreSQL connection pool opened (min=2, max=10, prepare_threshold=None).")
+    return _pg_pool
+
+
+async def close_pool():
+    """Gracefully closes the connection pool on shutdown."""
+    global _pg_pool
+    if _pg_pool is not None:
+        await _pg_pool.close()
+        _pg_pool = None
+        logger.info("PostgreSQL connection pool closed.")
+
 
 def is_postgres() -> bool:
     """Checks if a PostgreSQL connection string is configured."""
@@ -29,14 +71,9 @@ async def init_db(db_path: str = None) -> None:
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = DATABASE_URL
-        if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql://", 1)
-
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("""
                         CREATE TABLE IF NOT EXISTS bot_users (
@@ -174,9 +211,16 @@ async def init_db(db_path: str = None) -> None:
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         );
                     """)
+
+                    # Performance indexes for frequently queried columns
+                    await cur.execute("CREATE INDEX IF NOT EXISTS idx_challenges_status ON challenges(status);")
+                    await cur.execute("CREATE INDEX IF NOT EXISTS idx_challenge_questions_challenge ON challenge_questions(challenge_id);")
+                    await cur.execute("CREATE INDEX IF NOT EXISTS idx_challenge_answers_participant ON challenge_answers(participant_id, challenge_id);")
+                    await cur.execute("CREATE INDEX IF NOT EXISTS idx_feedback_user_message ON feedback_submissions(user_message_id);")
+
                     await conn.commit()
             _is_initialized = True
-            logger.info("Initialized PostgreSQL database tables.")
+            logger.info("Initialized PostgreSQL database tables with indexes.")
         except Exception as e:
             logger.error(f"Failed to initialize PostgreSQL database: {e}")
     else:
@@ -342,15 +386,9 @@ async def get_user_state(user_id: int, db_path: str = None) -> Optional[str]:
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         "SELECT state FROM user_states WHERE user_id = %s", (user_id,)
@@ -383,15 +421,9 @@ async def set_user_state(
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     if state is None:
                         await cur.execute(
@@ -444,15 +476,9 @@ async def save_feedback_submission(
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """
@@ -497,15 +523,9 @@ async def get_feedback_submission(
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         "SELECT sender_chat_id, sender_name, user_message_id FROM feedback_submissions WHERE message_id = %s",
@@ -552,15 +572,9 @@ async def get_feedback_submission_by_user_message(
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         "SELECT message_id, sender_chat_id, sender_name FROM feedback_submissions WHERE user_message_id = %s",
@@ -605,15 +619,9 @@ async def delete_feedback_submission(message_id: int, db_path: str = None) -> No
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         "DELETE FROM feedback_submissions WHERE message_id = %s",
@@ -647,15 +655,9 @@ async def save_admin_reply_mapping(
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """
@@ -698,15 +700,9 @@ async def get_admin_reply_mapping(
     path = db_path or SQLITE_DB_PATH
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         "SELECT user_chat_id, delivered_message_id FROM admin_reply_mappings WHERE admin_message_id = %s",
@@ -751,15 +747,9 @@ async def register_or_update_bot_user(
         return
     await ensure_db()
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """
@@ -813,15 +803,9 @@ async def get_all_broadcast_user_ids() -> list[int]:
         ) AS combined_users WHERE user_id IS NOT NULL AND user_id > 0
     """
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(query)
                     rows = await cur.fetchall()
@@ -848,15 +832,9 @@ async def reset_db(db_path: str = None) -> None:
     await ensure_db(path)
 
     if is_postgres():
-        import psycopg
-
-        url = (
-            DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if DATABASE_URL.startswith("postgres://")
-            else DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute("DELETE FROM bot_users;")
                     await cur.execute("DELETE FROM user_states;")

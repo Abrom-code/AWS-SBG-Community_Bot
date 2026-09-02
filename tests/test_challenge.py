@@ -701,6 +701,505 @@ def test_flexible_csv_import_formats():
     assert questions[3]["correct_option"] == "A"
 
 
+def test_multi_active_challenges_sorting_and_selection():
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import challenge_command, handle_challenge_select_callback
+
+    asyncio.run(db.reset_db())
+
+    # Create 3 challenges with different live/start times
+    ch1_id = asyncio.run(
+        service.create_challenge(
+            title="Challenge Alpha",
+            category="Compute",
+            starts_at="2026-09-01T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch1_id, "LIVE"))
+
+    ch2_id = asyncio.run(
+        service.create_challenge(
+            title="Challenge Beta",
+            category="Database",
+            starts_at="2026-09-02T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch2_id, "LIVE"))
+
+    ch3_id = asyncio.run(
+        service.create_challenge(
+            title="Challenge Gamma",
+            category="Security",
+            starts_at="2099-01-01T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch3_id, "SCHEDULED"))
+
+    # Verify service sorting: Live first, newest starts_at first, then scheduled
+    active = asyncio.run(service.get_active_challenges())
+    assert len(active) == 3
+    assert active[0]["id"] == ch2_id  # Newest LIVE
+    assert active[1]["id"] == ch1_id  # Older LIVE
+    assert active[2]["id"] == ch3_id  # SCHEDULED
+
+    # Verify challenge_command presents challenge in question format with smart nav bar
+    update = FakeUpdate(user_id=101)
+    context = FakeContext()
+    asyncio.run(challenge_command(update, context))
+
+    assert len(update.message.reply_text_calls) == 2
+    assert "Challenge Center" in update.message.reply_text_calls[0]["text"]
+    call = update.message.reply_text_calls[1]
+    assert "Active Challenge" in call["text"]
+    assert "Challenge Beta" in call["text"]  # Newest live is index 0
+    assert "(1 of 3)" in call["text"]
+    assert "🟢 <b>Status: Live Now</b>" in call["text"]
+
+    kb = call["reply_markup"]
+    callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert f"ch_start:{ch2_id}" in callbacks
+    assert "ch_nav_act:1" in callbacks
+    assert "ch_nav_act:2" in callbacks
+
+    # Verify navigating to challenge 2 (Alpha) via smart nav bar
+    from app.challenge.handlers import handle_challenge_nav_active_callback
+    cb = FakeCallbackQuery(data="ch_nav_act:1", user_id=101)
+    cb_update = FakeUpdate(callback_query=cb)
+    asyncio.run(handle_challenge_nav_active_callback(cb_update, context))
+
+    assert cb.edited_text is not None
+    assert "Challenge Alpha" in cb.edited_text
+    assert "(2 of 3)" in cb.edited_text
+    alpha_callbacks = [btn.callback_data for row in cb.reply_markup.inline_keyboard for btn in row]
+    assert f"ch_start:{ch1_id}" in alpha_callbacks
+
+    # Verify navigating to challenge 3 (Gamma - Scheduled) via smart nav bar
+    cb3 = FakeCallbackQuery(data="ch_nav_act:2", user_id=101)
+    cb3_update = FakeUpdate(callback_query=cb3)
+    asyncio.run(handle_challenge_nav_active_callback(cb3_update, context))
+
+    assert cb3.edited_text is not None
+    assert "Challenge Gamma" in cb3.edited_text
+    assert "(3 of 3)" in cb3.edited_text
+    assert "🕒 <b>Status: Upcoming Challenge</b>" in cb3.edited_text
+    assert "Scheduled Opening:" in cb3.edited_text
+    assert "2099" in cb3.edited_text
+    assert "Countdown:" in cb3.edited_text
+
+    gamma_callbacks = [btn.callback_data for row in cb3.reply_markup.inline_keyboard for btn in row]
+    assert f"ch_sched_info:{ch3_id}" in gamma_callbacks
+
+    # Verify tapping scheduled button provides informational popup
+    from app.challenge.handlers import handle_scheduled_challenge_info_callback
+    cb_info = FakeCallbackQuery(data=f"ch_sched_info:{ch3_id}", user_id=101)
+    cb_info_update = FakeUpdate(callback_query=cb_info)
+    asyncio.run(handle_scheduled_challenge_info_callback(cb_info_update, context))
+
+
+def test_refresh_status_button_transitions_to_live():
+    """Verifies that tapping the 'Refresh Status' button without emoji unlocks a scheduled challenge in real time."""
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import handle_challenge_refresh_callback
+
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(
+        service.create_challenge(
+            title="Realtime Refresh Challenge",
+            category="DevOps",
+            starts_at="2099-01-01T00:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch_id, "SCHEDULED"))
+
+    context = FakeContext()
+    cb = FakeCallbackQuery(data=f"ch_refresh:{ch_id}:0", user_id=101)
+    up = FakeUpdate(callback_query=cb)
+
+    # First refresh: challenge is still scheduled
+    asyncio.run(handle_challenge_refresh_callback(up, context))
+    assert cb.edited_text is not None
+    assert "Status: Upcoming Challenge" in cb.edited_text
+    labels = [btn.text for row in cb.reply_markup.inline_keyboard for btn in row]
+    assert "Refresh Status" in labels
+
+    # Now time arrives: update starts_at to the past
+    past_iso = "2026-01-01T00:00:00+00:00"
+    asyncio.run(service.update_challenge_details(ch_id, starts_at=past_iso))
+
+    cb2 = FakeCallbackQuery(data=f"ch_refresh:{ch_id}:0", user_id=101)
+    up2 = FakeUpdate(callback_query=cb2)
+    asyncio.run(handle_challenge_refresh_callback(up2, context))
+
+    assert cb2.edited_text is not None
+    assert "Status: Live Now" in cb2.edited_text
+    labels2 = [btn.text for row in cb2.reply_markup.inline_keyboard for btn in row]
+    assert any("Start Challenge" in label for label in labels2)
+    assert "Refresh Status" in labels2
+
+
+def test_leaderboard_review_button_visibility_and_locking():
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import handle_leaderboard_callback, handle_challenge_review_callback
+
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(
+        service.create_challenge(
+            title="Live Quiz Challenge",
+            category="Cloud",
+            starts_at="2026-09-01T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    # User 201 has not completed the challenge
+    cb = FakeCallbackQuery(data=f"lb_weekly:{ch_id}:1", user_id=201)
+    cb_update = FakeUpdate(callback_query=cb)
+    context = FakeContext()
+    asyncio.run(handle_leaderboard_callback(cb_update, context))
+
+    assert cb.edited_text is not None
+    assert "No completed submissions yet" in cb.edited_text
+    btn_texts = [btn.text for row in cb.reply_markup.inline_keyboard for btn in row]
+    # Review Questions & Answers should NOT be present when user has not completed
+    assert "Review Questions & Answers" not in btn_texts
+
+    # If user tries to trigger review callback while locked, it must alert them with an explanation
+    cb_review = FakeCallbackQuery(data=f"ch_review:{ch_id}:0", user_id=201)
+    cb_review_update = FakeUpdate(callback_query=cb_review)
+    asyncio.run(handle_challenge_review_callback(cb_review_update, context))
+    assert cb_review.answered is True
+    assert "unlocked only after you complete" in cb_review.answered_text
+
+    # Now mark user 201 as completed
+    asyncio.run(service.register_or_get_participant(ch_id, 201, "Alice", "alice"))
+    asyncio.run(service._execute("UPDATE challenge_participants SET status = 'COMPLETED' WHERE challenge_id = ? AND telegram_user_id = ?", (ch_id, 201)))
+
+    # Leaderboard now for user 201 SHOULD include Review Questions & Answers
+    cb2 = FakeCallbackQuery(data=f"lb_weekly:{ch_id}:1", user_id=201)
+    cb2_update = FakeUpdate(callback_query=cb2)
+    asyncio.run(handle_leaderboard_callback(cb2_update, context))
+    btn2_texts = [btn.text for row in cb2.reply_markup.inline_keyboard for btn in row]
+    assert "Review Questions & Answers" in btn2_texts
+
+
+def test_admin_challenge_management_and_wizard_timer(monkeypatch):
+    """Tests admin challenge publishing, concluding, and wizard timer customization."""
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import (
+        create_challenge,
+        get_challenge,
+        create_question,
+        add_question_to_challenge,
+    )
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "88888")
+    asyncio.run(db.reset_db())
+    ctx = FakeContext()
+
+    # 1. Create a draft challenge with future start date
+    ch_id = asyncio.run(create_challenge(title="Draft DevOps Quiz", category="DevOps", starts_at="2099-01-01T00:00:00+00:00"))
+
+    # 2. Try to publish with 0 questions attached -> should alert and remain DRAFT
+    q_pub = FakeCallbackQuery(user_id=88888, data=f"adm_pub:{ch_id}")
+    up_pub = FakeUpdate(user_id=88888, callback_query=q_pub)
+    asyncio.run(handle_admin_callback(up_pub, ctx))
+    assert q_pub.answered is True
+    assert "attach at least 1 question" in q_pub.answered_text
+    ch_draft = asyncio.run(get_challenge(ch_id))
+    assert ch_draft["status"] == "DRAFT"
+
+    # 3. Attach a question
+    asyncio.run(add_question_to_challenge(ch_id, {
+        "question_text": "What is S3?",
+        "option_a": "Storage",
+        "option_b": "Database",
+        "option_c": "Compute",
+        "option_d": "DNS",
+        "correct_option": "A",
+        "category": "Storage",
+        "explanation": "S3 is object storage.",
+    }))
+
+    # 4. Now publish LIVE -> starts_at should be set to now, status LIVE
+    q_pub2 = FakeCallbackQuery(user_id=88888, data=f"adm_pub:{ch_id}")
+    up_pub2 = FakeUpdate(user_id=88888, callback_query=q_pub2)
+    asyncio.run(handle_admin_callback(up_pub2, ctx))
+    ch_live = asyncio.run(get_challenge(ch_id))
+    assert ch_live["status"] == "LIVE"
+    assert ch_live["starts_at"] is not None
+    assert ch_live["starts_at"] != "2099-01-01T00:00:00+00:00"
+
+    # 5. End challenge -> status ENDED, ends_at updated
+    q_end = FakeCallbackQuery(user_id=88888, data=f"adm_end:{ch_id}")
+    up_end = FakeUpdate(user_id=88888, callback_query=q_end)
+    asyncio.run(handle_admin_callback(up_end, ctx))
+    ch_ended = asyncio.run(get_challenge(ch_id))
+    assert ch_ended["status"] == "ENDED"
+
+    # 6. Test wizard timer setting via callback
+    q_wiz_timer = FakeCallbackQuery(user_id=88888, data=f"adm_wiz_timer:{ch_id}:25")
+    up_wt = FakeUpdate(user_id=88888, callback_query=q_wiz_timer)
+    asyncio.run(handle_admin_callback(up_wt, ctx))
+    assert "25 Minutes" in q_wiz_timer.edited_text
+    ch_updated = asyncio.run(get_challenge(ch_id))
+    assert ch_updated["duration_seconds"] == 25 * 60
+
+
+def test_leaderboard_weekly_monthly_tab_switching():
+    """Verifies tab switching between weekly and monthly leaderboards with state preservation."""
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import handle_leaderboard_callback
+
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(
+        service.create_challenge(
+            title="Tab Switcher Challenge",
+            category="Cloud",
+            starts_at="2026-09-01T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    ctx = FakeContext()
+
+    # 1. View weekly leaderboard via callback
+    cb_w = FakeCallbackQuery(data=f"lb_weekly:{ch_id}:1", user_id=301)
+    up_w = FakeUpdate(callback_query=cb_w)
+    asyncio.run(handle_leaderboard_callback(up_w, ctx))
+
+    assert "Weekly Leaderboard: Tab Switcher Challenge" in cb_w.edited_text
+    btn_w = [btn.text for row in cb_w.reply_markup.inline_keyboard for btn in row]
+    # Active tab is Weekly (marked with bullets), Monthly is available
+    assert "• 🏆 Weekly •" in btn_w
+    assert "📅 Monthly" in btn_w
+
+    # Find the Monthly button callback data
+    monthly_btn = next(btn for row in cb_w.reply_markup.inline_keyboard for btn in row if btn.text == "📅 Monthly")
+    assert monthly_btn.callback_data == f"lb_monthly:{ch_id}:1"
+
+    # 2. Tap Monthly button -> switches to Monthly Championship Leaderboard
+    cb_m = FakeCallbackQuery(data=monthly_btn.callback_data, user_id=301)
+    up_m = FakeUpdate(callback_query=cb_m)
+    asyncio.run(handle_leaderboard_callback(up_m, ctx))
+
+    assert "Monthly Championship Leaderboard" in cb_m.edited_text
+    btn_m = [btn.text for row in cb_m.reply_markup.inline_keyboard for btn in row]
+    # Active tab is Monthly (marked with bullets), Weekly is available
+    assert "• 📅 Monthly •" in btn_m
+    assert "🏆 Weekly" in btn_m
+    # Challenge context was preserved
+    assert "« Back to Challenge" in btn_m
+
+    # Find the Weekly button callback data
+    weekly_btn = next(btn for row in cb_m.reply_markup.inline_keyboard for btn in row if btn.text == "🏆 Weekly")
+    assert weekly_btn.callback_data == f"lb_weekly:{ch_id}:1"
+
+    # 3. Tap Weekly button -> switches right back to Weekly Leaderboard for challenge
+    cb_w2 = FakeCallbackQuery(data=weekly_btn.callback_data, user_id=301)
+    up_w2 = FakeUpdate(callback_query=cb_w2)
+    asyncio.run(handle_leaderboard_callback(up_w2, ctx))
+
+    assert "Weekly Leaderboard: Tab Switcher Challenge" in cb_w2.edited_text
+
+
+def test_draft_challenges_never_exposed_to_students():
+    """Verifies DRAFT challenges are never shown or accessible to students in past challenges, review, or leaderboards."""
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery, FakeMessage
+    from app.challenge.handlers import past_challenges_command, handle_past_challenges_callback, handle_leaderboard_callback
+    from app.challenge.service import get_challenge_review_data, list_past_challenges
+
+    asyncio.run(db.reset_db())
+
+    # Create an ENDED challenge and a DRAFT challenge
+    ended_id = asyncio.run(
+        service.create_challenge(
+            title="Archived Cloud Challenge",
+            category="Cloud",
+            starts_at="2026-08-01T10:00:00+00:00",
+            ends_at="2026-08-08T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ended_id, "ENDED"))
+
+    draft_id = asyncio.run(
+        service.create_challenge(
+            title="Secret Draft Challenge",
+            category="Serverless",
+            starts_at="2026-09-01T10:00:00+00:00",
+        )
+    )
+    # Ensure draft_id is strictly DRAFT
+    asyncio.run(service.update_challenge_status(draft_id, "DRAFT"))
+
+    ctx = FakeContext()
+
+    # 1. list_past_challenges query must NOT return the DRAFT challenge
+    past_chs = asyncio.run(list_past_challenges())
+    assert any(c["id"] == ended_id for c in past_chs)
+    assert not any(c["id"] == draft_id for c in past_chs)
+
+    # 2. /archive or /past command must not show DRAFT challenge
+    up_cmd = FakeUpdate(user_id=401, text="/archive")
+    asyncio.run(past_challenges_command(up_cmd, ctx))
+    assert len(up_cmd.message.reply_text_calls) == 1
+    kb = up_cmd.message.reply_text_calls[0]["reply_markup"]
+    btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert any(f"#{ended_id}" in t for t in btn_texts)
+    assert not any("Secret Draft Challenge" in t for t in btn_texts)
+
+    # 3. Direct callback inspect ch_past:{draft_id} by student must be blocked
+    cb_draft = FakeCallbackQuery(data=f"ch_past:{draft_id}", user_id=401)
+    up_cb = FakeUpdate(callback_query=cb_draft)
+    asyncio.run(handle_past_challenges_callback(up_cb, ctx))
+    assert cb_draft.answered is True
+    assert "draft mode" in cb_draft.answered_text
+
+    # 4. get_challenge_review_data must reject DRAFT challenges
+    review_res = asyncio.run(get_challenge_review_data(draft_id, 401, 0))
+    assert "error" in review_res
+    assert "draft mode" in review_res["error"]
+
+    # 5. Leaderboard callback requesting draft_id must not leak draft details to non-admin
+    cb_lb = FakeCallbackQuery(data=f"lb_weekly:{draft_id}:1", user_id=401)
+    up_lb = FakeUpdate(callback_query=cb_lb)
+    asyncio.run(handle_leaderboard_callback(up_lb, ctx))
+    assert "Secret Draft Challenge" not in cb_lb.edited_text
+
+
+def test_pg_pool_prepared_statement_disabled_for_pooler(monkeypatch):
+    """Verifies that the PostgreSQL connection pool explicitly disables prepared statements
+
+    (prepare_threshold=None) to ensure full compatibility with transaction connection poolers
+    (e.g. Supabase port 6543 / PgBouncer / Supavisor).
+    """
+    import app.db as db
+    monkeypatch.setattr(db, "DATABASE_URL", "postgresql://user:pass@localhost:6543/postgres")
+    monkeypatch.setattr(db, "_pg_pool", None)
+
+    captured = {}
+
+    class MockAsyncConnectionPool:
+        def __init__(self, conninfo, min_size=2, max_size=10, open=False, kwargs=None):
+            captured["conninfo"] = conninfo
+            captured["kwargs"] = kwargs
+
+        async def open(self):
+            pass
+
+    import sys
+    from unittest.mock import MagicMock
+    mock_module = MagicMock()
+    mock_module.AsyncConnectionPool = MockAsyncConnectionPool
+    monkeypatch.setitem(sys.modules, "psycopg_pool", mock_module)
+
+    asyncio.run(db.get_pg_pool())
+    assert captured.get("kwargs") == {"prepare_threshold": None}
+    monkeypatch.setattr(db, "_pg_pool", None)
+
+
+def test_quiz_navigation_latency_optimization_and_prefetched_state():
+    """Verifies that record_answer_and_advance returns prefetched state and
+
+    get_next_question_for_participant uses prefetched state to minimize roundtrips.
+    """
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(service.create_challenge(title="Fast Navigation Quiz", duration_seconds=600))
+    q1 = asyncio.run(service.create_question("Q1 Text", "A", "B", "C", "D", "A"))
+    q2 = asyncio.run(service.create_question("Q2 Text", "A", "B", "C", "D", "B"))
+    asyncio.run(service.link_questions_to_challenge(ch_id, [q1, q2]))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    user_id = 998877
+    asyncio.run(service.register_or_get_participant(ch_id, user_id))
+    asyncio.run(service.start_participant_quiz(ch_id, user_id))
+
+    q1_data = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, 0))
+    assert q1_data is not None
+    assert q1_data["question_number"] == 1
+
+    # Record answer for Q1
+    res = asyncio.run(service.record_answer_and_advance(ch_id, user_id, "A", 0))
+    assert res["is_completed"] is False
+    assert "_participant" in res
+    assert "_challenge" in res
+    assert "_answered_indices" in res
+    assert res["_answered_indices"] == [0]
+    assert res["_participant"]["current_question_index"] == 1
+
+    # Load Q2 with prefetched arguments
+    q2_data = asyncio.run(
+        service.get_next_question_for_participant(
+            ch_id,
+            user_id,
+            question_index=res["next_question_index"],
+            prefetched_part=res["_participant"],
+            prefetched_challenge=res["_challenge"],
+            prefetched_answered_indices=res["_answered_indices"],
+        )
+    )
+    assert q2_data is not None
+    assert q2_data["question_number"] == 2
+    assert q2_data["answered_indices"] == [0]
+
+
+def test_challenge_completion_screen_quote_calculation_and_keyboard():
+    """Verifies that the challenge completion screen shows score calculation
+
+    in a blockquote and provides clickable action buttons for Weekly and Monthly leaderboards.
+    """
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import handle_challenge_answer_callback, handle_leaderboard_callback
+    from app.challenge.keyboards import get_challenge_completion_keyboard
+
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(service.create_challenge(title="Completion Test Quiz", duration_seconds=600))
+    q1 = asyncio.run(service.create_question("Q1 text", "A", "B", "C", "D", "A"))
+    asyncio.run(service.link_questions_to_challenge(ch_id, [q1]))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    user_id = 776655
+    asyncio.run(service.register_or_get_participant(ch_id, user_id))
+    asyncio.run(service.start_participant_quiz(ch_id, user_id))
+    q1_data = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, 0))
+
+    disp_key = q1_data["display_keys"][0]
+    cb = FakeCallbackQuery(data=f"ch_ans:{ch_id}:0:{disp_key}", user_id=user_id)
+    up = FakeUpdate(callback_query=cb)
+    ctx = FakeContext()
+
+    asyncio.run(handle_challenge_answer_callback(up, ctx))
+    assert "Challenge Completed!" in cb.edited_text
+    assert "<blockquote>💡 <b>Score Calculation:</b>" in cb.edited_text
+    assert "Accuracy:" in cb.edited_text
+    assert "Final Score:" in cb.edited_text or "Final Points:" in cb.edited_text
+
+    # Verify buttons: Weekly & Monthly are clickable action buttons, NOT noop
+    kb = cb.reply_markup
+    flattened_callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert f"lb_weekly:{ch_id}:1" in flattened_callbacks
+    assert f"lb_monthly:{ch_id}:1" in flattened_callbacks
+    assert f"ch_review:{ch_id}:0" in flattened_callbacks
+    assert "noop" not in flattened_callbacks
+
+    # Verify clicking Weekly Leaderboard from completion card opens the actual leaderboard
+    cb_lb = FakeCallbackQuery(data=f"lb_weekly:{ch_id}:1", user_id=user_id)
+    up_lb = FakeUpdate(callback_query=cb_lb)
+    asyncio.run(handle_leaderboard_callback(up_lb, ctx))
+    assert "Leaderboard" in cb_lb.edited_text
+    # On the actual leaderboard, the tab switcher shows Weekly as active
+    lb_kb_callbacks = [btn.callback_data for row in cb_lb.reply_markup.inline_keyboard for btn in row]
+    assert "noop" in lb_kb_callbacks
+    assert f"lb_monthly:{ch_id}:1" in lb_kb_callbacks
+
+
+
+
+
+
+
+
+
 
 
 

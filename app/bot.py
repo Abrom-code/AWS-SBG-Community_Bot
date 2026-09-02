@@ -2,7 +2,13 @@ import asyncio
 import html
 import os
 import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    BotCommand,
+    MenuButtonCommands,
+)
 from telegram.constants import ParseMode, ChatAction
 from telegram.ext import (
     ContextTypes,
@@ -35,6 +41,10 @@ from app.challenge.handlers import (
     handle_guidelines_callback,
     handle_past_challenges_callback,
     handle_challenge_review_callback,
+    handle_challenge_select_callback,
+    handle_challenge_nav_active_callback,
+    handle_scheduled_challenge_info_callback,
+    handle_challenge_refresh_callback,
 )
 from app.challenge.service import (
     create_challenge,
@@ -51,6 +61,9 @@ from app.challenge.service import (
     get_monthly_analytics_report,
     list_challenges,
     get_active_challenge,
+    format_datetime_12h,
+    LOCAL_TZ,
+    BOT_TIMEZONE_NAME,
 )
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
@@ -59,6 +72,7 @@ from app.challenge.keyboards import (
     get_admin_schedule_presets_keyboard,
     get_wizard_questions_keyboard,
     get_wizard_skip_desc_keyboard,
+    get_wizard_timer_keyboard,
     get_question_bank_actions_keyboard,
     get_admin_menu_keyboard,
     get_admin_panel_keyboard,
@@ -97,8 +111,7 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     return ReplyKeyboardMarkup(
         [
             ["Challenges", "Feedback"],
-            ["Guidelines", "About"],
-            ["Help"],
+            ["About", "Help"],
         ],
         resize_keyboard=True,
     )
@@ -108,8 +121,8 @@ def get_challenge_menu_keyboard() -> ReplyKeyboardMarkup:
     """Returns persistent sub-menu keyboard for the Challenge Center."""
     return ReplyKeyboardMarkup(
         [
-            ["Take Challenge", "Leaderboards"],
-            ["Past Challenges", "Scoring Rules"],
+            ["Leaderboards", "Past Challenges"],
+            ["Scoring Rules", "Guidelines"],
             ["Main Menu"],
         ],
         resize_keyboard=True,
@@ -145,15 +158,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await register_or_update_bot_user(user.id, user.first_name, user.username)
 
     welcome_text = (
-        "<b>Welcome to the AWS SBG AASTU Community & Challenge Bot!</b>\n\n"
-        "✨ <b>What you can do here:</b>\n"
-        "    ⚡ <b>Weekly Challenges:</b> Test your cloud skills, earn points, and climb the leaderboard\n"
-        "    🏆 <b>Leaderboards:</b> View weekly and monthly season rankings\n"
-        "    💬 <b>Feedback & Support:</b> Submit suggestions directly to the core team\n"
-        "    🛡️ <b>Community Guidelines:</b> Read our community rules & code of conduct\n"
-        "    🤝 <b>Community Help:</b> Connect with AWS Student Builder leads\n\n"
-        "Tap <b>⚡ Challenge Center</b>, <b>🛡️ Community Guidelines</b>, or <b>💬 Feedback & Support</b> below to get started!\n\n"
-        "📢 <b>Join our community:</b> @AWSAASTU"
+        "✦ <b>AWS SBG AASTU Community & Challenge Bot!</b>\n\n"
+        "Welcome! Test your cloud skills, track your rank, and connect with fellow builders.\n\n"
+        "◆ <b>Features</b>\n"
+        "🔹 <b>Challenges</b> › Compete in weekly quizzes & earn points\n"
+        "🔹 <b>Leaderboards</b> › Weekly & monthly championship rankings\n"
+        "🔹 <b>Feedback & Support</b> › Direct line to the core team\n"
+        "🔹 <b>Guidelines</b> › Rules & code of conduct\n\n"
+        "➤ <i>Select an option below to get started:</i>\n\n"
+        "✦ <b>Join our community:</b> @AWSAASTU"
     )
 
     logo_path = os.path.join(
@@ -213,38 +226,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Displays the Challenge Center hub with dedicated sub-menu."""
-    if context.bot and update.effective_chat:
-        try:
-            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        except Exception:
-            pass
-    hub_text = (
-        "⚡ <b>AWS Builder Challenge Center</b>\n\n"
-        "Participate in weekly cloud competitions to test your architecture and serverless knowledge.\n\n"
-        "• <b>🚀 Take Active Challenge:</b> Start or resume the current quiz\n"
-        "• <b>🏆 Leaderboards:</b> View Weekly & Monthly championship standings\n"
-        "• <b>📚 Past Challenges:</b> Practice archived quizzes & inspect final standings\n"
-        "• <b>📖 Scoring & Rules:</b> Learn how timing and accuracy points work\n\n"
-        "<i>Select an option below:</i>"
-    )
-    cb_query = getattr(update, "callback_query", None)
-    if cb_query:
-        try:
-            await cb_query.answer("⚡ Loading Challenge Center...", show_alert=False)
-        except Exception:
-            pass
-        await cb_query.message.reply_text(
-            hub_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_menu_keyboard(),
-        )
-    elif update.message:
-        await update.message.reply_text(
-            hub_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_menu_keyboard(),
-        )
+    """Directly displays active community challenge without redundant intermediate menus."""
+    return await challenge_command(update, context)
 
 
 async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -255,11 +238,11 @@ async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
     hub_text = (
-        "💬 <b>Feedback & Community Support Hub</b>\n\n"
-        "Have an idea for upcoming AWS workshops, a feature suggestion, or an issue to report?\n\n"
-        "• <b>📝 Submit Feedback:</b> Send a direct ticket to our core admin team\n"
-        "• <b>ℹ️ About Support:</b> Learn how our team processes your messages\n\n"
-        "<i>Select an action below:</i>"
+        "✦ <b>Feedback & Community Support Hub</b>\n\n"
+        "Have an idea for workshops, suggestions, or an issue to report?\n\n"
+        "🔹 <b>Submit Feedback</b> › Send a direct ticket to the core team\n"
+        "🔹 <b>About Support</b> › How our team handles your messages\n\n"
+        "➤ <i>Select an option below:</i>"
     )
     await update.message.reply_text(
         hub_text,
@@ -271,17 +254,19 @@ async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the available visible commands for members."""
     help_text = (
-        "📘 <b>AWS SBG Community Bot Shortcuts</b>\n\n"
-        "• /start — Open the main welcome menu\n"
-        "• /challenge — Open the Challenge Center & start quiz\n"
-        "• /archive — Browse & practice past challenges\n"
-        "• /leaderboard — View weekly & monthly championship rankings\n"
-        "• /rules — See how speed & accuracy scoring is calculated\n"
-        "• /guidelines — Read community rules & code of conduct\n"
-        "• /feedback — Drop a suggestion or issue for the core team\n"
-        "• /about — Learn more about what we do\n"
-        "• /cancel — Return to the main menu\n\n"
-        "💡 <b>Tip:</b> Tap any /command above to send it directly, or use the menu buttons below!"
+        "✦ <b>AWS SBG Community Bot Shortcuts</b>\n\n"
+        "▫️ /start › Welcome menu\n"
+        "▫️ /challenge › Challenge center & active quiz\n"
+        "▫️ /leaderboard › Weekly & monthly standings\n"
+        "▫️ /notifications › Community notifications info\n"
+        "▫️ /archive › Past challenges & practice\n"
+        "▫️ /rules › Scoring formula & timing\n"
+        "▫️ /guidelines › Rules & code of conduct\n"
+        "▫️ /feedback › Contact the core team\n"
+        "▫️ /about › About AWS SBG AASTU\n"
+        "▫️ /admin › Administrator console (restricted)\n"
+        "▫️ /cancel › Return to main menu\n\n"
+        "➤ <i>Tap any command above or use the menu buttons below.</i>"
     )
     await update.message.reply_text(
         help_text,
@@ -290,14 +275,28 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def notifications_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Explains notification preferences and active broadcast status."""
+    await update.message.reply_text(
+        "<b>Community Notifications</b>\n\n"
+        "You are subscribed to real-time AWS Student Builder updates:\n\n"
+        "• <b>New Challenges:</b> Instant alerts when weekly competitions go live\n"
+        "• <b>Leaderboards:</b> Weekly standings and monthly championship updates\n"
+        "• <b>Community Announcements:</b> Workshops, webinars, and events\n\n"
+        "<i>All notifications are delivered directly to this chat. Keep notifications unmuted to never miss an update!</i>",
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_menu_keyboard(),
+    )
+
+
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provides details about the bot and community group."""
     about_text = (
-        "ℹ️ <b>About AWS SBG AASTU</b>\n\n"
-        "The AWS Student Builder Group at AASTU empowers students with practical cloud computing knowledge, "
-        "certifications, architectural challenges, and hackathons.\n\n"
-        "Participate in our weekly challenges via /challenge to sharpen your AWS expertise!\n\n"
-        "📢 <b>Join our community:</b> @AWSAASTU"
+        "✦ <b>About AWS SBG AASTU</b>\n\n"
+        "The AWS Student Builder Group at AASTU empowers students through hands-on cloud learning, "
+        "certifications, architecture challenges, and hackathons.\n\n"
+        "▫️ <b>Weekly Quizzes:</b> /challenge\n"
+        "▫️ <b>Community Channel:</b> @AWSAASTU"
     )
     await update.message.reply_text(
         about_text,
@@ -312,8 +311,9 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await set_user_state(user_id, WAITING_FOR_FEEDBACK)
 
     await update.message.reply_text(
-        "✍️ <b>Please type your feedback, suggestion, or issue below:</b>\n\n"
-        "<i>(Type /cancel if you change your mind)</i>",
+        "✦ <b>Submit Feedback</b>\n\n"
+        "Please type your feedback, suggestion, or issue below:\n\n"
+        "➤ <i>(Type /cancel if you change your mind)</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -338,6 +338,9 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif current_state and any(current_state.startswith(s) for s in (
         "WAITING_FOR_ADMIN_SCHEDULE",
         "WAITING_FOR_CHALLENGE_TITLE",
+        "WAITING_FOR_CHALLENGE_DESC",
+        "WAITING_FOR_CHALLENGE_TIMER",
+        "WAITING_FOR_CHALLENGE_CUSTOM_CAT",
         "WAITING_FOR_EDIT_CHALLENGE_TITLE",
         "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE",
         "WAITING_FOR_EDIT_CHALLENGE_TIMER",
@@ -355,7 +358,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "🔙 <b>Main Menu</b>\n\nChoose an option below:",
+            "✦ <b>Main Menu</b>\n\nChoose an option below:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard(),
         )
@@ -373,8 +376,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await register_or_update_bot_user(user.id, user.first_name, user.username)
 
     # Handle Top-Level Navigation
-    if text in ("Challenges", "⚡ Challenges", "⚡ Challenge Center", "Challenge Center", "Challenge"):
-        return await challenge_hub_command(update, context)
+    if text in ("Challenges", "⚡ Challenges", "⚡ Challenge Center", "Challenge Center", "Challenge", "Take Challenge", "Active Challenge", "🚀 Take Active Challenge", "🚀 Start Challenge", "Start Challenge", "Take Active Challenge"):
+        return await challenge_command(update, context)
     elif text in ("Feedback", "💬 Feedback", "💬 Feedback & Support", "Feedback & Support", "Submit Feedback", "📝 Submit Feedback", "📝 Submit New Feedback"):
         return await feedback_command(update, context)
     elif text in ("About", "About Us", "ℹ️ About Us", "ℹ️ About Support", "ℹ️ About", "About Support"):
@@ -385,8 +388,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await cancel_command(update, context)
 
     # Handle Challenge Sub-Menu
-    elif text in ("Take Challenge", "Active Challenge", "🚀 Take Active Challenge", "🚀 Start Challenge", "Start Challenge", "Take Active Challenge"):
-        return await challenge_command(update, context)
     elif text in ("Leaderboards", "Leaderboard", "🏆 Leaderboards", "🏆 Leaderboard"):
         return await leaderboard_command(update, context)
     elif text in ("Past Challenges", "Archive", "📚 Past Challenges", "📚 Archive", "📚 Past Quizzes", "Past Quizzes"):
@@ -402,12 +403,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text in ("Create Challenge", "➕ Create Challenge", "➕ Create New Challenge", "Create New Challenge"):
             await set_user_state(user_id, "WAITING_FOR_CHALLENGE_TITLE")
             await update.message.reply_text(
-                "➕ <b>Create Challenge Wizard (Step 1/2: Details)</b>\n\n"
-                "Please enter the challenge details in this format:\n"
-                "<code>Title | Category | Description</code>\n\n"
-                "<b>Example:</b>\n"
-                "<code>AWS Serverless Sprint | Serverless | Master Lambda, DynamoDB, API Gateway, and EventBridge.</code>\n\n"
-                "<i>Tip: You can also just type the title.</i>",
+                "<b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
+                "Please enter the Title (or <code>Title | Category</code>) for this challenge:\n\n"
+                "<i>Examples:</i>\n"
+                "• <code>AWS Solutions Architect Associate Sprint</code>\n"
+                "• <code>AWS Solutions Architect Sprint | Architecture</code>\n\n"
+                "<blockquote>Tip: Power users can send all in one line:\n"
+                "<code>Title | Category | Description | Duration</code></blockquote>\n\n"
+                "<i>(Type /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -415,7 +418,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             challenges = await list_challenges(limit=10)
             if not challenges:
                 await update.message.reply_text(
-                    "📋 <b>Challenge Management</b>\n\n<i>No challenges found. Create one first!</i>",
+                    "<b>Challenge Management</b>\n\n<i>No challenges found. Create one first.</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=get_admin_panel_keyboard(),
                 )
@@ -423,42 +426,52 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
                 buttons = []
                 for ch in challenges:
-                    status_emoji = {"LIVE": "🟢", "SCHEDULED": "⏳", "DRAFT": "🛠️", "ENDED": "🏁"}.get(ch["status"], "⚡")
-                    buttons.append([InlineKeyboardButton(f"{status_emoji} {ch['title'][:30]} ({ch['status']})", callback_data=f"adm_manage:{ch['id']}")])
-                buttons.append([InlineKeyboardButton("Back to Admin", callback_data="adm_panel")])
+                    status = ch["status"]
+                    title = ch["title"]
+                    buttons.append([InlineKeyboardButton(f"#{ch['id']} {title[:24]} [{status}]", callback_data=f"adm_manage:{ch['id']}")])
+                buttons.append([InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")])
                 await update.message.reply_text(
-                    "📋 <b>Select a Challenge to Manage:</b>",
+                    "<b>Challenge Management</b>\n\nSelect a challenge below to manage:",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(buttons),
                 )
+            return
+        elif text in ("Leaderboards", "🏆 Leaderboards", "Admin Leaderboards"):
+            active_ch = await get_active_challenge()
+            active_ch_id = active_ch["id"] if active_ch else 0
+            await update.message.reply_text(
+                "<b>Admin Leaderboard & Builder Standings</b>\n\n"
+                "View live participant scores, ranks, and monthly cumulative standings:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_leaderboard_keyboard(active_ch_id),
+            )
             return
         elif text in ("Monthly Report", "📊 Monthly Report", "📊 Analytics Report", "Analytics Report"):
             rep = await get_monthly_analytics_report()
             champions = rep.get("champions", [])
             champs_text = ""
             if champions:
-                medals = ["🥇", "🥈", "🥉"]
-                for idx, c in enumerate(champions[:3]):
+                for idx, c in enumerate(champions[:3], 1):
                     name = html.escape(c["user_name"])
                     uname = f" (@{html.escape(c['username'])})" if c.get("username") else ""
-                    champs_text += f"• {medals[idx]} <b>{name}</b>{uname} — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
+                    champs_text += f"• {idx}. <b>{name}</b>{uname} — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
             else:
                 champs_text = "• <i>No completed challenge attempts recorded yet this month.</i>\n"
 
             report_card = (
-                f"📊 <b>AWS Student Builder Monthly Activity Report</b>\n"
-                f"📅 <b>Period:</b> {rep['month_name']}\n\n"
-                f"👥 <b>Community Engagement:</b>\n"
-                f"• Registered Bot Members: <code>{rep['total_users']}</code>\n"
-                f"• Feedback Tickets Received: <code>{rep['feedback_count']}</code>\n"
-                f"• Staff Replies Delivered: <code>{rep['reply_count']}</code>\n\n"
-                f"⚡ <b>Challenges & Competitions:</b>\n"
-                f"• Total Challenges: <code>{rep['total_challenges']}</code>\n"
-                f"• Total Submissions: <code>{rep['total_attempts']}</code>\n"
-                f"• Community Accuracy: <code>{rep['accuracy_pct']}%</code> ({rep['total_correct']}/{rep['total_answered']})\n"
+                f"<b>AWS Student Builder Monthly Activity Report</b>\n"
+                f"<b>Period:</b> {rep['month_name']}\n\n"
+                f"<b>Community Engagement</b>\n"
+                f"• Registered Members: <code>{rep['total_users']}</code>\n"
+                f"• Feedback Tickets: <code>{rep['feedback_count']}</code>\n"
+                f"• Staff Replies: <code>{rep['reply_count']}</code>\n\n"
+                f"<b>Challenges & Quizzes</b>\n"
+                f"• Quizzes Hosted: <code>{rep['total_challenges']}</code>\n"
+                f"• Submissions: <code>{rep['total_attempts']}</code>\n"
+                f"• Accuracy: <code>{rep['accuracy_pct']}%</code>\n"
                 f"• Average Score: <code>{rep['avg_score']} pts</code>\n"
-                f"• Total Points Earned: <code>{rep['total_score']} pts</code>\n\n"
-                f"🏆 <b>Top 3 Builders of the Month:</b>\n"
+                f"• Points Awarded: <code>{rep['total_score']} pts</code>\n\n"
+                f"<b>Top 3 Builders</b>\n"
                 f"{champs_text}"
             )
             await update.message.reply_text(
@@ -471,8 +484,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users = await get_all_broadcast_user_ids()
             count = len(users)
             await update.message.reply_text(
-                f"📢 <b>Community Broadcast Center</b>\n\n"
-                f"👥 <b>Target Audience:</b> <code>{count}</code> registered members\n\n"
+                f"<b>Community Broadcast Center</b>\n\n"
+                f"• <b>Target Audience:</b> <code>{count}</code> registered members\n\n"
                 f"Select an announcement preset or compose a custom broadcast:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_broadcast_presets_keyboard(),
@@ -480,7 +493,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         elif text in ("Exit Admin", "🚪 Exit Admin", "🚪 Leave Admin", "Leave Admin"):
             await update.message.reply_text(
-                "🔙 <b>Exited Admin Panel.</b>\n\nReturning to member menu:",
+                "<b>Exited Admin Panel</b>\n\nReturning to member menu:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_main_menu_keyboard(),
             )
@@ -500,26 +513,34 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw = text.strip()
         parts = [p.strip() for p in raw.split("|")]
 
-        # Power-user shortcut: entered multiple fields at once (e.g. Title | Category | Description | Duration)
-        if len(parts) >= 2:
+        # Power-user multi-part shortcut (3 or 4 parts: Title | Category | Description | Duration OR Title | Description | Duration)
+        if len(parts) >= 3:
             await set_user_state(user_id, None)
             duration_mins = 10
+            category = "Architecture"
+            description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
+            title = parts[0]
+
+            def _parse_dur(val: str) -> Optional[int]:
+                cleaned = val.lower().replace("minutes", "").replace("minute", "").replace("mins", "").replace("min", "").replace("m", "").strip()
+                return int(cleaned) if cleaned.isdigit() else None
+
             if len(parts) >= 4:
-                title = parts[0]
+                # Format: Title | Category | Description | Duration
                 category = parts[1] or "Architecture"
-                description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
-                try:
-                    duration_mins = int(parts[3].lower().replace("mins", "").replace("min", "").replace("m", "").strip())
-                except Exception:
-                    duration_mins = 10
+                description = parts[2] or description
+                duration_mins = _parse_dur(parts[3]) or 10
             elif len(parts) == 3:
-                title = parts[0]
-                category = parts[1] or "Architecture"
-                description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
-            else:
-                title = parts[0]
-                category = parts[1] or "Architecture"
-                description = "Weekly test on AWS core services and cloud architecture patterns."
+                # Format: Title | Description | Duration  OR  Title | Category | Description
+                dur = _parse_dur(parts[2])
+                if dur is not None:
+                    # Power user: Title | Description | Duration
+                    description = parts[1] or description
+                    duration_mins = dur
+                else:
+                    # Power user: Title | Category | Description
+                    category = parts[1] or "Architecture"
+                    description = parts[2] or description
 
             duration_mins = max(1, min(300, duration_mins))
             ch_id = await create_challenge(
@@ -541,22 +562,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["wiz_duration_mins"] = duration_mins
 
             await update.message.reply_text(
-                f"✨ <b>Create Challenge Wizard (Step 3/4: Schedule & Start/End Time)</b>\n\n"
-                f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
-                f"🏗️ <b>Category:</b> {html.escape(category)}\n"
-                f"📝 <b>Description:</b> <i>{html.escape(description)}</i>\n"
-                f"⏱️ <b>Exam Time Limit:</b> <code>{duration_mins} Minutes</code>\n\n"
-                f"⏰ <b>Select Start Schedule & Deadline:</b>",
+                f"<b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
+                f"<blockquote><b>{html.escape(title)}</b>\n"
+                f"Category: {html.escape(category)}\n"
+                f"<i>{html.escape(description)}</i></blockquote>\n\n"
+                f"• <b>Exam Time Limit:</b> <code>{duration_mins} Minutes</code>\n\n"
+                f"Select start schedule & deadline:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_schedule_presets_keyboard(ch_id, duration_mins),
             )
             return
 
-        # Single Title entered -> Step-by-Step Flow: proceed to Step 2 (Description)
-        title = raw
-        category = "Architecture"
-        description = "Weekly test on AWS core services and cloud architecture patterns."
-        duration_mins = 10
+        # Step-by-Step Flow: (1 part: Title  OR  2 parts: Title | Category)
+        if len(parts) == 2:
+            title = parts[0]
+            # Check if second part was duration (e.g. Title | 15) or category
+            def _parse_dur_single(val: str) -> Optional[int]:
+                cleaned = val.lower().replace("minutes", "").replace("minute", "").replace("mins", "").replace("min", "").replace("m", "").strip()
+                return int(cleaned) if cleaned.isdigit() else None
+
+            dur = _parse_dur_single(parts[1])
+            if dur is not None:
+                category = "Architecture"
+                duration_mins = dur
+            else:
+                category = parts[1] or "Architecture"
+                duration_mins = 10
+        else:
+            title = raw
+            category = "Architecture"
+            duration_mins = 10
+
+        description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
 
         ch_id = await create_challenge(
             title=title,
@@ -577,12 +614,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await set_user_state(user_id, f"WAITING_FOR_CHALLENGE_DESC:{ch_id}")
         await update.message.reply_text(
-            f"✨ <b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
-            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n\n"
-            f"📝 <b>Please enter the challenge description:</b>\n"
+            f"<b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
+            f"• <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"• <b>Category:</b> <code>{html.escape(category)}</code>\n\n"
+            f"Please enter the challenge description:\n"
             f"<i>(Explain what community members will learn or test in this challenge)</i>\n\n"
             f"<i>Example:</i> <code>Master EC2, S3, VPC, Lambda, and high-availability design patterns in this weekly challenge.</code>\n\n"
-            f"<i>(Or tap below to use default description)</i>",
+            f"<i>(Or tap below to use default description or change category)</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_skip_desc_keyboard(ch_id),
         )
@@ -600,7 +638,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = current_state.split(":")
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("wiz_ch_id")
         if not ch_id:
-            await update.message.reply_text("⚠️ No active challenge creation session.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No active challenge creation session.", reply_markup=get_main_menu_keyboard())
             return
 
         desc = text.strip()
@@ -611,13 +649,94 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dur_mins = int(dur_secs // 60)
 
         await update.message.reply_text(
-            f"✨ <b>Create Challenge Wizard (Step 3/4: Schedule & Start/End Time)</b>\n\n"
-            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
-            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{dur_mins} Minutes</code>\n\n"
-            f"⏰ <b>Select Start Schedule & Deadline:</b>",
+            f"<b>Create Challenge Wizard (Step 3/4: Exam Time Limit)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"Category: {html.escape(ch.get('category', 'Architecture'))}\n"
+            f"<i>{html.escape(desc)}</i></blockquote>\n\n"
+            f"Select the allowed exam time for community members:\n"
+            f"<i>(Timer begins when participant starts the challenge)</i>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_schedule_presets_keyboard(ch_id, dur_mins),
+            reply_markup=get_wizard_timer_keyboard(ch_id),
+        )
+        return
+
+    # Check if admin is entering custom category in wizard
+    if current_state and current_state.startswith("WAITING_FOR_CHALLENGE_CUSTOM_CAT"):
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        parts = current_state.split(":")
+        ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("wiz_ch_id")
+        if not ch_id:
+            await set_user_state(user_id, None)
+            await update.message.reply_text("No active challenge creation session.", reply_markup=get_main_menu_keyboard())
+            return
+
+        new_cat = text.strip()
+        await update_challenge_details(ch_id, category=new_cat)
+        context.user_data["wiz_category"] = new_cat
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+
+        await set_user_state(user_id, f"WAITING_FOR_CHALLENGE_DESC:{ch_id}")
+        await update.message.reply_text(
+            f"<b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
+            f"• <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"• <b>Category:</b> <code>{html.escape(new_cat)}</code>\n\n"
+            f"Please enter the challenge description:\n"
+            f"<i>(Explain what community members will learn or test in this challenge)</i>\n\n"
+            f"<i>Example:</i> <code>Master EC2, S3, VPC, Lambda, and high-availability design patterns in this weekly challenge.</code>\n\n"
+            f"<i>(Or tap below to use default description or change category)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_wizard_skip_desc_keyboard(ch_id),
+        )
+        return
+
+    # Check if admin is entering exam time limit in wizard
+    if current_state and current_state.startswith("WAITING_FOR_CHALLENGE_TIMER"):
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        parts = current_state.split(":")
+        ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("wiz_ch_id")
+        if not ch_id:
+            await set_user_state(user_id, None)
+            await update.message.reply_text("No active challenge creation session.", reply_markup=get_main_menu_keyboard())
+            return
+
+        try:
+            mins = int(text.strip())
+            if mins < 1 or mins > 300:
+                raise ValueError("Minutes out of range")
+        except Exception:
+            await update.message.reply_text(
+                "<b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
+                "<i>Example:</i> <code>15</code>\n\n"
+                "<i>(Or send /cancel to abort)</i>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        await set_user_state(user_id, None)
+        dur_secs = mins * 60
+        await update_challenge_details(ch_id, duration_seconds=dur_secs)
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+        desc = ch.get("description", "") if ch else ""
+
+        await update.message.reply_text(
+            f"<b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"<i>{html.escape(desc)}</i></blockquote>\n\n"
+            f"• <b>Exam Time Limit:</b> <code>{mins} Minutes</code>\n\n"
+            f"Select start schedule & deadline:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_schedule_presets_keyboard(ch_id, mins),
         )
         return
 
@@ -633,7 +752,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = current_state.split(":")
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
-            await update.message.reply_text("⚠️ No challenge selected for editing.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected for editing.", reply_markup=get_main_menu_keyboard())
             return
 
         raw = text.strip()
@@ -649,9 +768,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch = await get_challenge(ch_id)
         status = ch.get("status", "LIVE") if ch else "LIVE"
         await update.message.reply_text(
-            f"✅ <b>Challenge #{ch_id} Updated!</b>\n\n"
-            f"⚡ <b>New Title:</b> {html.escape(title)}\n"
-            f"🏗️ <b>New Category:</b> {html.escape(category)}",
+            f"<b>Challenge #{ch_id} Updated</b>\n\n"
+            f"• <b>New Title:</b> {html.escape(title)}\n"
+            f"• <b>New Category:</b> {html.escape(category)}",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
@@ -669,53 +788,71 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected.", reply_markup=get_main_menu_keyboard())
             return
 
         raw = text.strip()
-        parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+        import re
+        m = re.search(
+            r"(\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2})?)\s*(?:to|,|--|-)\s*(\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2})?)",
+            raw,
+            re.IGNORECASE,
+        )
+        if m:
+            s_str, e_str = m.group(1).strip(), m.group(2).strip()
+        else:
+            parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+            if len(parts) >= 2:
+                s_str, e_str = parts[0], parts[1]
+            elif len(parts) == 1 and parts[0]:
+                s_str, e_str = parts[0], None
+            else:
+                s_str, e_str = None, None
+
         now_dt = datetime.now(timezone.utc)
         starts_at = None
         ends_at = None
 
         try:
-            if len(parts) >= 2:
-                s_str = parts[0]
-                e_str = parts[1]
-                s_dt = datetime.fromisoformat(s_str.replace(" ", "T"))
-                e_dt = datetime.fromisoformat(e_str.replace(" ", "T"))
-                if s_dt.tzinfo is None:
-                    s_dt = s_dt.replace(tzinfo=timezone.utc)
+            if not s_str:
+                raise ValueError("No start date provided")
+            s_clean = s_str.replace(" ", "T") if "T" in s_str or " " in s_str else f"{s_str}T00:00"
+            s_dt = datetime.fromisoformat(s_clean)
+            if s_dt.tzinfo is None:
+                s_dt = s_dt.replace(tzinfo=LOCAL_TZ)
+            s_utc = s_dt.astimezone(timezone.utc)
+            starts_at = s_utc.isoformat()
+
+            if e_str:
+                e_clean = e_str.replace(" ", "T") if "T" in e_str or " " in e_str else f"{e_str}T23:59"
+                e_dt = datetime.fromisoformat(e_clean)
                 if e_dt.tzinfo is None:
-                    e_dt = e_dt.replace(tzinfo=timezone.utc)
-                starts_at = s_dt.isoformat()
-                ends_at = e_dt.isoformat()
+                    e_dt = e_dt.replace(tzinfo=LOCAL_TZ)
+                e_utc = e_dt.astimezone(timezone.utc)
+                ends_at = e_utc.isoformat()
             else:
-                s_dt = datetime.fromisoformat(parts[0].replace(" ", "T"))
-                if s_dt.tzinfo is None:
-                    s_dt = s_dt.replace(tzinfo=timezone.utc)
-                starts_at = s_dt.isoformat()
-                ends_at = (s_dt + timedelta(days=7)).isoformat()
+                e_dt = s_dt + timedelta(days=7)
+                ends_at = e_dt.astimezone(timezone.utc).isoformat()
         except Exception:
             await update.message.reply_text(
-                "⚠️ <b>Invalid Date/Time Format.</b>\n\n"
-                "Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code>\n"
-                "<i>Example:</i> <code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
-                "<i>(Or send /cancel to abort)</i>",
+                f"<b>Invalid Date/Time Format.</b>\n\n"
+                f"Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code> ({BOT_TIMEZONE_NAME})\n"
+                f"<i>Example:</i> <code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
+                f"<i>(Or send /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
 
         await set_user_state(user_id, None)
-        status = "LIVE" if s_dt <= now_dt else "SCHEDULED"
+        status = "LIVE" if s_utc <= now_dt else "SCHEDULED"
         await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
         await update_challenge_status(ch_id, status)
 
         await update.message.reply_text(
-            f"✅ <b>Schedule Updated for Challenge #{ch_id}!</b>\n\n"
-            f"🟢 <b>Starts:</b> <code>{starts_at}</code>\n"
-            f"🏁 <b>Ends:</b> <code>{ends_at}</code>\n"
-            f"🚦 <b>Status:</b> {status}",
+            f"<b>Schedule Updated for Challenge #{ch_id}</b>\n\n"
+            f"• <b>Starts:</b> <code>{format_datetime_12h(starts_at)}</code>\n"
+            f"• <b>Ends:</b> <code>{format_datetime_12h(ends_at)}</code>\n"
+            f"• <b>Status:</b> <code>{status}</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
@@ -733,7 +870,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected.", reply_markup=get_main_menu_keyboard())
             return
 
         try:
@@ -742,7 +879,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise ValueError("Minutes out of range")
         except Exception:
             await update.message.reply_text(
-                "⚠️ <b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
+                "<b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
                 "<i>Example:</i> <code>15</code>\n\n"
                 "<i>(Or send /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
@@ -756,8 +893,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status = ch.get("status", "DRAFT") if ch else "DRAFT"
 
         await update.message.reply_text(
-            f"✅ <b>Exam Time Limit Updated for Challenge #{ch_id}!</b>\n\n"
-            f"⏱️ <b>Allowed Test Duration:</b> <code>{mins} minutes total</code>",
+            f"<b>Exam Time Limit Updated for Challenge #{ch_id}</b>\n\n"
+            f"• <b>Allowed Test Duration:</b> <code>{mins} minutes total</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
@@ -773,7 +910,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parsed = parse_single_question_text(text)
         if not parsed:
             await update.message.reply_text(
-                "⚠️ <b>Could not parse question format.</b>\n\n"
+                "<b>Could not parse question format.</b>\n\n"
                 "Please make sure your message includes the question and 4 options:\n\n"
                 "<code>What is Amazon DynamoDB?\n"
                 "A: Relational database\n"
@@ -805,10 +942,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text(
-            f"✅ <b>Question #{q_id} Added to Question Bank!</b>\n\n"
-            f"❓ <b>Question:</b> {html.escape(parsed['question_text'])}\n"
-            f"🎯 <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
-            f"🏷️ <b>Category:</b> {html.escape(parsed.get('category', 'General'))} | <b>Difficulty:</b> {parsed.get('difficulty', 'MEDIUM')}\n\n"
+            f"<b>Question #{q_id} Added to Question Bank</b>\n\n"
+            f"• <b>Question:</b> {html.escape(parsed['question_text'])}\n"
+            f"• <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
+            f"• <b>Category:</b> {html.escape(parsed.get('category', 'General'))} | <b>Difficulty:</b> {parsed.get('difficulty', 'MEDIUM')}\n\n"
             f"<i>This question is now available in your Question Bank to be linked to challenges.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_question_bank_actions_keyboard(),
@@ -830,19 +967,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         err_text = ""
         if errors:
             err_list = "\n".join(errors[:5])
-            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+            err_text = f"\n\n<b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
         if imported > 0:
             await update.message.reply_text(
-                f"📥 <b>Questions Imported Successfully!</b>\n\n"
-                f"✅ <b>Imported:</b> <code>{imported}</code> questions into the Question Bank.{err_text}\n\n"
+                f"<b>Questions Imported Successfully</b>\n\n"
+                f"• <b>Imported:</b> <code>{imported}</code> questions into the Question Bank.{err_text}\n\n"
                 f"These questions are now active and available for challenges.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_question_bank_actions_keyboard(),
             )
         else:
             await update.message.reply_text(
-                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"<b>No valid questions could be imported.</b>{err_text}\n\n"
                 f"Please ensure your text follows the CSV format:\n"
                 f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>",
                 parse_mode=ParseMode.HTML,
@@ -866,13 +1003,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not target_ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
             return
 
         parsed = parse_single_question_text(text)
         if not parsed:
             await update.message.reply_text(
-                "⚠️ <b>Could not parse question format.</b>\n\n"
+                "<b>Could not parse question format.</b>\n\n"
                 "Please format your question as follows:\n\n"
                 "<code>What is Amazon DynamoDB?\n"
                 "A: Relational database\n"
@@ -893,10 +1030,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch_questions = await get_challenge_questions(target_ch_id)
 
         await update.message.reply_text(
-            f"✅ <b>Question #{q_id} Added to Challenge #{target_ch_id}!</b>\n\n"
-            f"❓ <b>Question:</b> {html.escape(parsed['question_text'])}\n"
-            f"🎯 <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
-            f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>\n\n"
+            f"<b>Question #{q_id} Added to Challenge #{target_ch_id}!</b>\n\n"
+            f"• <b>Question:</b> {html.escape(parsed['question_text'])}\n"
+            f"• <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
+            f"• <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>\n\n"
             f"<i>You can add another question, import CSV, or publish the challenge.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_questions_keyboard(target_ch_id),
@@ -919,13 +1056,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not target_ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
             return
 
         loading_msg = None
         try:
             loading_msg = await update.message.reply_text(
-                "⏳ <b>Processing CSV lines...</b>\n<i>Parsing questions and linking to challenge...</i>",
+                "<b>Processing CSV lines...</b>\n<i>Parsing questions and linking to challenge...</i>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -939,19 +1076,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         err_text = ""
         if errors:
             err_list = "\n".join(errors[:5])
-            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+            err_text = f"\n\n<b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
         ch_questions = await get_challenge_questions(target_ch_id)
 
         if imported > 0:
             final_text = (
-                f"📥 <b>Questions Imported for Challenge #{target_ch_id}!</b>\n\n"
-                f"✅ <b>Linked:</b> <code>{imported}</code> questions to this challenge.\n"
-                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}"
+                f"<b>Questions Imported for Challenge #{target_ch_id}!</b>\n\n"
+                f"• <b>Linked:</b> <code>{imported}</code> questions to this challenge.\n"
+                f"• <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}"
             )
         else:
             final_text = (
-                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"<b>No valid questions could be imported.</b>{err_text}\n\n"
                 f"Please ensure your text follows the CSV format:\n"
                 f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>"
             )
@@ -979,40 +1116,58 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await set_user_state(user_id, None)
 
         raw = text.strip()
-        parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+        import re
+        m = re.search(
+            r"(\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2})?)\s*(?:to|,|--|-)\s*(\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2})?)",
+            raw,
+            re.IGNORECASE,
+        )
+        if m:
+            s_str, e_str = m.group(1).strip(), m.group(2).strip()
+        else:
+            parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+            if len(parts) >= 2:
+                s_str, e_str = parts[0], parts[1]
+            elif len(parts) == 1 and parts[0]:
+                s_str, e_str = parts[0], None
+            else:
+                s_str, e_str = None, None
+
         now_dt = datetime.now(timezone.utc)
         starts_at = None
         ends_at = None
 
         try:
-            if len(parts) >= 2:
-                s_str = parts[0]
-                e_str = parts[1]
-                s_dt = datetime.fromisoformat(s_str.replace(" ", "T"))
-                e_dt = datetime.fromisoformat(e_str.replace(" ", "T"))
-                if s_dt.tzinfo is None:
-                    s_dt = s_dt.replace(tzinfo=timezone.utc)
+            if not s_str:
+                raise ValueError("No start date provided")
+            s_clean = s_str.replace(" ", "T") if "T" in s_str or " " in s_str else f"{s_str}T00:00"
+            s_dt = datetime.fromisoformat(s_clean)
+            if s_dt.tzinfo is None:
+                s_dt = s_dt.replace(tzinfo=LOCAL_TZ)
+            s_utc = s_dt.astimezone(timezone.utc)
+            starts_at = s_utc.isoformat()
+
+            if e_str:
+                e_clean = e_str.replace(" ", "T") if "T" in e_str or " " in e_str else f"{e_str}T23:59"
+                e_dt = datetime.fromisoformat(e_clean)
                 if e_dt.tzinfo is None:
-                    e_dt = e_dt.replace(tzinfo=timezone.utc)
-                starts_at = s_dt.isoformat()
-                ends_at = e_dt.isoformat()
-            elif len(parts) == 1:
-                s_dt = datetime.fromisoformat(parts[0].replace(" ", "T"))
-                if s_dt.tzinfo is None:
-                    s_dt = s_dt.replace(tzinfo=timezone.utc)
-                starts_at = s_dt.isoformat()
-                ends_at = (s_dt + timedelta(days=7)).isoformat()
+                    e_dt = e_dt.replace(tzinfo=LOCAL_TZ)
+                e_utc = e_dt.astimezone(timezone.utc)
+                ends_at = e_utc.isoformat()
+            else:
+                e_dt = s_dt + timedelta(days=7)
+                ends_at = e_dt.astimezone(timezone.utc).isoformat()
         except Exception:
             await update.message.reply_text(
-                "⚠️ <b>Invalid date/time format.</b>\n\n"
-                "Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code>\n"
-                "Example: <code>2026-09-05 14:00 to 2026-09-12 18:00</code>",
+                f"<b>Invalid date/time format.</b>\n\n"
+                f"Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code> ({BOT_TIMEZONE_NAME})\n"
+                f"Example: <code>2026-09-05 14:00 to 2026-09-12 18:00</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_main_menu_keyboard(),
             )
             return
 
-        status = "LIVE" if datetime.fromisoformat(starts_at.replace("Z", "+00:00")) <= now_dt else "SCHEDULED"
+        status = "LIVE" if s_utc <= now_dt else "SCHEDULED"
 
         if existing_ch_id:
             ch_id = existing_ch_id
@@ -1047,19 +1202,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update_challenge_status(ch_id, status)
             q_count = 0
 
-        status_text = "🟢 <b>LIVE</b>" if status == "LIVE" else "⏳ <b>SCHEDULED</b>"
+        status_text = f"<code>{status}</code>"
 
         await update.message.reply_text(
-            f"✨ <b>Challenge #{ch_id} Configured! (Step 4/4: Add Questions)</b>\n\n"
-            f"⚡ <b>Title:</b> {html.escape(title)}\n"
-            f"🏗️ <b>Category:</b> {html.escape(category)}\n"
-            f"🚦 <b>Status:</b> {status_text}\n"
-            f"🟢 <b>Starts:</b> <code>{starts_at}</code>\n"
-            f"🏁 <b>Ends:</b> <code>{ends_at}</code>\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
-            f"📊 <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"👉 <b>Next step: Attach questions to this challenge.</b>\n"
+            f"<b>Challenge #{ch_id} Configured! (Step 4/4: Add Questions)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"Category: {html.escape(category)}</blockquote>\n\n"
+            f"• <b>Status:</b> {status_text}\n"
+            f"• <b>Starts:</b> <code>{format_datetime_12h(starts_at)}</code>\n"
+            f"• <b>Ends:</b> <code>{format_datetime_12h(ends_at)}</code>\n"
+            f"• <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
+            f"• <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
+            f"<b>Next step: Attach questions to this challenge.</b>\n"
             f"Add questions one-by-one or bulk import via CSV file below:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_questions_keyboard(ch_id),
@@ -1079,8 +1233,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         count = len(users)
 
         preview_text = (
-            f"📢 <b>BROADCAST PREVIEW (Custom Message)</b>\n"
-            f"👥 <b>Target Audience:</b> <code>{count}</code> members\n\n"
+            f"<b>BROADCAST PREVIEW (Custom Message)</b>\n\n"
+            f"• <b>Target Audience:</b> <code>{count}</code> members\n\n"
             f"<blockquote>{text}</blockquote>\n\n"
             f"<i>Confirm to deliver this announcement to all community members:</i>"
         )
@@ -1103,10 +1257,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         safe_text = html.escape(text)
 
         admin_notification = (
+            f"✦ <b>New Feedback Ticket</b>\n"
             f"👤 <b>From:</b> {safe_name} ({safe_username})\n"
             f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
-            f"💬 <b>Message:</b>\n"
-            f"<blockquote>{safe_text}</blockquote>"
+            f"<blockquote>{safe_text}</blockquote>\n\n"
+            f"➤ <i>Reply directly to this message to respond to the user.</i>"
         )
 
         try:
@@ -1129,7 +1284,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Confirm submission success to the member
             await update.message.reply_text(
-                "✅ <b>Thank you!</b> Your feedback has been successfully delivered to the AWS Student Builder core team.",
+                "✓ <b>Thank you!</b> Your feedback has been successfully delivered to the AWS Student Builder core team.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup,
             )
@@ -1137,12 +1292,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Failed to forward feedback to admin group: {e}")
             await update.message.reply_text(
-                "⚠️ Your feedback was received, but there was an error forwarding it to the team. Please try again later."
+                "▪️ Your feedback was received, but there was an error forwarding it to the team. Please try again later."
             )
     else:
         # Default response if they type random text outside of feedback flow
         await update.message.reply_text(
-            "I didn't quite catch that. Use the buttons below or type <code>/challenge</code> to take our weekly quiz!",
+            "I didn't quite catch that. Use the buttons below or send <code>/challenge</code> to take our weekly quiz!",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard(),
         )
@@ -1170,9 +1325,9 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     safe_reply = html.escape(response_text)
 
     reply_message = (
-        f"💬 <b>Response from the AWS Student Builder Core Team</b>\n\n"
+        f"✦ <b>Response from the AWS Student Builder Core Team</b>\n\n"
         f"<blockquote>{safe_reply}</blockquote>\n\n"
-        f"<i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
+        f"➤ <i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
     )
 
     try:
@@ -1216,9 +1371,9 @@ async def handle_admin_edited_reply(update: Update, context: ContextTypes.DEFAUL
     safe_reply = html.escape(response_text)
 
     reply_message = (
-        f"💬 <b>Response from the AWS Student Builder Core Team</b> <i>(edited)</i>\n\n"
+        f"✦ <b>Response from the AWS Student Builder Core Team</b> <i>(edited)</i>\n\n"
         f"<blockquote>{safe_reply}</blockquote>\n\n"
-        f"<i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
+        f"➤ <i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
     )
 
     try:
@@ -1252,9 +1407,9 @@ async def handle_user_edited_feedback(update: Update, context: ContextTypes.DEFA
     safe_text = html.escape(text)
 
     admin_notification = (
+        f"✦ <b>Feedback Ticket (edited)</b>\n"
         f"👤 <b>From:</b> {safe_name} ({safe_username}) <i>(edited)</i>\n"
         f"🆔 <b>User ID:</b> <code>{user.id}</code>\n\n"
-        f"💬 <b>Message:</b>\n"
         f"<blockquote>{safe_text}</blockquote>"
     )
 
@@ -1282,25 +1437,52 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
     cmd = html.escape(raw_text.split()[0])
 
     response_text = (
-        f"❓ <b>Unrecognized Command:</b> <code>{cmd}</code>\n\n"
-        f"I didn't recognize that command. Here are the commands you can use:\n\n"
-        f"⚡ <b>Challenges:</b>\n"
-        f"• /challenge — Take active competition\n"
-        f"• /leaderboard — View championship rankings\n"
-        f"• /archive — Browse past quizzes & practice\n"
-        f"• /rules — Scoring & timing guide\n\n"
-        f"💬 <b>Support & Community:</b>\n"
-        f"• /feedback — Submit feedback to core team\n"
-        f"• /start — Open main menu\n"
-        f"• /help — Full bot guide\n"
-        f"• /cancel — Return to main menu\n\n"
-        f"<i>Tap any command above or choose from the menu below:</i>"
+        f"✦ <b>Unrecognized Command:</b> <code>{cmd}</code>\n\n"
+        f"Available shortcuts:\n\n"
+        f"◆ <b>Challenges</b>\n"
+        f"▫️ /challenge › Active quiz\n"
+        f"▫️ /leaderboard › Championship rankings\n"
+        f"▫️ /archive › Past quizzes & practice\n"
+        f"▫️ /rules › Scoring & timing guide\n\n"
+        f"◆ <b>Support & Community</b>\n"
+        f"▫️ /feedback › Submit feedback\n"
+        f"▫️ /start › Main menu\n"
+        f"▫️ /help › Full bot guide\n"
+        f"▫️ /cancel › Return to main menu\n\n"
+        f"➤ <i>Tap any command above or use the menu below.</i>"
     )
     await update.message.reply_text(
         response_text,
         parse_mode=ParseMode.HTML,
         reply_markup=get_main_menu_keyboard(),
     )
+
+
+async def setup_bot_commands(bot) -> None:
+    """Registers recommended workable bot commands and sets the chat menu button."""
+    commands = [
+        BotCommand("start", "Start the bot & main dashboard"),
+        BotCommand("challenge", "Browse & take challenges"),
+        BotCommand("leaderboard", "View leaderboard standings"),
+        BotCommand("notifications", "Community notification info"),
+        BotCommand("rules", "View scoring rules & speed bonus"),
+        BotCommand("archive", "Review past challenges & answers"),
+        BotCommand("feedback", "Send feedback to the core team"),
+        BotCommand("about", "About AWS Student Builder Group"),
+        BotCommand("help", "Help & guide"),
+        BotCommand("admin", "Admin console & challenge management"),
+    ]
+    await bot.set_my_commands(commands)
+    await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+
+
+async def post_init(application) -> None:
+    """Post-initialization hook called by PTB after application startup."""
+    try:
+        await setup_bot_commands(application.bot)
+        logger.info("Bot commands menu and MenuButtonCommands registered successfully.")
+    except Exception as e:
+        logger.warning(f"Could not register bot commands menu: {e}")
 
 
 def create_application(token: str = None):
@@ -1326,18 +1508,26 @@ def create_application(token: str = None):
         pool_timeout=30.0,
         http_version="1.1",
     )
-    app = ApplicationBuilder().token(bot_token).request(request).build()
+    app = (
+        ApplicationBuilder()
+        .token(bot_token)
+        .request(request)
+        .post_init(post_init)
+        .build()
+    )
 
     # Core Navigation Commands
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
+    app.add_handler(CommandHandler("notifications", notifications_command))
     app.add_handler(CommandHandler("feedback", feedback_command))
     app.add_handler(CommandHandler("support", feedback_command))
     app.add_handler(CommandHandler("cancel", cancel_command))
 
     # Challenge & Leaderboard Commands
     app.add_handler(CommandHandler("challenge", challenge_command))
+    app.add_handler(CommandHandler("challenges", challenge_command))
     app.add_handler(CommandHandler("archive", past_challenges_command))
     app.add_handler(CommandHandler("past", past_challenges_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))
@@ -1352,6 +1542,10 @@ def create_application(token: str = None):
     app.add_handler(CallbackQueryHandler(handle_challenge_rules_callback, pattern=r"^ch_rules$"))
     app.add_handler(CallbackQueryHandler(handle_guidelines_callback, pattern=r"^ch_guidelines$"))
     app.add_handler(CallbackQueryHandler(challenge_command, pattern=r"^ch_active_view$"))
+    app.add_handler(CallbackQueryHandler(handle_challenge_select_callback, pattern=r"^ch_select:"))
+    app.add_handler(CallbackQueryHandler(handle_challenge_nav_active_callback, pattern=r"^ch_nav_act:"))
+    app.add_handler(CallbackQueryHandler(handle_scheduled_challenge_info_callback, pattern=r"^ch_sched_info:"))
+    app.add_handler(CallbackQueryHandler(handle_challenge_refresh_callback, pattern=r"^ch_refresh:"))
     app.add_handler(CallbackQueryHandler(handle_past_challenges_callback, pattern=r"^ch_past"))
     app.add_handler(CallbackQueryHandler(handle_challenge_review_callback, pattern=r"^ch_review:"))
     app.add_handler(CallbackQueryHandler(challenge_hub_command, pattern=r"^ch_hub$"))

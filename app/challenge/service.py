@@ -1,18 +1,48 @@
+import asyncio
 import csv
 import io
 import json
 import logging
 import math
 import random
-from datetime import datetime, timezone
+import os
+import re
+import time
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import app.db as db
 from app.challenge.scoring import calculate_score, calculate_exam_score
 
-import re
-
 logger = logging.getLogger(__name__)
+
+BOT_TIMEZONE_OFFSET_HOURS = int(os.getenv("BOT_TIMEZONE_OFFSET_HOURS", "3"))
+BOT_TIMEZONE_NAME = os.getenv("BOT_TIMEZONE_NAME", "EAT")
+LOCAL_TZ = timezone(timedelta(hours=BOT_TIMEZONE_OFFSET_HOURS))
+
+# In-memory caching for challenge metadata and questions during active quizzes
+_challenge_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_challenge_questions_cache: Dict[int, Tuple[float, List[Dict[str, Any]]]] = {}
+CACHE_TTL_SECONDS = 30.0
+
+# In-memory concurrency locks per (challenge_id, user_id) to eliminate remote DB lock roundtrips
+_user_quiz_locks: Dict[Tuple[int, int], asyncio.Lock] = {}
+
+
+def _get_user_quiz_lock(challenge_id: int, user_id: int) -> asyncio.Lock:
+    key = (challenge_id, user_id)
+    lock = _user_quiz_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_quiz_locks[key] = lock
+    return lock
+
+
+def invalidate_challenge_cache(challenge_id: int) -> None:
+    """Invalidates the in-memory cache for a challenge and its questions."""
+    _challenge_cache.pop(challenge_id, None)
+    _challenge_questions_cache.pop(challenge_id, None)
+
 
 
 def parse_single_question_text(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -158,21 +188,15 @@ async def _execute(query: str, params: tuple = (), fetch: str = "none") -> Any:
     await db.ensure_db()
 
     if db.is_postgres():
-        import psycopg
-
-        url = (
-            db.DATABASE_URL.replace("postgres://", "postgresql://", 1)
-            if db.DATABASE_URL.startswith("postgres://")
-            else db.DATABASE_URL
-        )
         try:
-            async with await psycopg.AsyncConnection.connect(url) as conn:
+            pool = await db.get_pg_pool()
+            async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     pg_query = query.replace("?", "%s")
                     # PostgreSQL requires RETURNING id to get the inserted row's ID
                     if fetch == "id" and "RETURNING" not in pg_query.upper():
                         pg_query = pg_query.rstrip().rstrip(";") + " RETURNING id"
-                    await cur.execute(pg_query, params)
+                    await cur.execute(pg_query, params, prepare=False)
                     if fetch == "one":
                         return await cur.fetchone()
                     elif fetch == "all":
@@ -291,8 +315,37 @@ def to_utc_datetime(val: Any) -> Optional[datetime]:
         return None
 
 
-async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
-    """Retrieves a single challenge by ID with automatic time-based status transitions."""
+def format_datetime_12h(val: Any, fallback: str = "Unscheduled") -> str:
+    """Formats an ISO string, timestamp, or datetime into a clean 12-hour East Africa Time (EAT) format.
+    Example: 'Sep 2, 2026 · 3:10 PM EAT'.
+
+    If val is None or invalid, returns fallback.
+    """
+    if not val:
+        return fallback
+    dt = to_utc_datetime(val)
+    if not dt:
+        return str(val)
+    local_dt = dt.astimezone(LOCAL_TZ)
+    month_name = local_dt.strftime("%b")
+    day = local_dt.day
+    year = local_dt.year
+    hour_12 = local_dt.strftime("%I").lstrip("0") or "12"
+    minute = local_dt.strftime("%M")
+    ampm = local_dt.strftime("%p")
+    return f"{month_name} {day}, {year} · {hour_12}:{minute} {ampm} {BOT_TIMEZONE_NAME}"
+
+
+async def get_challenge(challenge_id: int, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
+    """Retrieves a single challenge by ID with automatic time-based status transitions and caching."""
+    now_time = time.time()
+    if not force_refresh:
+        cached = _challenge_cache.get(challenge_id)
+        if cached and (now_time - cached[0] < CACHE_TTL_SECONDS):
+            return dict(cached[1])
+    else:
+        _challenge_cache.pop(challenge_id, None)
+
     row = await _execute(
         """
         SELECT id, season_id, title, description, category, starts_at, ends_at,
@@ -318,7 +371,7 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
             await _execute("UPDATE challenges SET status = 'LIVE' WHERE id = ?", (challenge_id,))
             status = "LIVE"
 
-    return {
+    data = {
         "id": row[0],
         "season_id": row[1],
         "title": row[2],
@@ -334,62 +387,65 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
         "created_by": row[12],
         "created_at": str(row[13]) if row[13] is not None else None,
     }
+    _challenge_cache[challenge_id] = (now_time, data)
+    return dict(data)
 
 
-async def get_active_challenge() -> Optional[Dict[str, Any]]:
-    """Retrieves the latest LIVE challenge, or next SCHEDULED challenge, with time-based transitions."""
+async def get_active_challenges(limit: int = 20) -> List[Dict[str, Any]]:
+    """Retrieves all LIVE and SCHEDULED challenges, sorted by live time (starts_at) and status priority."""
     now_dt = datetime.now(timezone.utc)
 
-    # 1. Transition SCHEDULED challenges to LIVE if start time has arrived
-    scheduled = await _execute(
-        "SELECT id, starts_at FROM challenges WHERE status = 'SCHEDULED'",
-        fetch="all",
+    # 1. Batch transition SCHEDULED→LIVE and LIVE→ENDED using server-side timestamps
+    now_iso = now_dt.isoformat()
+    await _execute(
+        "UPDATE challenges SET status = 'LIVE' WHERE status = 'SCHEDULED' AND starts_at <= ?",
+        (now_iso,),
     )
-    for ch in scheduled or []:
-        if ch[1]:
-            s_dt = to_utc_datetime(ch[1])
-            if s_dt and now_dt >= s_dt:
-                await _execute("UPDATE challenges SET status = 'LIVE' WHERE id = ?", (ch[0],))
-
-    # 2. Transition LIVE challenges to ENDED if end time has passed
-    live = await _execute(
-        "SELECT id, ends_at FROM challenges WHERE status = 'LIVE'",
-        fetch="all",
+    await _execute(
+        "UPDATE challenges SET status = 'ENDED' WHERE status = 'LIVE' AND ends_at IS NOT NULL AND ends_at <= ?",
+        (now_iso,),
     )
-    for ch in live or []:
-        if ch[1]:
-            e_dt = to_utc_datetime(ch[1])
-            if e_dt and now_dt >= e_dt:
-                await _execute("UPDATE challenges SET status = 'ENDED' WHERE id = ?", (ch[0],))
 
-    row = await _execute(
+    rows = await _execute(
         """
         SELECT id, season_id, title, description, category, starts_at, ends_at,
                duration_seconds, question_time_limit_seconds, accuracy_weight, speed_weight,
                status, created_by, created_at
         FROM challenges WHERE status IN ('LIVE', 'SCHEDULED')
-        ORDER BY CASE WHEN status = 'LIVE' THEN 1 ELSE 2 END, id DESC LIMIT 1
+        ORDER BY 
+            CASE WHEN status = 'LIVE' THEN 1 ELSE 2 END,
+            COALESCE(starts_at, created_at) DESC,
+            id DESC
+        LIMIT ?
         """,
-        fetch="one",
+        (limit,),
+        fetch="all",
     )
-    if not row:
-        return None
-    return {
-        "id": row[0],
-        "season_id": row[1],
-        "title": row[2],
-        "description": row[3],
-        "category": row[4],
-        "starts_at": str(row[5]) if row[5] is not None else None,
-        "ends_at": str(row[6]) if row[6] is not None else None,
-        "duration_seconds": row[7],
-        "question_time_limit_seconds": row[8],
-        "accuracy_weight": float(row[9]),
-        "speed_weight": float(row[10]),
-        "status": row[11],
-        "created_by": row[12],
-        "created_at": str(row[13]) if row[13] is not None else None,
-    }
+    return [
+        {
+            "id": row[0],
+            "season_id": row[1],
+            "title": row[2],
+            "description": row[3],
+            "category": row[4],
+            "starts_at": str(row[5]) if row[5] is not None else None,
+            "ends_at": str(row[6]) if row[6] is not None else None,
+            "duration_seconds": row[7],
+            "question_time_limit_seconds": row[8],
+            "accuracy_weight": float(row[9]),
+            "speed_weight": float(row[10]),
+            "status": row[11],
+            "created_by": row[12],
+            "created_at": str(row[13]) if row[13] is not None else None,
+        }
+        for row in rows
+    ]
+
+
+async def get_active_challenge() -> Optional[Dict[str, Any]]:
+    """Retrieves the top active challenge (for single-challenge operations)."""
+    challenges = await get_active_challenges(limit=1)
+    return challenges[0] if challenges else None
 
 
 async def list_past_challenges(limit: int = 20) -> List[Dict[str, Any]]:
@@ -399,7 +455,7 @@ async def list_past_challenges(limit: int = 20) -> List[Dict[str, Any]]:
         SELECT id, season_id, title, description, category, starts_at, ends_at,
                question_time_limit_seconds, status
         FROM challenges
-        WHERE status IN ('ENDED', 'LIVE')
+        WHERE status = 'ENDED'
         ORDER BY id DESC LIMIT ?
         """,
         (limit,),
@@ -459,11 +515,13 @@ async def list_challenges(status: Optional[str] = None, limit: int = 10) -> List
 
 async def update_challenge_status(challenge_id: int, new_status: str) -> None:
     """Updates challenge lifecycle state."""
+    invalidate_challenge_cache(challenge_id)
     await _execute("UPDATE challenges SET status = ? WHERE id = ?", (new_status, challenge_id))
 
 
 async def delete_challenge(challenge_id: int) -> bool:
     """Permanently deletes a challenge and its associated answers, participants, and linked questions."""
+    invalidate_challenge_cache(challenge_id)
     await _execute("DELETE FROM challenge_answers WHERE challenge_id = ?", (challenge_id,))
     await _execute("DELETE FROM challenge_participants WHERE challenge_id = ?", (challenge_id,))
     await _execute("DELETE FROM challenge_questions WHERE challenge_id = ?", (challenge_id,))
@@ -482,6 +540,7 @@ async def update_challenge_details(
     ends_at: Optional[str] = None,
 ) -> bool:
     """Updates editable fields of a challenge."""
+    invalidate_challenge_cache(challenge_id)
     fields = []
     values = []
     if title is not None:
@@ -941,11 +1000,17 @@ async def link_questions_to_challenge(
             )
             linked += 1
 
+    invalidate_challenge_cache(challenge_id)
     return linked
 
 
 async def get_challenge_questions(challenge_id: int) -> List[Dict[str, Any]]:
-    """Retrieves all snapshot questions for a challenge."""
+    """Retrieves all snapshot questions for a challenge with caching."""
+    now_time = time.time()
+    cached = _challenge_questions_cache.get(challenge_id)
+    if cached and (now_time - cached[0] < CACHE_TTL_SECONDS):
+        return [dict(q) for q in cached[1]]
+
     rows = await _execute(
         "SELECT question_id, snapshot_json FROM challenge_questions WHERE challenge_id = ? ORDER BY question_order ASC",
         (challenge_id,),
@@ -964,7 +1029,8 @@ async def get_challenge_questions(challenge_id: int) -> List[Dict[str, Any]]:
                     "option_a": q[4], "option_b": q[5], "option_c": q[6], "option_d": q[7],
                     "correct_option": q[8], "base_points": float(q[9]), "explanation": q[10]
                 })
-    return questions
+    _challenge_questions_cache[challenge_id] = (now_time, questions)
+    return [dict(q) for q in questions]
 
 
 async def add_question_to_challenge(challenge_id: int, question_data: Dict[str, Any]) -> int:
@@ -990,6 +1056,9 @@ async def get_challenge_review_data(challenge_id: int, user_id: int, question_in
     challenge = await get_challenge(challenge_id)
     if not challenge:
         return {"error": "Challenge not found."}
+
+    if challenge.get("status") == "DRAFT":
+        return {"error": "🛠️ This challenge is in draft mode and not yet published."}
 
     # 1. Verify access permissions: participant completed OR challenge ended/cancelled/past deadline
     part_row = await _execute(
@@ -1083,6 +1152,7 @@ async def import_questions_for_challenge(challenge_id: int, csv_text: str) -> Di
 
 async def remove_question_from_challenge(challenge_id: int, question_id: int) -> bool:
     """Removes a question link from a challenge."""
+    invalidate_challenge_cache(challenge_id)
     await _execute(
         "DELETE FROM challenge_questions WHERE challenge_id = ? AND question_id = ?",
         (challenge_id, question_id),
@@ -1208,7 +1278,7 @@ def calculate_remaining_exam_seconds(
     now_dt = datetime.now(timezone.utc)
     configured_seconds = float(challenge.get("duration_seconds") or 600)
     if configured_seconds > 7200:
-        configured_seconds = 600.0
+        configured_seconds = 7200.0
 
     ends_at_val = challenge.get("ends_at")
     seconds_until_close = None
@@ -1272,10 +1342,15 @@ async def get_answered_positions_for_participant(participant_id: int) -> List[in
 
 
 async def get_next_question_for_participant(
-    challenge_id: int, telegram_user_id: int, question_index: Optional[int] = None
+    challenge_id: int,
+    telegram_user_id: int,
+    question_index: Optional[int] = None,
+    prefetched_part: Optional[Dict[str, Any]] = None,
+    prefetched_challenge: Optional[Dict[str, Any]] = None,
+    prefetched_answered_indices: Optional[List[int]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Prepares a question for a participant with randomized option mapping, bottom navigation state, and timer."""
-    part = await register_or_get_participant(challenge_id, telegram_user_id)
+    part = prefetched_part or await register_or_get_participant(challenge_id, telegram_user_id)
     if part["status"] not in ("REGISTERED", "IN_PROGRESS"):
         return None
 
@@ -1286,19 +1361,23 @@ async def get_next_question_for_participant(
 
     if question_index is not None and 0 <= question_index < total_q:
         idx = question_index
-        # Update current index in DB if different
-        if part["current_question_index"] != idx:
+        # Update current index in DB if different and not prefetched
+        if part.get("current_question_index") != idx and not prefetched_part:
             await _execute(
                 "UPDATE challenge_participants SET current_question_index = ? WHERE id = ?",
                 (idx, part["id"]),
             )
     else:
-        idx = part["current_question_index"]
+        idx = part.get("current_question_index", 0)
 
     if idx < 0:
         idx = 0
     if idx >= total_q:
-        answered_pos = await get_answered_positions_for_participant(part["id"])
+        answered_pos = (
+            prefetched_answered_indices
+            if prefetched_answered_indices is not None
+            else await get_answered_positions_for_participant(part["id"])
+        )
         unanswered = [i for i in range(total_q) if i not in answered_pos]
         if unanswered:
             idx = unanswered[0]
@@ -1309,7 +1388,7 @@ async def get_next_question_for_participant(
         else:
             return None
 
-    challenge = await get_challenge(challenge_id)
+    challenge = prefetched_challenge or await get_challenge(challenge_id)
     if not challenge:
         return None
 
@@ -1375,7 +1454,11 @@ async def get_next_question_for_participant(
         (json.dumps(mapping), now, part["id"]),
     )
 
-    answered_indices = await get_answered_positions_for_participant(part["id"])
+    answered_indices = (
+        prefetched_answered_indices
+        if prefetched_answered_indices is not None
+        else await get_answered_positions_for_participant(part["id"])
+    )
 
     return {
         "question_number": idx + 1,
@@ -1402,41 +1485,12 @@ async def record_answer_and_advance(
     question_index: int,
 ) -> Dict[str, Any]:
     """Validates and scores an answer, preventing double-clicks and recording detailed audit logs."""
-    part = await register_or_get_participant(challenge_id, telegram_user_id)
-    if part["status"] == "COMPLETED":
-        return {
-            "is_completed": True,
-            "already_completed": True,
-            "current_score": part["score"],
-            "correct_count": part["correct_count"],
-            "answered_count": part["answered_count"],
-            "total_questions": len(part["question_order"]),
-        }
-    if part["status"] != "IN_PROGRESS":
-        return {"error": "Challenge is not active or already completed."}
-
-    answered_positions = await get_answered_positions_for_participant(part["id"])
-    total_q = len(part["question_order"])
-
-    # If this specific question has already been answered, gracefully advance to next question
-    if question_index in answered_positions:
-        is_completed = (len(answered_positions) >= total_q)
-        next_idx = question_index + 1
-        if next_idx >= total_q and not is_completed:
-            unanswered = [i for i in range(total_q) if i not in answered_positions]
-            next_idx = unanswered[0] if unanswered else total_q
-        return {
-            "already_answered": True,
-            "is_completed": is_completed,
-            "current_score": part["score"],
-            "correct_count": part["correct_count"],
-            "answered_count": part["answered_count"],
-            "total_questions": total_q,
-            "next_question_index": next_idx,
-        }
-
-    # Double-click lock check: if locked in-flight, gracefully return current progression
-    if part.get("is_locked"):
+    lock = _get_user_quiz_lock(challenge_id, telegram_user_id)
+    if lock.locked():
+        # Fast in-memory guard against double-clicks while previous query is in flight
+        part = await register_or_get_participant(challenge_id, telegram_user_id)
+        answered_positions = await get_answered_positions_for_participant(part["id"])
+        total_q = len(part["question_order"])
         is_completed = (len(answered_positions) >= total_q)
         next_idx = question_index + 1 if question_index + 1 < total_q else 0
         return {
@@ -1449,10 +1503,44 @@ async def record_answer_and_advance(
             "next_question_index": next_idx,
         }
 
-    # Immediately engage atomic lock
-    await _execute("UPDATE challenge_participants SET is_locked = 1 WHERE id = ?", (part["id"],))
+    async with lock:
+        part = await register_or_get_participant(challenge_id, telegram_user_id)
+        if part["status"] == "COMPLETED":
+            s_dt = to_utc_datetime(part.get("started_at"))
+            c_dt = to_utc_datetime(part.get("completed_at"))
+            dur = max(0.0, (c_dt - s_dt).total_seconds()) if (s_dt and c_dt) else None
+            return {
+                "is_completed": True,
+                "already_completed": True,
+                "current_score": part["score"],
+                "correct_count": part["correct_count"],
+                "answered_count": part["answered_count"],
+                "total_questions": len(part["question_order"]),
+                "time_taken_seconds": round(dur, 1) if dur is not None else None,
+            }
+        if part["status"] != "IN_PROGRESS":
+            return {"error": "Challenge is not active or already completed."}
 
-    try:
+        answered_positions = await get_answered_positions_for_participant(part["id"])
+        total_q = len(part["question_order"])
+
+        # If this specific question has already been answered, gracefully advance to next question
+        if question_index in answered_positions:
+            is_completed = (len(answered_positions) >= total_q)
+            next_idx = question_index + 1
+            if next_idx >= total_q and not is_completed:
+                unanswered = [i for i in range(total_q) if i not in answered_positions]
+                next_idx = unanswered[0] if unanswered else total_q
+            return {
+                "already_answered": True,
+                "is_completed": is_completed,
+                "current_score": part["score"],
+                "correct_count": part["correct_count"],
+                "answered_count": part["answered_count"],
+                "total_questions": total_q,
+                "next_question_index": next_idx,
+            }
+
         now = datetime.now(timezone.utc)
         now_iso = now.isoformat()
 
@@ -1472,7 +1560,8 @@ async def record_answer_and_advance(
 
         test_limit = float(challenge.get("duration_seconds") or 600)
         if test_limit > 7200:
-            test_limit = 600.0
+            logger.warning(f"Challenge {challenge_id} has duration_seconds={test_limit} (>2h), capping to 7200s.")
+            test_limit = 7200.0
 
         if time_remaining_seconds <= 0:
             # Overtime or challenge window closed
@@ -1508,7 +1597,18 @@ async def record_answer_and_advance(
         base_points = float(mapping.get("_base_points", 10.0))
 
         is_correct = (selected_option_key.upper() == display_correct.upper())
-        points_awarded = base_points if is_correct else 0
+
+        # Use the scoring engine so speed actually affects points
+        question_time_limit = float(challenge.get("question_time_limit_seconds") or 60)
+        points_awarded = calculate_score(
+            is_correct=is_correct,
+            response_time_seconds=response_time_seconds,
+            time_limit_seconds=question_time_limit,
+            base_points=base_points,
+            accuracy_weight=float(challenge.get("accuracy_weight", 0.70)),
+            speed_weight=float(challenge.get("speed_weight", 0.30)),
+        )
+        speed_multiplier = (points_awarded / base_points) if (is_correct and base_points > 0) else 0.0
 
         # Insert detailed answer audit log
         await _execute(
@@ -1532,7 +1632,7 @@ async def record_answer_and_advance(
                 now_iso,
                 response_time_ms,
                 base_points,
-                1.0 if is_correct else 0.0,
+                round(speed_multiplier, 4),
                 points_awarded,
                 now_iso,
             ),
@@ -1555,6 +1655,16 @@ async def record_answer_and_advance(
             new_index = unanswered[0] if unanswered else total_q
 
         now_iso_completed = datetime.now(timezone.utc).isoformat() if is_completed else None
+
+        # Apply exam-level speed bonus when all questions are answered
+        if is_completed:
+            raw_accumulated_score = calculate_exam_score(
+                raw_points_earned=raw_accumulated_score,
+                total_time_taken_seconds=total_time_taken,
+                total_time_limit_seconds=test_limit,
+                accuracy_weight=float(challenge.get("accuracy_weight", 0.70)),
+                speed_weight=float(challenge.get("speed_weight", 0.30)),
+            )
 
         # Update database record
         await _execute(
@@ -1581,6 +1691,14 @@ async def record_answer_and_advance(
             ),
         )
 
+        # Build updated participant dict for instant in-memory handoff
+        updated_part = dict(part)
+        updated_part["current_question_index"] = new_index
+        updated_part["score"] = raw_accumulated_score
+        updated_part["correct_count"] = new_correct
+        updated_part["answered_count"] = new_answered
+        updated_part["status"] = "COMPLETED" if is_completed else "IN_PROGRESS"
+
         return {
             "is_completed": is_completed,
             "current_score": raw_accumulated_score,
@@ -1589,10 +1707,14 @@ async def record_answer_and_advance(
             "next_question_index": new_index,
             "points_awarded": points_awarded,
             "is_correct": is_correct,
+            "time_taken_seconds": round(total_time_taken, 1) if is_completed else None,
+            "time_limit_seconds": test_limit if is_completed else None,
+            "accuracy_weight": float(challenge.get("accuracy_weight", 0.70)),
+            "speed_weight": float(challenge.get("speed_weight", 0.30)),
+            "_participant": updated_part,
+            "_challenge": challenge,
+            "_answered_indices": sorted(new_answered_set),
         }
-    finally:
-        # Guarantee unlock so participant is never stuck
-        await _execute("UPDATE challenge_participants SET is_locked = 0 WHERE id = ?", (part["id"],))
 
 
 # ---------------------------------------------------------------------------
