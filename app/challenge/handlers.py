@@ -202,18 +202,22 @@ async def handle_challenge_review_callback(update: Update, context: ContextTypes
     q_index = int(data[2]) if len(data) > 2 and data[2].isdigit() else 0
     user_id = query.from_user.id
 
-    try:
-        await query.answer(f"📖 Loading Question {q_index + 1} review...", show_alert=False)
-    except Exception:
-        pass
-
     review_data = await get_challenge_review_data(ch_id, user_id, question_index=q_index)
     if "error" in review_data:
         if review_data.get("error") == "locked":
-            await query.answer(review_data.get("message", "🔒 Complete the challenge first!"), show_alert=True)
+            msg = review_data.get("message", "🔒 Complete the challenge first to review questions & answers!")
         else:
-            await query.answer(review_data.get("error", "⚠️ Could not load review."), show_alert=True)
+            msg = review_data.get("error", "⚠️ Could not load review.")
+        try:
+            await query.answer(msg, show_alert=True)
+        except Exception:
+            pass
         return
+
+    try:
+        await query.answer()
+    except Exception:
+        pass
 
     text = _format_review_card(review_data)
     kb = get_review_navigation_keyboard(
@@ -906,7 +910,7 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     chat = update.effective_chat
     from app.challenge.admin import is_admin_user
     is_admin = await is_admin_user(user.id if user else 0, chat.id if chat else None, context.bot)
-    await send_leaderboard_view(update.message.reply_text, ch_id, mode="weekly", page=1, is_admin=is_admin)
+    await send_leaderboard_view(update.message.reply_text, ch_id, mode="weekly", page=1, is_admin=is_admin, user_id=user.id if user else None)
 
 
 async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -923,9 +927,11 @@ async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFA
     data = query.data.split(":")
     mode_prefix = data[0]
     user = query.from_user
-    chat = query.message.chat if query.message else None
+    chat = getattr(query.message, "chat", None)
+    chat_id = chat.id if chat else getattr(query.message, "chat_id", None)
     from app.challenge.admin import is_admin_user
-    is_admin = await is_admin_user(user.id if user else 0, chat.id if chat else None, context.bot)
+    is_admin = await is_admin_user(user.id if user else 0, chat_id, context.bot)
+    user_id = user.id if user else None
 
     if mode_prefix == "lb_weekly":
         try:
@@ -939,16 +945,16 @@ async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFA
             ch_id = active["id"] if active else 0
         # If still no active challenge, show monthly cumulative instead of an empty weekly view
         if ch_id == 0:
-            await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin)
+            await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin, user_id=user_id)
         else:
-            await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page, is_admin=is_admin)
+            await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page, is_admin=is_admin, user_id=user_id)
     elif mode_prefix == "lb_monthly":
         try:
             await query.answer("📅 Loading monthly standings...", show_alert=False)
         except Exception:
             pass
         page = int(data[2]) if len(data) > 2 and data[2].isdigit() else (int(data[1]) if len(data) > 1 and data[1].isdigit() else 1)
-        await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin)
+        await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin, user_id=user_id)
 
 
 def _get_rank_badge(rank: int) -> str:
@@ -963,8 +969,18 @@ def _get_rank_badge(rank: int) -> str:
     return f"#{rank}"
 
 
-async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "weekly", page: int = 1, is_admin: bool = False):
+async def send_leaderboard_view(
+    sender_func,
+    challenge_id: int,
+    mode: str = "weekly",
+    page: int = 1,
+    is_admin: bool = False,
+    user_id: Optional[int] = None,
+):
     """Renders formatted leaderboard text. For non-admins shows real names only. For admins shows username."""
+    is_active = False
+    can_review = False
+
     if mode == "weekly" and challenge_id > 0:
         ch = await get_challenge(challenge_id)
         title = html.escape(ch["title"]) if ch else "Challenge"
@@ -972,6 +988,19 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
         entries = lb_data["entries"]
         total_pages = lb_data["total_pages"]
         total_count = lb_data["total_count"]
+
+        # Check challenge status
+        is_active = bool(ch and ch.get("status") in ("LIVE", "SCHEDULED"))
+        remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(ch, None) if ch else (0, False, None)
+        is_ended = bool(ch and (ch.get("status") in ("ENDED", "CANCELLED") or (ends_at_str is not None and remaining_sec <= 0)))
+
+        is_completed = False
+        if user_id:
+            part = await register_or_get_participant(challenge_id, user_id)
+            is_completed = bool(part and part.get("status") == "COMPLETED")
+
+        # Can only review if user completed it OR challenge ended/archived
+        can_review = bool(is_completed or is_ended)
 
         if not entries:
             text = (
@@ -1028,7 +1057,14 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
     await sender_func(
         text,
         parse_mode=ParseMode.HTML,
-        reply_markup=get_leaderboard_keyboard(challenge_id, mode=mode, page=page, total_pages=total_pages),
+        reply_markup=get_leaderboard_keyboard(
+            challenge_id,
+            mode=mode,
+            page=page,
+            total_pages=total_pages,
+            can_review=can_review,
+            is_active=is_active,
+        ),
     )
 
 

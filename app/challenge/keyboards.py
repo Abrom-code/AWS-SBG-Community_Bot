@@ -182,6 +182,8 @@ def get_leaderboard_keyboard(
     mode: str = "weekly",
     page: int = 1,
     total_pages: int = 1,
+    can_review: bool = False,
+    is_active: bool = False,
 ) -> InlineKeyboardMarkup:
     """Navigation for Weekly vs Monthly leaderboards with clean 1-column layout."""
     ch_id = challenge_id or 0
@@ -205,8 +207,10 @@ def get_leaderboard_keyboard(
 
     # 3. Contextual action shortcuts
     if ch_id > 0:
-        buttons.append([InlineKeyboardButton("Review Questions & Answers", callback_data=f"ch_review:{ch_id}:0")])
-        buttons.append([InlineKeyboardButton("Back to Challenge", callback_data=f"ch_past:{ch_id}")])
+        if can_review:
+            buttons.append([InlineKeyboardButton("Review Questions & Answers", callback_data=f"ch_review:{ch_id}:0")])
+        back_cb = f"ch_select:{ch_id}" if is_active else f"ch_past:{ch_id}"
+        buttons.append([InlineKeyboardButton("Back to Challenge", callback_data=back_cb)])
 
     return InlineKeyboardMarkup(buttons)
 

@@ -795,6 +795,51 @@ def test_multi_active_challenges_sorting_and_selection():
     asyncio.run(handle_scheduled_challenge_info_callback(cb_info_update, context))
 
 
+def test_leaderboard_review_button_visibility_and_locking():
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import handle_leaderboard_callback, handle_challenge_review_callback
+
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(
+        service.create_challenge(
+            title="Live Quiz Challenge",
+            category="Cloud",
+            starts_at="2026-09-01T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    # User 201 has not completed the challenge
+    cb = FakeCallbackQuery(data=f"lb_weekly:{ch_id}:1", user_id=201)
+    cb_update = FakeUpdate(callback_query=cb)
+    context = FakeContext()
+    asyncio.run(handle_leaderboard_callback(cb_update, context))
+
+    assert cb.edited_text is not None
+    assert "No completed submissions yet" in cb.edited_text
+    btn_texts = [btn.text for row in cb.reply_markup.inline_keyboard for btn in row]
+    # Review Questions & Answers should NOT be present when user has not completed
+    assert "Review Questions & Answers" not in btn_texts
+
+    # If user tries to trigger review callback while locked, it must alert them with an explanation
+    cb_review = FakeCallbackQuery(data=f"ch_review:{ch_id}:0", user_id=201)
+    cb_review_update = FakeUpdate(callback_query=cb_review)
+    asyncio.run(handle_challenge_review_callback(cb_review_update, context))
+    assert cb_review.answered is True
+    assert "unlocked only after you complete" in cb_review.answered_text
+
+    # Now mark user 201 as completed
+    asyncio.run(service.register_or_get_participant(ch_id, 201, "Alice", "alice"))
+    asyncio.run(service._execute("UPDATE challenge_participants SET status = 'COMPLETED' WHERE challenge_id = ? AND telegram_user_id = ?", (ch_id, 201)))
+
+    # Leaderboard now for user 201 SHOULD include Review Questions & Answers
+    cb2 = FakeCallbackQuery(data=f"lb_weekly:{ch_id}:1", user_id=201)
+    cb2_update = FakeUpdate(callback_query=cb2)
+    asyncio.run(handle_leaderboard_callback(cb2_update, context))
+    btn2_texts = [btn.text for row in cb2.reply_markup.inline_keyboard for btn in row]
+    assert "Review Questions & Answers" in btn2_texts
+
+
 
 
 
