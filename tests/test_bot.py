@@ -626,7 +626,7 @@ def test_custom_date_challenge_creation_flow(monkeypatch):
 
     resp = up_msg.message.reply_text_calls[0]["text"]
     assert "Challenge" in resp
-    assert "2026-09-10" in resp
+    assert "Sep 10, 2026" in resp
     assert up_msg.message.reply_text_calls[0]["reply_markup"] is not None
 
 

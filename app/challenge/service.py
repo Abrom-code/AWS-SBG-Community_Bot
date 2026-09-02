@@ -310,6 +310,26 @@ def to_utc_datetime(val: Any) -> Optional[datetime]:
         return None
 
 
+def format_datetime_12h(val: Any, fallback: str = "Unscheduled") -> str:
+    """Formats an ISO string, timestamp, or datetime into a clean 12-hour UTC format.
+    Example: 'Sep 2, 2026 · 11:10 AM UTC'.
+
+    If val is None or invalid, returns fallback.
+    """
+    if not val:
+        return fallback
+    dt = to_utc_datetime(val)
+    if not dt:
+        return str(val)
+    month_name = dt.strftime("%b")
+    day = dt.day
+    year = dt.year
+    hour_12 = dt.strftime("%I").lstrip("0") or "12"
+    minute = dt.strftime("%M")
+    ampm = dt.strftime("%p")
+    return f"{month_name} {day}, {year} · {hour_12}:{minute} {ampm} UTC"
+
+
 async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
     """Retrieves a single challenge by ID with automatic time-based status transitions and caching."""
     now_time = time.time()

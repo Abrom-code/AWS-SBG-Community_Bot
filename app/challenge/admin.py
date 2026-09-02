@@ -30,6 +30,7 @@ from app.challenge.service import (
     import_questions_for_challenge,
     remove_question_from_challenge,
     to_utc_datetime,
+    format_datetime_12h,
 )
 from app.challenge.keyboards import (
     get_admin_menu_keyboard,
@@ -221,8 +222,8 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         status = ch["status"]
         title = html.escape(ch["title"])
         category = html.escape(ch["category"])
-        starts = ch.get("starts_at") or "Unscheduled (Draft)"
-        ends = ch.get("ends_at") or "None"
+        starts = format_datetime_12h(ch.get("starts_at"), fallback="Unscheduled (Draft)")
+        ends = format_datetime_12h(ch.get("ends_at"), fallback="None")
         dur_secs = ch.get("duration_seconds") or 600
         exam_mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
 
@@ -499,8 +500,8 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             f"<blockquote><b>{title}</b>\n"
             f"Category: {html.escape(ch.get('category', 'Architecture'))}</blockquote>\n\n"
             f"• <b>Status:</b> <code>{status}</code>\n"
-            f"• <b>Starts:</b> <code>{starts_at or 'Unscheduled'}</code>\n"
-            f"• <b>Ends:</b> <code>{ends_at or 'Unscheduled'}</code>\n\n"
+            f"• <b>Starts:</b> <code>{format_datetime_12h(starts_at)}</code>\n"
+            f"• <b>Ends:</b> <code>{format_datetime_12h(ends_at)}</code>\n\n"
             f"Schedule has been updated.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
@@ -880,8 +881,8 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             await query.edit_message_text(
                 f"<b>Challenge #{ch_id} Scheduled</b>\n\n"
                 f"• <b>Questions Attached:</b> <code>{len(questions)}</code>\n"
-                f"• <b>Opens:</b> <code>{starts_iso}</code>\n"
-                f"• <b>Ends:</b> <code>{ends_iso}</code>\n\n"
+                f"• <b>Opens:</b> <code>{format_datetime_12h(starts_iso)}</code>\n"
+                f"• <b>Ends:</b> <code>{format_datetime_12h(ends_iso)}</code>\n\n"
                 f"Challenge will automatically go LIVE at the scheduled opening time.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_challenge_manage_keyboard(ch_id, "SCHEDULED"),
@@ -903,8 +904,8 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             await query.edit_message_text(
                 f"<b>Challenge #{ch_id} is now LIVE!</b>\n\n"
                 f"• <b>Questions:</b> <code>{len(questions)}</code>\n"
-                f"• <b>Starts:</b> <code>{now_iso}</code>\n"
-                f"• <b>Ends:</b> <code>{end_iso}</code>\n\n"
+                f"• <b>Starts:</b> <code>{format_datetime_12h(now_iso)}</code>\n"
+                f"• <b>Ends:</b> <code>{format_datetime_12h(end_iso)}</code>\n\n"
                 f"Community members can now participate using /challenge.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_challenge_manage_keyboard(ch_id, "LIVE"),

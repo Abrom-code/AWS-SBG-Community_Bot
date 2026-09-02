@@ -54,6 +54,7 @@ from app.challenge.service import (
     get_monthly_analytics_report,
     list_challenges,
     get_active_challenge,
+    format_datetime_12h,
 )
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
@@ -791,8 +792,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await update.message.reply_text(
             f"<b>Schedule Updated for Challenge #{ch_id}</b>\n\n"
-            f"• <b>Starts:</b> <code>{starts_at}</code>\n"
-            f"• <b>Ends:</b> <code>{ends_at}</code>\n"
+            f"• <b>Starts:</b> <code>{format_datetime_12h(starts_at)}</code>\n"
+            f"• <b>Ends:</b> <code>{format_datetime_12h(ends_at)}</code>\n"
             f"• <b>Status:</b> <code>{status}</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
@@ -1132,8 +1133,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"<blockquote><b>{html.escape(title)}</b>\n"
             f"Category: {html.escape(category)}</blockquote>\n\n"
             f"• <b>Status:</b> {status_text}\n"
-            f"• <b>Starts:</b> <code>{starts_at}</code>\n"
-            f"• <b>Ends:</b> <code>{ends_at}</code>\n"
+            f"• <b>Starts:</b> <code>{format_datetime_12h(starts_at)}</code>\n"
+            f"• <b>Ends:</b> <code>{format_datetime_12h(ends_at)}</code>\n"
             f"• <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
             f"• <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
             f"<b>Next step: Attach questions to this challenge.</b>\n"
