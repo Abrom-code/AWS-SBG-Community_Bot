@@ -1,7 +1,10 @@
+from __future__ import annotations
+
 import asyncio
 import html
 import os
 import logging
+from typing import Optional, Any, Dict, List, Set
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
