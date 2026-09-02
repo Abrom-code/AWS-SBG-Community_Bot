@@ -2,7 +2,13 @@ import asyncio
 import html
 import os
 import logging
-from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    ReplyKeyboardRemove,
+    BotCommand,
+    MenuButtonCommands,
+)
 from telegram.constants import ParseMode, ChatAction
 from telegram.ext import (
     ContextTypes,
@@ -279,6 +285,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "▫️ /start › Welcome menu\n"
         "▫️ /challenge › Challenge center & active quiz\n"
         "▫️ /leaderboard › Weekly & monthly standings\n"
+        "▫️ /notifications › Community notifications info\n"
         "▫️ /archive › Past challenges & practice\n"
         "▫️ /rules › Scoring formula & timing\n"
         "▫️ /guidelines › Rules & code of conduct\n"
@@ -289,6 +296,20 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await update.message.reply_text(
         help_text,
+        parse_mode=ParseMode.HTML,
+        reply_markup=get_main_menu_keyboard(),
+    )
+
+
+async def notifications_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Explains notification preferences and active broadcast status."""
+    await update.message.reply_text(
+        "<b>Community Notifications</b>\n\n"
+        "You are subscribed to real-time AWS Student Builder updates:\n\n"
+        "• <b>New Challenges:</b> Instant alerts when weekly competitions go live\n"
+        "• <b>Leaderboards:</b> Weekly standings and monthly championship updates\n"
+        "• <b>Community Announcements:</b> Workshops, webinars, and events\n\n"
+        "<i>All notifications are delivered directly to this chat. Keep notifications unmuted to never miss an update!</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=get_main_menu_keyboard(),
     )
@@ -1382,6 +1403,32 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
+async def setup_bot_commands(bot) -> None:
+    """Registers recommended workable bot commands and sets the chat menu button."""
+    commands = [
+        BotCommand("start", "Start the bot & main dashboard"),
+        BotCommand("challenge", "Browse & take challenges"),
+        BotCommand("leaderboard", "View leaderboard standings"),
+        BotCommand("notifications", "Community notification info"),
+        BotCommand("rules", "View scoring rules & speed bonus"),
+        BotCommand("archive", "Review past challenges & answers"),
+        BotCommand("feedback", "Send feedback to the core team"),
+        BotCommand("about", "About AWS Student Builder Group"),
+        BotCommand("help", "Help & guide"),
+    ]
+    await bot.set_my_commands(commands)
+    await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
+
+
+async def post_init(application) -> None:
+    """Post-initialization hook called by PTB after application startup."""
+    try:
+        await setup_bot_commands(application.bot)
+        logger.info("Bot commands menu and MenuButtonCommands registered successfully.")
+    except Exception as e:
+        logger.warning(f"Could not register bot commands menu: {e}")
+
+
 def create_application(token: str = None):
     """Factory function to build and configure the Telegram application instance."""
     bot_token = token or TELEGRAM_TOKEN
@@ -1405,12 +1452,19 @@ def create_application(token: str = None):
         pool_timeout=30.0,
         http_version="1.1",
     )
-    app = ApplicationBuilder().token(bot_token).request(request).build()
+    app = (
+        ApplicationBuilder()
+        .token(bot_token)
+        .request(request)
+        .post_init(post_init)
+        .build()
+    )
 
     # Core Navigation Commands
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("about", about_command))
+    app.add_handler(CommandHandler("notifications", notifications_command))
     app.add_handler(CommandHandler("feedback", feedback_command))
     app.add_handler(CommandHandler("support", feedback_command))
     app.add_handler(CommandHandler("cancel", cancel_command))

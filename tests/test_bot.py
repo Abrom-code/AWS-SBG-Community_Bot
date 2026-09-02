@@ -151,6 +151,14 @@ class FakeBot:
             self.deleted_messages.append((chat_id, mid))
         return True
 
+    async def set_my_commands(self, commands):
+        self.commands = commands
+        return True
+
+    async def set_chat_menu_button(self, menu_button=None, chat_id=None):
+        self.menu_button = menu_button
+        return True
+
 
 class FakeContext:
     def __init__(self):
@@ -1232,6 +1240,22 @@ def test_zero_question_challenge_remains_draft_and_independent_publishing(monkey
 
     ch_live = asyncio.run(get_challenge(ch_id))
     assert ch_live["status"] == "LIVE"
+
+
+def test_setup_bot_commands_and_notifications_command():
+    ctx = FakeContext()
+    asyncio.run(bot.setup_bot_commands(ctx.bot))
+    assert hasattr(ctx.bot, "commands")
+    assert any(c.command == "challenge" for c in ctx.bot.commands)
+    assert any(c.command == "notifications" for c in ctx.bot.commands)
+    assert any(c.command == "leaderboard" for c in ctx.bot.commands)
+    assert ctx.bot.menu_button is not None
+
+    up = FakeUpdate(user_id=12345, text="/notifications")
+    asyncio.run(bot.notifications_command(up, ctx))
+    assert len(up.message.reply_text_calls) == 1
+    assert "Community Notifications" in up.message.reply_text_calls[0]["text"]
+    assert up.message.reply_text_calls[0]["reply_markup"] is not None
 
 
 
