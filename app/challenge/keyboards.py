@@ -350,24 +350,24 @@ def get_admin_schedule_presets_keyboard(challenge_id: int = 0, duration_mins: in
     if challenge_id > 0:
         return InlineKeyboardMarkup(
             [
-                [InlineKeyboardButton("🟢 Go LIVE", callback_data=f"adm_cr_sched:{challenge_id}:now:7d")],
-                [InlineKeyboardButton("🕒 Publish for Future (Start Tomorrow)", callback_data=f"adm_cr_sched:{challenge_id}:24h:7d")],
+                [InlineKeyboardButton("Go Live", callback_data=f"adm_cr_sched:{challenge_id}:now:7d")],
+                [InlineKeyboardButton("Publish for Future (Start Tomorrow)", callback_data=f"adm_cr_sched:{challenge_id}:24h:7d")],
                 [
-                    InlineKeyboardButton("✍️ Custom Schedule", callback_data=f"adm_sched_custom:{challenge_id}"),
-                    InlineKeyboardButton("💾 Save as Draft", callback_data=f"adm_cr_sched:{challenge_id}:draft:0"),
+                    InlineKeyboardButton("Custom Schedule", callback_data=f"adm_sched_custom:{challenge_id}"),
+                    InlineKeyboardButton("Save as Draft", callback_data=f"adm_cr_sched:{challenge_id}:draft:0"),
                 ],
-                [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
+                [InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")],
             ]
         )
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🟢 Go LIVE", callback_data="adm_cr_sched:now:7d")],
-            [InlineKeyboardButton("🕒 Publish for Future (Start Tomorrow)", callback_data="adm_cr_sched:24h:7d")],
+            [InlineKeyboardButton("Go Live", callback_data="adm_cr_sched:now:7d")],
+            [InlineKeyboardButton("Publish for Future (Start Tomorrow)", callback_data="adm_cr_sched:24h:7d")],
             [
-                InlineKeyboardButton("✍️ Custom Schedule", callback_data="adm_cr_custom_date"),
-                InlineKeyboardButton("💾 Save as Draft", callback_data="adm_cr_sched:draft:0"),
+                InlineKeyboardButton("Custom Schedule", callback_data="adm_cr_custom_date"),
+                InlineKeyboardButton("Save as Draft", callback_data="adm_cr_sched:draft:0"),
             ],
-            [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
+            [InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")],
         ]
     )
 
@@ -448,11 +448,11 @@ def get_challenge_schedule_edit_keyboard(challenge_id: int) -> InlineKeyboardMar
     """Options for editing a challenge's start/end dates and schedule."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("🟢 Go LIVE", callback_data=f"adm_sched_set:{challenge_id}:now:7d")],
-            [InlineKeyboardButton("🕒 Publish for Future (Start Tomorrow)", callback_data=f"adm_sched_set:{challenge_id}:24h:7d")],
+            [InlineKeyboardButton("Go Live", callback_data=f"adm_sched_set:{challenge_id}:now:7d")],
+            [InlineKeyboardButton("Publish for Future (Start Tomorrow)", callback_data=f"adm_sched_set:{challenge_id}:24h:7d")],
             [
-                InlineKeyboardButton("✍️ Custom Schedule", callback_data=f"adm_sched_custom:{challenge_id}"),
-                InlineKeyboardButton("💾 Save as Draft", callback_data=f"adm_sched_set:{challenge_id}:draft:0"),
+                InlineKeyboardButton("Custom Schedule", callback_data=f"adm_sched_custom:{challenge_id}"),
+                InlineKeyboardButton("Save as Draft", callback_data=f"adm_sched_set:{challenge_id}:draft:0"),
             ],
             [InlineKeyboardButton("« Back to Challenge", callback_data=f"adm_manage:{challenge_id}")],
         ]
@@ -473,7 +473,7 @@ def get_challenge_timer_edit_keyboard(challenge_id: int) -> InlineKeyboardMarkup
                 InlineKeyboardButton("30 Mins", callback_data=f"adm_timer_set:{challenge_id}:30"),
                 InlineKeyboardButton("45 Mins", callback_data=f"adm_timer_set:{challenge_id}:45"),
             ],
-            [InlineKeyboardButton("✍️ Custom Duration", callback_data=f"adm_timer_custom:{challenge_id}")],
+            [InlineKeyboardButton("Custom Duration", callback_data=f"adm_timer_custom:{challenge_id}")],
             [InlineKeyboardButton("« Back to Challenge", callback_data=f"adm_manage:{challenge_id}")],
         ]
     )
@@ -504,7 +504,7 @@ def get_wizard_timer_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
                 InlineKeyboardButton("45 Mins", callback_data=f"adm_wiz_timer:{challenge_id}:45"),
             ],
             [
-                InlineKeyboardButton("✍️ Custom Duration", callback_data=f"adm_wiz_timer_custom:{challenge_id}"),
+                InlineKeyboardButton("Custom Duration", callback_data=f"adm_wiz_timer_custom:{challenge_id}"),
             ],
             [
                 InlineKeyboardButton("Cancel", callback_data="adm_panel")],
@@ -516,22 +516,22 @@ def get_wizard_questions_keyboard(challenge_id: int = 0, is_scheduled: bool = Fa
     """Post-creation question attachment and publishing options."""
     if challenge_id > 0:
         pub_btn = (
-            InlineKeyboardButton("🕒 Publish (Schedule)", callback_data=f"adm_pub:{challenge_id}:sched")
+            InlineKeyboardButton("Publish (Schedule)", callback_data=f"adm_pub:{challenge_id}:sched")
             if is_scheduled
-            else InlineKeyboardButton("🚀 Publish (Go LIVE)", callback_data=f"adm_pub:{challenge_id}:live")
+            else InlineKeyboardButton("Publish (Go Live)", callback_data=f"adm_pub:{challenge_id}:live")
         )
         return InlineKeyboardMarkup(
             [
                 [
-                    InlineKeyboardButton("➕ Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
-                    InlineKeyboardButton("📥 Import CSV", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
+                    InlineKeyboardButton("Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
+                    InlineKeyboardButton("Import CSV", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
                 ],
                 [
-                    InlineKeyboardButton("📋 View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
+                    InlineKeyboardButton("View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
                     pub_btn,
                 ],
                 [
-                    InlineKeyboardButton("⚙️ Manage Challenge", callback_data=f"adm_manage:{challenge_id}"),
+                    InlineKeyboardButton("Manage Challenge", callback_data=f"adm_manage:{challenge_id}"),
                 ],
             ]
         )
@@ -572,15 +572,15 @@ def get_challenge_questions_view_keyboard(challenge_id: int, questions: list, pa
     if total_pages > 1:
         nav = []
         if page > 1:
-            nav.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"adm_view_ch_q:{challenge_id}:{page-1}"))
+            nav.append(InlineKeyboardButton("« Prev", callback_data=f"adm_view_ch_q:{challenge_id}:{page-1}"))
         nav.append(InlineKeyboardButton(f"{page}/{total_pages}", callback_data="noop"))
         if page < total_pages:
-            nav.append(InlineKeyboardButton("Next ➡️", callback_data=f"adm_view_ch_q:{challenge_id}:{page+1}"))
+            nav.append(InlineKeyboardButton("Next »", callback_data=f"adm_view_ch_q:{challenge_id}:{page+1}"))
         buttons.append(nav)
 
     buttons.append([
-        InlineKeyboardButton("➕ Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
-        InlineKeyboardButton("📥 Import CSV", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
+        InlineKeyboardButton("Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
+        InlineKeyboardButton("Import CSV", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
     ])
     buttons.append([InlineKeyboardButton("« Back to Challenge", callback_data=f"adm_manage:{challenge_id}")])
     return InlineKeyboardMarkup(buttons)
@@ -591,35 +591,35 @@ def get_challenge_manage_keyboard(challenge_id: int, status: str) -> InlineKeybo
     buttons = []
     if status == "DRAFT":
         buttons.append([
-            InlineKeyboardButton("🚀 Go LIVE", callback_data=f"adm_pub:{challenge_id}:live"),
-            InlineKeyboardButton("🕒 Publish (Schedule)", callback_data=f"adm_pub:{challenge_id}:sched"),
+            InlineKeyboardButton("Go Live", callback_data=f"adm_pub:{challenge_id}:live"),
+            InlineKeyboardButton("Publish (Schedule)", callback_data=f"adm_pub:{challenge_id}:sched"),
         ])
     elif status == "SCHEDULED":
-        buttons.append([InlineKeyboardButton("🚀 Go LIVE Now", callback_data=f"adm_pub:{challenge_id}:live")])
+        buttons.append([InlineKeyboardButton("Go Live Now", callback_data=f"adm_pub:{challenge_id}:live")])
     elif status == "LIVE":
-        buttons.append([InlineKeyboardButton("🏁 End Challenge", callback_data=f"adm_end:{challenge_id}")])
+        buttons.append([InlineKeyboardButton("End Challenge", callback_data=f"adm_end:{challenge_id}")])
 
     if status not in ("ENDED", "CANCELLED"):
         buttons.append([
-            InlineKeyboardButton("➕ Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
-            InlineKeyboardButton("📥 Import CSV", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
+            InlineKeyboardButton("Add Question", callback_data=f"adm_add_q_to_ch:{challenge_id}"),
+            InlineKeyboardButton("Import CSV", callback_data=f"adm_import_csv_to_ch:{challenge_id}"),
         ])
         buttons.append([
-            InlineKeyboardButton("📋 View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
-            InlineKeyboardButton("✏️ Edit Title", callback_data=f"adm_edit_title:{challenge_id}"),
+            InlineKeyboardButton("View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
+            InlineKeyboardButton("Edit Title", callback_data=f"adm_edit_title:{challenge_id}"),
         ])
         buttons.append([
-            InlineKeyboardButton("⏰ Edit Schedule", callback_data=f"adm_edit_sched:{challenge_id}"),
-            InlineKeyboardButton("⏱️ Edit Time Limit", callback_data=f"adm_edit_timer:{challenge_id}"),
+            InlineKeyboardButton("Edit Schedule", callback_data=f"adm_edit_sched:{challenge_id}"),
+            InlineKeyboardButton("Edit Time Limit", callback_data=f"adm_edit_timer:{challenge_id}"),
         ])
         buttons.append([
-            InlineKeyboardButton("❌ Cancel Challenge", callback_data=f"adm_can:{challenge_id}"),
-            InlineKeyboardButton("🗑️ Delete Challenge", callback_data=f"adm_del_prompt:{challenge_id}"),
+            InlineKeyboardButton("Cancel Challenge", callback_data=f"adm_can:{challenge_id}"),
+            InlineKeyboardButton("Delete Challenge", callback_data=f"adm_del_prompt:{challenge_id}"),
         ])
     else:
         buttons.append([
-            InlineKeyboardButton("📋 View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
-            InlineKeyboardButton("🗑️ Delete Challenge", callback_data=f"adm_del_prompt:{challenge_id}"),
+            InlineKeyboardButton("View Questions", callback_data=f"adm_view_ch_q:{challenge_id}"),
+            InlineKeyboardButton("Delete Challenge", callback_data=f"adm_del_prompt:{challenge_id}"),
         ])
 
     buttons.append([InlineKeyboardButton("« All Challenges", callback_data="adm_list_ch")])

@@ -104,14 +104,14 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     chat = update.effective_chat
     if not user or not await is_admin_user(user.id, chat.id if chat else None, context.bot):
         await update.message.reply_text(
-            "⛔ <b>Access Denied:</b> This command is restricted to AWS SBG administrators.",
+            "<b>Access Denied:</b> This command is restricted to AWS SBG administrators.",
             parse_mode=ParseMode.HTML,
         )
         return
 
-    # Switch bottom buttons to admin menu (includes 🔙 Main Menu)
+    # Switch bottom buttons to admin menu (includes Main Menu)
     await update.message.reply_text(
-        "✦ <b>AWS SBG Challenge Admin Panel</b>\n\n"
+        "<b>AWS SBG Challenge Admin Panel</b>\n\n"
         "Welcome to the challenge operations center. Manage competitions, questions, "
         "leaderboards, and broadcasts using the admin menu below.",
         parse_mode=ParseMode.HTML,
@@ -129,16 +129,16 @@ async def handle_admin_callback(update: Update, context: ContextTypes.DEFAULT_TY
         if query:
             err_msg = str(e)
             if "HTTP implementation" in err_msg or "Event loop" in err_msg or "attached to a different loop" in err_msg:
-                user_alert = "⚠️ Temporary connection reset. Please tap again."
+                user_alert = "Temporary connection reset. Please tap again."
             else:
-                user_alert = f"⚠️ {err_msg[:60]}"
+                user_alert = f"Error: {err_msg[:60]}"
             try:
                 await query.answer(user_alert, show_alert=True)
             except Exception:
                 pass
             try:
                 await query.message.reply_text(
-                    f"⚠️ <b>An error occurred:</b> {html.escape(str(e))}\n\nPlease try again or check /admin.",
+                    f"<b>An error occurred:</b> {html.escape(str(e))}\n\nPlease try again or check /admin.",
                     parse_mode=ParseMode.HTML,
                     reply_markup=get_admin_panel_keyboard(),
                 )
@@ -154,7 +154,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     if not await is_admin_user(user.id, chat_id, context.bot):
         try:
-            await query.answer("⛔ Access Denied: Admin privileges required.", show_alert=True)
+            await query.answer("Access Denied: Admin privileges required.", show_alert=True)
         except Exception:
             pass
         return
@@ -163,11 +163,11 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     if data == "adm_panel":
         try:
-            await query.answer("👑 Loading Admin Dashboard...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         await query.edit_message_text(
-            "👑 <b>AWS SBG Challenge Admin Panel</b>\n\n"
+            "<b>Admin Console</b>\n\n"
             "Select an action below to manage challenges and questions:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_panel_keyboard(),
@@ -175,28 +175,31 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_list_ch":
         try:
-            await query.answer("📋 Loading challenges...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         from telegram import InlineKeyboardMarkup
         challenges = await list_challenges(limit=10)
         if not challenges:
             await query.edit_message_text(
-                "📋 <b>Challenges</b>\n\nNo challenges found. Click <b>Create Challenge</b> to start!",
+                "<b>Challenges</b>\n\nNo challenges found. Click <b>Create Challenge</b> to start.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_panel_keyboard(),
             )
             return
 
-        lines = ["📋 <b>Active & Recent Challenges:</b>\n"]
+        lines = [
+            "<b>Challenges</b>\n",
+            "<blockquote>Select a challenge below to edit parameters, link questions, or update lifecycle status.</blockquote>\n",
+        ]
         buttons = []
         for ch in challenges:
-            status_icon = "🟢" if ch["status"] == "LIVE" else "🕒" if ch["status"] == "SCHEDULED" else "✔️" if ch["status"] == "ENDED" else "🛠️"
             title = html.escape(ch["title"])
-            lines.append(f"{status_icon} <b>#{ch['id']} {title}</b> — <i>{ch['status']}</i>")
-            buttons.append([InlineKeyboardButton(f"{status_icon} Manage #{ch['id']} {title[:20]}", callback_data=f"adm_manage:{ch['id']}")])
+            status = ch["status"]
+            lines.append(f"• <b>#{ch['id']} {title}</b> [{status}]")
+            buttons.append([InlineKeyboardButton(f"Manage #{ch['id']} {title[:22]}", callback_data=f"adm_manage:{ch['id']}")])
 
-        buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
+        buttons.append([InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")])
         await query.edit_message_text(
             "\n".join(lines),
             parse_mode=ParseMode.HTML,
@@ -205,13 +208,13 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_manage:") or data.startswith("adm_manage_ch:"):
         try:
-            await query.answer("⚙️ Loading challenge settings...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         if not ch:
-            await query.answer("⚠️ Challenge not found.", show_alert=True)
+            await query.answer("Challenge not found.", show_alert=True)
             return
 
         questions = await get_challenge_questions(ch_id)
@@ -224,14 +227,14 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         exam_mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
 
         manage_text = (
-            f"⚙️ <b>Manage Challenge #{ch_id}</b>\n\n"
-            f"⚡ <b>Title:</b> {title}\n"
-            f"🏗️ <b>Category:</b> {category}\n"
-            f"🚦 <b>Current Status:</b> <code>{status}</code>\n"
-            f"⏳ <b>Starts At:</b> <code>{starts}</code>\n"
-            f"🏁 <b>Ends At:</b> <code>{ends}</code>\n"
-            f"⏱️ <b>Exam Time Limit:</b> {exam_mins} minutes\n"
-            f"📊 <b>Attached Questions:</b> <code>{len(questions)}</code>\n\n"
+            f"<b>Manage Challenge · #{ch_id}</b>\n\n"
+            f"<blockquote><b>{title}</b>\n"
+            f"Category: {category}</blockquote>\n\n"
+            f"• <b>Status:</b> <code>{status}</code>\n"
+            f"• <b>Exam Time Limit:</b> {exam_mins} minutes\n"
+            f"• <b>Attached Questions:</b> <code>{len(questions)}</code>\n"
+            f"• <b>Starts At:</b> <code>{starts}</code>\n"
+            f"• <b>Ends At:</b> <code>{ends}</code>\n\n"
             f"<i>Select an action below to update or change status:</i>"
         )
         await query.edit_message_text(
@@ -242,18 +245,18 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_link_q:"):
         try:
-            await query.answer("🔗 Linking questions from bank...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
         linked = await link_questions_to_challenge(ch_id)
         ch = await get_challenge(ch_id)
         status = ch["status"] if ch else "LIVE"
-        await query.answer(f"✅ Linked questions! Total: {linked}", show_alert=True)
+        await query.answer(f"Linked questions: {linked}", show_alert=True)
         questions = await get_challenge_questions(ch_id)
         await query.edit_message_text(
-            f"✅ <b>Question Bank Linked to Challenge #{ch_id}!</b>\n\n"
-            f"📊 <b>Total Questions Now Attached:</b> <code>{len(questions)}</code>\n\n"
+            f"<b>Question Bank Linked to Challenge #{ch_id}</b>\n\n"
+            f"• <b>Total Questions Attached:</b> <code>{len(questions)}</code>\n\n"
             f"Participants will be tested on these randomized questions.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
@@ -261,12 +264,12 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_cr_custom_date":
         try:
-            await query.answer("✍️ Opening date scheduler...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         await set_user_state(user.id, "WAITING_FOR_ADMIN_SCHEDULE")
         await query.edit_message_text(
-            "📅 <b>Set Custom Challenge Schedule</b>\n\n"
+            "<b>Set Custom Challenge Schedule</b>\n\n"
             "Please type and send the start and end date/time in one of these formats:\n\n"
             "• <code>2026-09-05 14:00 to 2026-09-12 18:00</code>\n"
             "• <code>2026-09-05 to 2026-09-12</code>\n"
@@ -277,32 +280,31 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_qbank":
         try:
-            await query.answer("📚 Loading Question Bank...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         questions = await list_questions(limit=10)
         count = len(questions)
         if not questions:
             await query.edit_message_text(
-                "❓ <b>AWS Question Bank</b>\n\n"
-                "📊 <b>Active Questions:</b> <code>0</code>\n\n"
+                "<b>AWS Question Bank</b>\n\n"
+                "• <b>Active Questions:</b> <code>0</code>\n\n"
                 "<i>No questions found in repository yet.</i>\n\n"
-                "💡 <b>How to Add Questions:</b>\n"
-                "Questions belong directly to weekly topic challenges.\n"
-                "Tap <b>« All Challenges</b> below to create a challenge or add questions to an existing one!",
+                "<blockquote>Questions belong directly to weekly topic challenges. "
+                "Tap <b>« All Challenges</b> below to create a challenge or add questions.</blockquote>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_question_bank_actions_keyboard(),
             )
             return
 
-        lines = [f"❓ <b>AWS Question Bank Repository</b> — <code>{count} questions shown</code>:\n"]
+        lines = [f"<b>AWS Question Bank Repository</b> · <code>{count} questions shown</code>:\n"]
         for idx, q in enumerate(questions[:8]):
             q_t = html.escape(q.get("question_text", "Untitled")[:42])
             cat = html.escape(q.get("category", "General"))
             c_opt = q.get("correct_option", "A")
             lines.append(f"<b>{idx+1}.</b> [{cat}] {q_t}... <i>(Ans: {c_opt})</i>")
 
-        lines.append("\n💡 <i>To add new questions or import CSV, select a challenge in <b>« All Challenges</b>.</i>")
+        lines.append("\n<i>To add new questions or import CSV, select a challenge in <b>« All Challenges</b>.</i>")
         await query.edit_message_text(
             "\n".join(lines),
             parse_mode=ParseMode.HTML,
@@ -311,16 +313,17 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_create_ch":
         try:
-            await query.answer("➕ Opening Challenge Wizard...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         await set_user_state(user.id, "WAITING_FOR_CHALLENGE_TITLE")
         await query.edit_message_text(
-            "✨ <b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
-            "📌 <b>Please enter the Title for this challenge:</b>\n\n"
+            "<b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
+            "Please enter the Title for this challenge:\n\n"
             "<i>Example:</i>\n"
             "<code>AWS Solutions Architect Associate Sprint</code>\n\n"
-            "💡 <i>(Power users can also send all at once: <code>Title | Description | Duration</code>)</i>\n\n"
+            "<blockquote>Tip: Power users can send all in one line:\n"
+            "<code>Title | Description | Duration</code></blockquote>\n\n"
             "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
         )
@@ -337,10 +340,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         category = ch.get("category", "Architecture") if ch else "Architecture"
         desc = ch.get("description", "Weekly test on AWS core services and cloud architecture patterns.") if ch else "Weekly test on AWS core services and cloud architecture patterns."
         await query.edit_message_text(
-            f"✨ <b>Create Challenge Wizard (Step 3/4: Exam Time Limit)</b>\n\n"
-            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
-            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n\n"
-            f"⏱️ <b>Select the allowed exam time for community members:</b>\n"
+            f"<b>Create Challenge Wizard (Step 3/4: Exam Time Limit)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"<i>{html.escape(desc)}</i></blockquote>\n\n"
+            f"Select the allowed exam time for community members:\n"
             f"<i>(Timer begins when participant starts the challenge)</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_timer_keyboard(ch_id),
@@ -359,11 +362,11 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
         desc = ch.get("description", "") if ch else ""
         await query.edit_message_text(
-            f"✨ <b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
-            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
-            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{mins} Minutes</code>\n\n"
-            f"⏰ <b>Select Start Schedule & Deadline:</b>",
+            f"<b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"<i>{html.escape(desc)}</i></blockquote>\n\n"
+            f"• <b>Exam Time Limit:</b> <code>{mins} Minutes</code>\n\n"
+            f"Select start schedule & deadline:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_schedule_presets_keyboard(ch_id, mins),
         )
@@ -376,7 +379,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         ch_id = int(data.split(":")[1])
         await set_user_state(user.id, f"WAITING_FOR_CHALLENGE_TIMER:{ch_id}")
         await query.edit_message_text(
-            f"⏱️ <b>Custom Exam Time Limit for Challenge #{ch_id}</b>\n\n"
+            f"<b>Custom Exam Time Limit for Challenge #{ch_id}</b>\n\n"
             "Please send the total allowed exam time in minutes (e.g. <code>12</code>, <code>25</code>, <code>60</code>):\n\n"
             "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
@@ -384,15 +387,15 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_del_prompt:"):
         try:
-            await query.answer("🗑️ Opening delete confirmation...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
         await query.edit_message_text(
-            f"⚠️ <b>Delete Challenge #{ch_id}?</b>\n\n"
-            f"⚡ <b>Title:</b> {title}\n\n"
+            f"<b>Delete Challenge #{ch_id}</b>\n\n"
+            f"<blockquote><b>{title}</b></blockquote>\n\n"
             f"Are you sure you want to permanently delete this challenge and all its participant submissions?",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_delete_confirm_keyboard(ch_id),
@@ -400,27 +403,27 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_del_conf:"):
         try:
-            await query.answer("🗑️ Deleting challenge...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
         await delete_challenge(ch_id)
         await query.edit_message_text(
-            f"🗑️ <b>Challenge #{ch_id} has been permanently deleted.</b>",
+            f"<b>Challenge #{ch_id} has been permanently deleted.</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_panel_keyboard(),
         )
 
     elif data.startswith("adm_edit_title:"):
         try:
-            await query.answer("✏️ Opening title editor...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
         context.user_data["edit_ch_id"] = ch_id
         await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_TITLE")
         await query.edit_message_text(
-            f"✏️ <b>Edit Challenge #{ch_id}</b>\n\n"
+            f"<b>Edit Challenge #{ch_id}</b>\n\n"
             f"Please send the new title and category (e.g. <code>AWS Cloud Essentials | General</code>):\n\n"
             f"<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
@@ -428,7 +431,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_edit_sched:"):
         try:
-            await query.answer("📅 Loading schedule options...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
@@ -439,10 +442,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         status = ch.get("status", "DRAFT")
 
         await query.edit_message_text(
-            f"⏰ <b>Edit Schedule for Challenge #{ch_id} ({title})</b>\n\n"
-            f"🚦 <b>Current Status:</b> {status}\n"
-            f"🟢 <b>Starts At:</b> <code>{starts_str}</code>\n"
-            f"🏁 <b>Ends At:</b> <code>{ends_str}</code>\n\n"
+            f"<b>Edit Schedule for Challenge #{ch_id} ({title})</b>\n\n"
+            f"• <b>Current Status:</b> <code>{status}</code>\n"
+            f"• <b>Starts At:</b> <code>{starts_str}</code>\n"
+            f"• <b>Ends At:</b> <code>{ends_str}</code>\n\n"
             f"Select a preset schedule below or enter custom start & end dates:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_schedule_edit_keyboard(ch_id),
@@ -473,7 +476,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         elif start_opt in ("24h", "tomorrow", "1h"):
             if not questions:
                 try:
-                    await query.answer("⚠️ Please attach at least 1 question before scheduling!", show_alert=True)
+                    await query.answer("Please attach at least 1 question before scheduling.", show_alert=True)
                 except Exception:
                     pass
                 return
@@ -492,12 +495,12 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
         await query.edit_message_text(
-            f"⚙️ <b>Manage Challenge #{ch_id}</b>\n\n"
-            f"⚡ <b>Title:</b> {title}\n"
-            f"🏗️ <b>Category:</b> {html.escape(ch.get('category', 'Architecture'))}\n"
-            f"🚦 <b>Status:</b> {status}\n"
-            f"🟢 <b>Starts:</b> <code>{starts_at or 'Unscheduled'}</code>\n"
-            f"🏁 <b>Ends:</b> <code>{ends_at or 'Unscheduled'}</code>\n\n"
+            f"<b>Manage Challenge · #{ch_id}</b>\n\n"
+            f"<blockquote><b>{title}</b>\n"
+            f"Category: {html.escape(ch.get('category', 'Architecture'))}</blockquote>\n\n"
+            f"• <b>Status:</b> <code>{status}</code>\n"
+            f"• <b>Starts:</b> <code>{starts_at or 'Unscheduled'}</code>\n"
+            f"• <b>Ends:</b> <code>{ends_at or 'Unscheduled'}</code>\n\n"
             f"Schedule has been updated.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
@@ -505,14 +508,14 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_sched_custom:"):
         try:
-            await query.answer("✍️ Opening custom schedule editor...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
         context.user_data["edit_ch_id"] = ch_id
         await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE")
         await query.edit_message_text(
-            f"✍️ <b>Custom Schedule for Challenge #{ch_id}</b>\n\n"
+            f"<b>Custom Schedule for Challenge #{ch_id}</b>\n\n"
             "Please send the <b>Start Date/Time to End Date/Time</b>:\n\n"
             "<code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
             "<i>(Type /cancel to abort)</i>",
@@ -521,7 +524,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_edit_timer:"):
         try:
-            await query.answer("⏱️ Loading timer settings...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
@@ -531,8 +534,8 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
 
         await query.edit_message_text(
-            f"⏱️ <b>Edit Exam Time Limit for Challenge #{ch_id} ({title})</b>\n\n"
-            f"⏳ <b>Current Allowed Time:</b> <code>{mins} minutes total</code>\n\n"
+            f"<b>Edit Exam Time Limit for Challenge #{ch_id} ({title})</b>\n\n"
+            f"• <b>Current Allowed Time:</b> <code>{mins} minutes total</code>\n\n"
             f"Select a preset duration or enter custom minutes:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_timer_edit_keyboard(ch_id),
@@ -540,7 +543,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_timer_set:"):
         try:
-            await query.answer("⏱️ Updating duration...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         parts = data.split(":")
@@ -554,10 +557,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
         status = ch.get("status", "DRAFT")
         await query.edit_message_text(
-            f"⚙️ <b>Manage Challenge #{ch_id}</b>\n\n"
-            f"⚡ <b>Title:</b> {title}\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{mins} minutes total</code>\n"
-            f"🚦 <b>Status:</b> {status}\n\n"
+            f"<b>Manage Challenge · #{ch_id}</b>\n\n"
+            f"<blockquote><b>{title}</b></blockquote>\n\n"
+            f"• <b>Exam Time Limit:</b> <code>{mins} minutes total</code>\n"
+            f"• <b>Status:</b> <code>{status}</code>\n\n"
             f"Exam duration updated successfully.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
@@ -565,14 +568,14 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_timer_custom:"):
         try:
-            await query.answer("✍️ Opening custom timer editor...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
         context.user_data["edit_ch_id"] = ch_id
         await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_TIMER")
         await query.edit_message_text(
-            f"✍️ <b>Custom Exam Time Limit for Challenge #{ch_id}</b>\n\n"
+            f"<b>Custom Exam Time Limit for Challenge #{ch_id}</b>\n\n"
             "Please send the total allowed exam time in minutes (e.g. <code>12</code> or <code>25</code>):\n\n"
             "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
@@ -580,7 +583,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_cr_sched:"):
         try:
-            await query.answer("⚙️ Configuring challenge schedule...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         parts = data.split(":")
@@ -598,17 +601,17 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         if start_opt == "now":
             starts_at = now_dt.isoformat()
             ends_at = (now_dt + timedelta(days=7)).isoformat()
-            schedule_note = "🟢 <b>Schedule:</b> Ready to Go LIVE (Ends in 7 days — Pending questions)"
+            schedule_note = "• <b>Schedule:</b> Ready to Go Live (Ends in 7 days — Pending questions)"
         elif start_opt in ("24h", "tomorrow", "1h"):
             s_dt = now_dt + timedelta(days=1)
             starts_at = s_dt.isoformat()
             ends_at = (s_dt + timedelta(days=7)).isoformat()
             is_scheduled = True
-            schedule_note = "🕒 <b>Schedule:</b> Scheduled for Tomorrow (Starts in 24 hours — Pending questions)"
+            schedule_note = "• <b>Schedule:</b> Scheduled for Tomorrow (Starts in 24 hours — Pending questions)"
         else:
             starts_at = None
             ends_at = None
-            schedule_note = "🛠️ <b>Schedule:</b> DRAFT (Unscheduled)"
+            schedule_note = "• <b>Schedule:</b> DRAFT (Unscheduled)"
 
         # Challenge ALWAYS remains in DRAFT until questions are attached and it is published!
         status = "DRAFT"
@@ -645,14 +648,13 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             q_count = 0
 
         await query.edit_message_text(
-            f"✅ <b>Challenge #{ch_id} Configured! (Add Questions)</b>\n\n"
-            f"⚡ <b>Title:</b> {html.escape(title)}\n"
-            f"🏗️ <b>Category:</b> {html.escape(category)}\n"
+            f"<b>Challenge #{ch_id} Configured! (Add Questions)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"Category: {html.escape(category)}</blockquote>\n\n"
             f"{schedule_note}\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
-            f"📊 <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"👉 <b>Next step: Attach questions to this challenge.</b>\n"
+            f"• <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
+            f"• <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
+            f"<b>Next step: Attach questions to this challenge.</b>\n"
             f"Add them one-by-one or bulk import via CSV file below:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_questions_keyboard(ch_id, is_scheduled=is_scheduled),
@@ -660,7 +662,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_add_q_to_ch:"):
         try:
-            await query.answer("✍️ Opening Question Editor...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
@@ -669,7 +671,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         context.user_data["target_ch_id"] = ch_id
         await set_user_state(user.id, f"WAITING_FOR_CHALLENGE_SINGLE_QUESTION:{ch_id}")
         await query.edit_message_text(
-            f"✍️ <b>Add Question Specifically for Challenge #{ch_id} ({title})</b>\n\n"
+            f"<b>Add Question Specifically for Challenge #{ch_id} ({title})</b>\n\n"
             "Please send the question details in the following format:\n\n"
             "<code>What is Amazon DynamoDB?\n"
             "A: Relational database\n"
@@ -686,7 +688,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_import_csv_to_ch:"):
         try:
-            await query.answer("📥 Opening CSV Importer...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
@@ -695,7 +697,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         context.user_data["target_ch_id"] = ch_id
         await set_user_state(user.id, f"WAITING_FOR_CHALLENGE_CSV:{ch_id}")
         await query.edit_message_text(
-            f"📥 <b>Import Questions for Challenge #{ch_id} ({title})</b>\n\n"
+            f"<b>Import Questions for Challenge #{ch_id} ({title})</b>\n\n"
             "You can:\n"
             "1. <b>Paste raw CSV lines</b> directly as a message.\n"
             "2. Or <b>upload a .csv file</b> as a Telegram document.\n\n"
@@ -709,7 +711,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_view_ch_q:"):
         try:
-            await query.answer("📋 Loading attached questions...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         parts = data.split(":")
@@ -721,9 +723,9 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         questions = await get_challenge_questions(ch_id)
         if not questions:
             await query.edit_message_text(
-                f"📋 <b>Questions in Challenge #{ch_id} ({title})</b>\n\n"
+                f"<b>Questions in Challenge #{ch_id} ({title})</b>\n\n"
                 "<i>No questions attached to this challenge yet.</i>\n\n"
-                "Tap <b>➕ Add Question</b> or <b>📥 Import CSV</b> below to add questions!",
+                "Tap <b>Add Question</b> or <b>Import CSV</b> below to add questions.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_challenge_questions_view_keyboard(ch_id, [], page=1),
             )
@@ -736,8 +738,8 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         page_q = questions[start_idx : start_idx + page_size]
 
         lines = [
-            f"📋 <b>Challenge #{ch_id} Questions</b> <i>(Page {page}/{total_pages} • {len(questions)} Total)</i>\n"
-            f"⚡ <b>Title:</b> {title}\n"
+            f"<b>Challenge #{ch_id} Questions</b> <i>(Page {page}/{total_pages} · {len(questions)} Total)</i>\n"
+            f"<blockquote><b>{title}</b></blockquote>\n"
         ]
 
         for offset, q in enumerate(page_q):
@@ -755,16 +757,15 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             exp = html.escape(q.get("explanation", "") or "No explanation provided.")
 
             lines.append(
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🧩 <b>Question {idx+1}</b> <i>(ID: #{q_id})</i>\n"
-                f"❓ <b>{q_t}</b>\n\n"
-                f"<b>A.</b> {opt_a}\n"
-                f"<b>B.</b> {opt_b}\n"
-                f"<b>C.</b> {opt_c}\n"
-                f"<b>D.</b> {opt_d}\n\n"
-                f"🎯 <b>Correct Answer:</b> Option {c_opt}\n"
-                f"🏷️ <b>Category:</b> {cat} | <b>Difficulty:</b> {diff} | <b>Points:</b> {pts} pts\n"
-                f"💡 <b>Explanation:</b> {exp}\n"
+                f"<b>Question {idx+1}</b> · <code>ID #{q_id}</code>\n"
+                f"<b>{q_t}</b>\n\n"
+                f"A. {opt_a}\n"
+                f"B. {opt_b}\n"
+                f"C. {opt_c}\n"
+                f"D. {opt_d}\n\n"
+                f"• <b>Correct Answer:</b> Option {c_opt}\n"
+                f"• <b>Category:</b> {cat} | <b>Difficulty:</b> {diff} | <b>Points:</b> {pts} pts\n"
+                f"• <b>Explanation:</b> {exp}\n"
             )
 
         await query.edit_message_text(
@@ -775,7 +776,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_rm_ch_q:"):
         try:
-            await query.answer("🗑️ Removing question...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         parts = data.split(":")
@@ -790,9 +791,9 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
         if not questions:
             await query.edit_message_text(
-                f"📋 <b>Questions in Challenge #{ch_id} ({title})</b>\n\n"
+                f"<b>Questions in Challenge #{ch_id} ({title})</b>\n\n"
                 "<i>No questions attached to this challenge yet.</i>\n\n"
-                "Tap <b>➕ Add Question</b> or <b>📥 Import CSV</b> below to add questions!",
+                "Tap <b>Add Question</b> or <b>Import CSV</b> below to add questions.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_challenge_questions_view_keyboard(ch_id, [], page=1),
             )
@@ -805,8 +806,8 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         page_q = questions[start_idx : start_idx + page_size]
 
         lines = [
-            f"📋 <b>Challenge #{ch_id} Questions</b> <i>(Page {page}/{total_pages} • {len(questions)} Total)</i>\n"
-            f"⚡ <b>Title:</b> {title}\n"
+            f"<b>Challenge #{ch_id} Questions</b> <i>(Page {page}/{total_pages} · {len(questions)} Total)</i>\n"
+            f"<blockquote><b>{title}</b></blockquote>\n"
         ]
 
         for offset, q in enumerate(page_q):
@@ -824,16 +825,15 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             exp = html.escape(q.get("explanation", "") or "No explanation provided.")
 
             lines.append(
-                f"━━━━━━━━━━━━━━━━━━━━\n"
-                f"🧩 <b>Question {idx+1}</b> <i>(ID: #{qid})</i>\n"
-                f"❓ <b>{q_t}</b>\n\n"
-                f"<b>A.</b> {opt_a}\n"
-                f"<b>B.</b> {opt_b}\n"
-                f"<b>C.</b> {opt_c}\n"
-                f"<b>D.</b> {opt_d}\n\n"
-                f"🎯 <b>Correct Answer:</b> Option {c_opt}\n"
-                f"🏷️ <b>Category:</b> {cat} | <b>Difficulty:</b> {diff} | <b>Points:</b> {pts} pts\n"
-                f"💡 <b>Explanation:</b> {exp}\n"
+                f"<b>Question {idx+1}</b> · <code>ID #{qid}</code>\n"
+                f"<b>{q_t}</b>\n\n"
+                f"A. {opt_a}\n"
+                f"B. {opt_b}\n"
+                f"C. {opt_c}\n"
+                f"D. {opt_d}\n\n"
+                f"• <b>Correct Answer:</b> Option {c_opt}\n"
+                f"• <b>Category:</b> {cat} | <b>Difficulty:</b> {diff} | <b>Points:</b> {pts} pts\n"
+                f"• <b>Explanation:</b> {exp}\n"
             )
 
         await query.edit_message_text(
@@ -851,7 +851,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         if not questions:
             action_desc = "scheduling" if pub_mode == "sched" else "going LIVE"
             try:
-                await query.answer(f"⚠️ Please attach at least 1 question before {action_desc}!", show_alert=True)
+                await query.answer(f"Please attach at least 1 question before {action_desc}.", show_alert=True)
             except Exception:
                 pass
             return
@@ -863,7 +863,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
         if pub_mode == "sched":
             try:
-                await query.answer("🕒 Scheduling challenge...", show_alert=False)
+                await query.answer()
             except Exception:
                 pass
             starts_dt = to_utc_datetime(ch.get("starts_at")) if ch else None
@@ -878,17 +878,17 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             await update_challenge_status(ch_id, "SCHEDULED")
 
             await query.edit_message_text(
-                f"🕒 <b>Challenge #{ch_id} has been SCHEDULED!</b>\n\n"
-                f"📊 <b>Questions Attached:</b> <code>{len(questions)}</code>\n"
-                f"🕒 <b>Opens:</b> <code>{starts_iso}</code>\n"
-                f"🏁 <b>Ends:</b> <code>{ends_iso}</code>\n\n"
+                f"<b>Challenge #{ch_id} Scheduled</b>\n\n"
+                f"• <b>Questions Attached:</b> <code>{len(questions)}</code>\n"
+                f"• <b>Opens:</b> <code>{starts_iso}</code>\n"
+                f"• <b>Ends:</b> <code>{ends_iso}</code>\n\n"
                 f"Challenge will automatically go LIVE at the scheduled opening time.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_challenge_manage_keyboard(ch_id, "SCHEDULED"),
             )
         else:
             try:
-                await query.answer("🚀 Publishing challenge...", show_alert=False)
+                await query.answer()
             except Exception:
                 pass
             ends_dt = to_utc_datetime(ch.get("ends_at")) if ch else None
@@ -901,10 +901,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             await update_challenge_status(ch_id, "LIVE")
 
             await query.edit_message_text(
-                f"🚀 <b>Challenge #{ch_id} is now LIVE!</b>\n\n"
-                f"📊 <b>Questions:</b> <code>{len(questions)}</code>\n"
-                f"🟢 <b>Starts:</b> <code>{now_iso}</code>\n"
-                f"🏁 <b>Ends:</b> <code>{end_iso}</code>\n\n"
+                f"<b>Challenge #{ch_id} is now LIVE!</b>\n\n"
+                f"• <b>Questions:</b> <code>{len(questions)}</code>\n"
+                f"• <b>Starts:</b> <code>{now_iso}</code>\n"
+                f"• <b>Ends:</b> <code>{end_iso}</code>\n\n"
                 f"Community members can now participate using /challenge.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_challenge_manage_keyboard(ch_id, "LIVE"),
@@ -913,7 +913,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
     elif data.startswith("adm_end:"):
         ch_id = int(data.split(":")[1])
         try:
-            await query.answer("🏁 Concluding challenge...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         from datetime import datetime, timezone
@@ -921,7 +921,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         await update_challenge_details(ch_id, ends_at=now_iso)
         await update_challenge_status(ch_id, "ENDED")
         await query.edit_message_text(
-            f"🏁 <b>Challenge #{ch_id} has been ENDED.</b>\n\n"
+            f"<b>Challenge #{ch_id} has Ended</b>\n\n"
             f"Final leaderboard standings are now locked and review answers are available.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, "ENDED"),
@@ -930,7 +930,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
     elif data.startswith("adm_can:"):
         ch_id = int(data.split(":")[1])
         try:
-            await query.answer("❌ Cancelling challenge...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         from datetime import datetime, timezone
@@ -938,14 +938,14 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         await update_challenge_details(ch_id, ends_at=now_iso)
         await update_challenge_status(ch_id, "CANCELLED")
         await query.edit_message_text(
-            f"❌ <b>Challenge #{ch_id} has been CANCELLED.</b>",
+            f"<b>Challenge #{ch_id} has been Cancelled</b>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, "CANCELLED"),
         )
 
     elif data == "adm_report":
         try:
-            await query.answer("📊 Generating Monthly Report...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
 
@@ -966,31 +966,30 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
         champs_text = ""
         if champions:
-            medals = ["🥇", "🥈", "🥉"]
-            for idx, c in enumerate(champions[:3]):
+            for idx, c in enumerate(champions[:3], 1):
                 name = html.escape(c["user_name"])
                 uname = f" (@{html.escape(c['username'])})" if c.get("username") else ""
-                champs_text += f"• {medals[idx]} <b>{name}</b>{uname} — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
+                champs_text += f"• {idx}. <b>{name}</b>{uname} — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
         else:
             champs_text = "• <i>No completed challenge attempts recorded yet this month.</i>\n"
 
         report_card = (
-            f"📊 <b>AWS Student Builder Monthly Activity Report</b>\n"
-            f"📅 <b>Period:</b> {month}\n\n"
-            f"👥 <b>Community Engagement:</b>\n"
+            f"<b>AWS Student Builder Monthly Activity Report</b>\n"
+            f"<b>Period:</b> {month}\n\n"
+            f"<b>Community Engagement:</b>\n"
             f"• Registered Bot Members: <code>{users}</code>\n"
             f"• Feedback Tickets Received: <code>{feedbacks}</code>\n"
             f"• Staff Replies Delivered: <code>{replies}</code>\n\n"
-            f"⚡ <b>Challenges & Competitions:</b>\n"
+            f"<b>Challenges & Competitions:</b>\n"
             f"• Total Challenges: <code>{challenges}</code>\n"
             f"• Total Submissions: <code>{attempts}</code>\n"
             f"• Community Accuracy: <code>{accuracy}%</code> ({correct}/{answered})\n"
             f"• Average Score: <code>{avg_score} pts</code>\n"
             f"• Total Points Earned: <code>{total_score} pts</code>\n"
             f"• Active Questions in Bank: <code>{questions}</code>\n\n"
-            f"🏆 <b>Top 3 Builders of the Month:</b>\n"
+            f"<b>Top 3 Builders of the Month:</b>\n"
             f"{champs_text}\n"
-            f"<i>AWS Student Builder Group • AASTU</i>"
+            f"<i>AWS Student Builder Group · AASTU</i>"
         )
         await query.edit_message_text(
             report_card,
@@ -1000,13 +999,13 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_leaderboards":
         try:
-            await query.answer("🏆 Loading leaderboards...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         active_ch = await get_active_challenge()
         active_ch_id = active_ch["id"] if active_ch else 0
         await query.edit_message_text(
-            "🏆 <b>Admin Leaderboard & Builder Standings</b>\n\n"
+            "<b>Admin Leaderboard & Builder Standings</b>\n\n"
             "View live participant scores, ranks, and monthly cumulative standings:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_leaderboard_keyboard(active_ch_id),
@@ -1014,7 +1013,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_lb_view:"):
         try:
-            await query.answer("🏆 Fetching builder rankings...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         parts = data.split(":")
@@ -1029,26 +1028,25 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
             if not entries:
                 text = (
-                    f"🏆 <b>Active Challenge Leaderboard</b>\n"
-                    f"⚡ <b>{title}</b>\n\n"
+                    f"<b>Active Challenge Leaderboard</b>\n"
+                    f"<blockquote><b>{title}</b></blockquote>\n\n"
                     f"<i>No completed submissions yet.</i>"
                 )
             else:
                 lines = [
-                    f"🏆 <b>Active Challenge Leaderboard</b>",
-                    f"⚡ <b>{title}</b>\n",
-                    f"👥 <b>Total Completed Participants:</b> <code>{lb_data['total_count']}</code>\n",
+                    f"<b>Active Challenge Leaderboard</b>",
+                    f"<blockquote><b>{title}</b></blockquote>\n",
+                    f"• <b>Total Completed Participants:</b> <code>{lb_data['total_count']}</code>\n",
                 ]
-                medals = {1: "🥇", 2: "🥈", 3: "🥉"}
                 for row in entries:
-                    rank_icon = medals.get(row["rank"], f"<b>{row['rank']}.</b>")
+                    rank_str = f"<b>{row['rank']}.</b>"
                     name = html.escape(row["user_name"])
                     uname = f" (@{html.escape(row['username'])})" if row.get("username") else ""
                     uid = row["telegram_user_id"]
                     score = row["score"]
                     correct = row["correct_count"]
                     total = row["answered_count"]
-                    lines.append(f"{rank_icon} <b>{name}</b>{uname} [<code>{uid}</code>] — <b>{score} pts</b> ({correct}/{total} ✅)")
+                    lines.append(f"{rank_str} <b>{name}</b>{uname} [<code>{uid}</code>] — <b>{score} pts</b> ({correct}/{total} correct)")
                 text = "\n".join(lines)
         else:
             lb_data = await get_monthly_leaderboard(limit=20)
@@ -1056,95 +1054,94 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
             if not entries:
                 text = (
-                    f"📅 <b>Monthly Season Championship Standings</b>\n\n"
-                    f"<i>No completed challenge data recorded yet this season.</i>"
+                    "<b>Monthly Season Championship Standings</b>\n\n"
+                    "<i>No completed challenge data recorded yet this season.</i>"
                 )
             else:
                 lines = [
-                    f"📅 <b>Monthly Season Championship Standings</b>",
-                    f"🏆 <b>Top Builders of the Month</b>\n",
-                    f"👥 <b>Total Ranked Builders:</b> <code>{lb_data['total_count']}</code>\n",
+                    "<b>Monthly Season Championship Standings</b>",
+                    "<b>Top Builders of the Month</b>\n",
+                    f"• <b>Total Ranked Builders:</b> <code>{lb_data['total_count']}</code>\n",
                 ]
-                medals = {1: "🥇", 2: "🥈", 3: "🥉"}
                 for row in entries:
-                    rank_icon = medals.get(row["rank"], f"<b>{row['rank']}.</b>")
+                    rank_str = f"<b>{row['rank']}.</b>"
                     name = html.escape(row["user_name"])
                     uname = f" (@{html.escape(row['username'])})" if row.get("username") else ""
                     uid = row["telegram_user_id"]
                     total_pts = row["total_score"]
                     completed = row["challenges_completed"]
-                    lines.append(f"{rank_icon} <b>{name}</b>{uname} [<code>{uid}</code>] — <b>{total_pts} pts</b> ({completed} quizzes)")
+                    lines.append(f"{rank_str} <b>{name}</b>{uname} [<code>{uid}</code>] — <b>{total_pts} pts</b> ({completed} quizzes)")
                 text = "\n".join(lines)
 
         from telegram import InlineKeyboardMarkup
         back_kb = InlineKeyboardMarkup([
-            [InlineKeyboardButton("🔙 Back to Leaderboards", callback_data="adm_leaderboards")],
-            [InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")],
+            [InlineKeyboardButton("« Back to Leaderboards", callback_data="adm_leaderboards")],
+            [InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")],
         ])
         await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=back_kb)
 
     elif data == "adm_broadcast":
         try:
-            await query.answer("📢 Opening Broadcast Center...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         users = await get_all_broadcast_user_ids()
         count = len(users)
         await query.edit_message_text(
-            f"✦ <b>Community Broadcast System</b>\n\n"
+            f"<b>Community Broadcast System</b>\n\n"
             f"Deliver an announcement notification to all registered bot participants.\n\n"
-            f"▫️ <b>Active Members in Reach:</b> <code>{count}</code>\n\n"
-            f"➤ <i>Select a preset below or compose a custom message:</i>",
+            f"• <b>Active Members in Reach:</b> <code>{count}</code>\n\n"
+            f"Select a preset below or compose a custom message:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_broadcast_presets_keyboard(),
         )
 
     elif data == "adm_bcast_custom":
         try:
-            await query.answer("✦ Opening broadcast composer...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         await set_user_state(user.id, "WAITING_FOR_ADMIN_BROADCAST")
         await query.edit_message_text(
-            "✦ <b>Custom Announcement Broadcast</b>\n\n"
+            "<b>Custom Announcement Broadcast</b>\n\n"
             "Please type and send the announcement text now.\n\n"
-            "▫️ Supports HTML formatting (<b>bold</b>, <i>italic</i>, <code>code</code>)\n"
-            "▫️ Supports URLs and links\n\n"
-            "➤ <i>(Type /cancel to abort)</i>",
+            "• Supports HTML formatting (<b>bold</b>, <i>italic</i>, <code>code</code>)\n"
+            "• Supports URLs and links\n\n"
+            "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
         )
 
     elif data == "adm_bcast_preset:challenge":
         try:
-            await query.answer("✦ Preparing challenge broadcast...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         active_ch = await get_active_challenge()
         users = await get_all_broadcast_user_ids()
         count = len(users)
         if not active_ch:
-            await query.answer("▪️ No live or scheduled challenge found.", show_alert=True)
+            await query.answer("No live or scheduled challenge found.", show_alert=True)
             return
 
         title = active_ch["title"]
         cat = active_ch["category"]
         time_l = active_ch["question_time_limit_seconds"]
         bcast_text = (
-            f"✦ <b>AWS Builder Challenge Announcement!</b>\n\n"
+            f"<b>AWS Builder Challenge Announcement</b>\n\n"
             f"A cloud competition is active:\n"
             f"<b>{html.escape(title)}</b>\n"
-            f"▫️ <b>Category:</b> {html.escape(cat)}\n"
-            f"▫️ <b>Time Limit:</b> {time_l}s per question\n\n"
-            f"➤ <i>Open /challenge in the bot now to take the quiz and climb the leaderboard!</i>\n\n"
-            f"✦ @AWSAASTU"
+            f"• <b>Category:</b> {html.escape(cat)}\n"
+            f"• <b>Time Limit:</b> {time_l}s per question\n\n"
+            f"Open /challenge in the bot now to take the quiz and climb the leaderboard.\n\n"
+            f"@AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
 
         preview_text = (
-            f"✦ <b>BROADCAST PREVIEW</b>\n"
-            f"▫️ <b>Target Audience:</b> <code>{count}</code> members\n\n"
+            f"<b>BROADCAST PREVIEW</b>\n"
+            f"• <b>Target Audience:</b> <code>{count}</code> members\n\n"
             f"<blockquote>{bcast_text}</blockquote>\n\n"
-            f"➤ <i>Ready to deliver this notification?</i>"
+            f"Ready to deliver this notification?"
         )
         await query.edit_message_text(
             preview_text,
@@ -1154,25 +1151,25 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_bcast_preset:leaderboard":
         try:
-            await query.answer("✦ Preparing leaderboard broadcast...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         users = await get_all_broadcast_user_ids()
         count = len(users)
         bcast_text = (
-            "✦ <b>AWS Builder Championship Standings Updated!</b>\n\n"
-            "The Weekly & Monthly championship leaderboards are refreshed with latest scores!\n\n"
+            "<b>AWS Builder Championship Standings Updated</b>\n\n"
+            "The Weekly & Monthly championship leaderboards are refreshed with latest scores.\n\n"
             "Check where you rank among student cloud builders.\n\n"
-            "➤ <i>Send /leaderboard to view the rankings!</i>\n\n"
-            "✦ @AWSAASTU"
+            "Send /leaderboard to view the rankings.\n\n"
+            "@AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
 
         preview_text = (
-            f"✦ <b>BROADCAST PREVIEW</b>\n"
-            f"▫️ <b>Target Audience:</b> <code>{count}</code> members\n\n"
+            f"<b>BROADCAST PREVIEW</b>\n"
+            f"• <b>Target Audience:</b> <code>{count}</code> members\n\n"
             f"<blockquote>{bcast_text}</blockquote>\n\n"
-            f"➤ <i>Ready to deliver this notification?</i>"
+            f"Ready to deliver this notification?"
         )
         await query.edit_message_text(
             preview_text,
@@ -1182,7 +1179,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_bcast_preset:report":
         try:
-            await query.answer("✦ Preparing report broadcast...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         rep = await get_monthly_analytics_report()
@@ -1190,33 +1187,32 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         champions = rep["champions"]
         champs_text = ""
         if champions:
-            medals = ["🥇", "🥈", "🥉"]
-            for idx, c in enumerate(champions[:3]):
+            for idx, c in enumerate(champions[:3], 1):
                 name = html.escape(c["user_name"])
                 uname = f" (@{html.escape(c['username'])})" if c.get("username") else ""
-                champs_text += f"{medals[idx]} <b>{name}</b>{uname} — <code>{c['total_score']} pts</code>\n"
+                champs_text += f"• {idx}. <b>{name}</b>{uname} — <code>{c['total_score']} pts</code>\n"
         else:
             champs_text = "• <i>Check /leaderboard for latest championship rankings!</i>\n"
 
         bcast_text = (
-            f"✦ <b>AWS SBG Monthly Season Wrap-Up ({month})</b>\n\n"
-            f"Awesome work builders! Here is what our community achieved this month:\n\n"
-            f"▫️ <b>Active Members:</b> <code>{rep['total_users']}</code>\n"
-            f"▫️ <b>Challenges Completed:</b> <code>{rep['total_attempts']}</code>\n"
-            f"▫️ <b>Community Accuracy:</b> <code>{rep['accuracy_pct']}%</code>\n"
-            f"▫️ <b>Total Points Earned:</b> <code>{rep['total_score']} pts</code>\n\n"
-            f"◆ <b>Top 3 Builders of the Month:</b>\n"
+            f"<b>AWS SBG Monthly Season Wrap-Up ({month})</b>\n\n"
+            f"Here is what our community achieved this month:\n\n"
+            f"• <b>Active Members:</b> <code>{rep['total_users']}</code>\n"
+            f"• <b>Challenges Completed:</b> <code>{rep['total_attempts']}</code>\n"
+            f"• <b>Community Accuracy:</b> <code>{rep['accuracy_pct']}%</code>\n"
+            f"• <b>Total Points Earned:</b> <code>{rep['total_score']} pts</code>\n\n"
+            f"<b>Top 3 Builders of the Month:</b>\n"
             f"{champs_text}\n"
-            f"➤ <i>Tap /challenge and /leaderboard to participate in upcoming events!</i>\n\n"
-            f"✦ @AWSAASTU"
+            f"Use /challenge and /leaderboard to participate in upcoming events.\n\n"
+            f"@AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
         users = await get_all_broadcast_user_ids()
         preview_text = (
-            f"✦ <b>BROADCAST PREVIEW (Monthly Report)</b>\n"
-            f"▫️ <b>Target Audience:</b> <code>{len(users)}</code> members\n\n"
+            f"<b>BROADCAST PREVIEW (Monthly Report)</b>\n"
+            f"• <b>Target Audience:</b> <code>{len(users)}</code> members\n\n"
             f"<blockquote>{bcast_text}</blockquote>\n\n"
-            f"➤ <i>Ready to deliver this report announcement to the community?</i>"
+            f"Ready to deliver this report announcement to the community?"
         )
         await query.edit_message_text(
             preview_text,
@@ -1226,20 +1222,20 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_bcast_send:"):
         try:
-            await query.answer("✦ Broadcasting announcement...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         bcast_text = context.user_data.get("bcast_text")
         if not bcast_text:
-            await query.answer("▪️ No broadcast message prepared.", show_alert=True)
+            await query.answer("No broadcast message prepared.", show_alert=True)
             return
 
         users = await get_all_broadcast_user_ids()
-        logger.info(f"📢 Initiating broadcast to {len(users)} registered users: {users}")
+        logger.info(f"Initiating broadcast to {len(users)} registered users: {users}")
 
         if not users:
             await query.edit_message_text(
-                "▪️ <b>No Registered Bot Members Found</b>\n\n"
+                "<b>No Registered Bot Members Found</b>\n\n"
                 "Telegram requires members to send /start to the bot at least once before the bot can message them.\n\n"
                 "Once members interact with the bot, they will be reachable via broadcast.",
                 parse_mode=ParseMode.HTML,
@@ -1259,9 +1255,9 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
                     parse_mode=ParseMode.HTML,
                 )
                 sent += 1
-                logger.info(f"✅ Broadcast delivered to user_id={uid}")
+                logger.info(f"Broadcast delivered to user_id={uid}")
             except Exception as e:
-                logger.warning(f"⚠️ Broadcast send failed for user {uid}: {e}")
+                logger.warning(f"Broadcast send failed for user {uid}: {e}")
                 failed += 1
                 fail_reasons.append(f"• ID <code>{uid}</code>: {html.escape(str(e))}")
 
@@ -1270,13 +1266,13 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         err_block = ""
         if fail_reasons:
             preview_errs = "\n".join(fail_reasons[:3])
-            err_block = f"\n\n⚠️ <b>Delivery Issues ({failed}):</b>\n{preview_errs}"
+            err_block = f"\n\n<b>Delivery Issues ({failed}):</b>\n{preview_errs}"
 
         await query.edit_message_text(
-            f"✓ <b>Broadcast Complete!</b>\n\n"
-            f"▫️ <b>Delivered Successfully:</b> <code>{sent}</code> members\n"
-            f"▫️ <b>Failed / Blocked:</b> <code>{failed}</code>{err_block}\n\n"
-            f"➤ <i>The announcement has been broadcast to all reachable community members.</i>",
+            f"<b>Broadcast Complete</b>\n\n"
+            f"• <b>Delivered Successfully:</b> <code>{sent}</code> members\n"
+            f"• <b>Failed / Blocked:</b> <code>{failed}</code>{err_block}\n\n"
+            f"The announcement has been broadcast to all reachable community members.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_panel_keyboard(),
         )
@@ -1304,7 +1300,7 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
     )
     if not is_csv_like:
         await update.message.reply_text(
-            "⚠️ <b>Unsupported file format.</b>\nPlease upload a <b>.csv</b>, <b>.tsv</b>, or <b>.txt</b> file.",
+            "<b>Unsupported file format.</b>\nPlease upload a <b>.csv</b>, <b>.tsv</b>, or <b>.txt</b> file.",
             parse_mode=ParseMode.HTML,
         )
         return
@@ -1318,7 +1314,7 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
     loading_msg = None
     try:
         loading_msg = await update.message.reply_text(
-            "⏳ <b>Processing CSV Document...</b>\n<i>Downloading, parsing headers, and validating question bank entries...</i>",
+            "<b>Processing CSV Document...</b>\n<i>Downloading, parsing headers, and validating question bank entries...</i>",
             parse_mode=ParseMode.HTML,
         )
     except Exception:
@@ -1360,7 +1356,7 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
         err_text = ""
         if errors:
             err_list = "\n".join(errors[:5])
-            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+            err_text = f"\n\n<b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
         ch = await get_challenge(target_ch_id)
         ch_status = ch["status"] if ch else "DRAFT"
@@ -1368,14 +1364,14 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
 
         if imported > 0:
             final_text = (
-                f"📥 <b>CSV Import Complete for Challenge #{target_ch_id}!</b>\n\n"
-                f"✅ <b>Successfully Linked:</b> <code>{imported}</code> questions to this challenge.\n"
-                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}"
+                f"<b>CSV Import Complete for Challenge #{target_ch_id}</b>\n\n"
+                f"• <b>Successfully Linked:</b> <code>{imported}</code> questions to this challenge.\n"
+                f"• <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}"
             )
             markup = get_challenge_manage_keyboard(target_ch_id, ch_status)
         else:
             final_text = (
-                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"<b>No valid questions could be imported.</b>{err_text}\n\n"
                 f"Please ensure your CSV contains headers like:\n"
                 f"<code>question,option_a,option_b,option_c,option_d,correct_option,explanation</code>"
             )
@@ -1396,17 +1392,17 @@ async def handle_admin_csv_document(update: Update, context: ContextTypes.DEFAUL
         err_text = ""
         if errors:
             err_list = "\n".join(errors[:5])
-            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+            err_text = f"\n\n<b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
         if imported > 0:
             final_text = (
-                f"📥 <b>CSV Import Complete!</b>\n\n"
-                f"✅ <b>Successfully Imported:</b> <code>{imported}</code> questions into Question Bank{err_text}"
+                f"<b>CSV Import Complete</b>\n\n"
+                f"• <b>Successfully Imported:</b> <code>{imported}</code> questions into Question Bank{err_text}"
             )
             markup = get_admin_panel_keyboard()
         else:
             final_text = (
-                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"<b>No valid questions could be imported.</b>{err_text}\n\n"
                 f"Please ensure your CSV follows the standard question structure."
             )
             markup = get_admin_panel_keyboard()

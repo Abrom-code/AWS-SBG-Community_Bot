@@ -408,11 +408,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text in ("Create Challenge", "➕ Create Challenge", "➕ Create New Challenge", "Create New Challenge"):
             await set_user_state(user_id, "WAITING_FOR_CHALLENGE_TITLE")
             await update.message.reply_text(
-                "✨ <b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
-                "📌 <b>Please enter the Title for this challenge:</b>\n\n"
+                "<b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
+                "Please enter the Title for this challenge:\n\n"
                 "<i>Example:</i>\n"
                 "<code>AWS Solutions Architect Associate Sprint</code>\n\n"
-                "💡 <i>(Power users can also send all at once: <code>Title | Description | Duration</code>)</i>\n\n"
+                "<blockquote>Tip: Power users can send all in one line:\n"
+                "<code>Title | Description | Duration</code></blockquote>\n\n"
                 "<i>(Type /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
             )
@@ -421,7 +422,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             challenges = await list_challenges(limit=10)
             if not challenges:
                 await update.message.reply_text(
-                    "📋 <b>Challenge Management</b>\n\n<i>No challenges found. Create one first!</i>",
+                    "<b>Challenge Management</b>\n\n<i>No challenges found. Create one first.</i>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=get_admin_panel_keyboard(),
                 )
@@ -429,11 +430,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
                 buttons = []
                 for ch in challenges:
-                    status_emoji = {"LIVE": "🟢", "SCHEDULED": "🕒", "DRAFT": "🛠️", "ENDED": "✔️"}.get(ch["status"], "⚡")
-                    buttons.append([InlineKeyboardButton(f"{status_emoji} {ch['title'][:30]} ({ch['status']})", callback_data=f"adm_manage:{ch['id']}")])
-                buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
+                    status = ch["status"]
+                    title = ch["title"]
+                    buttons.append([InlineKeyboardButton(f"#{ch['id']} {title[:24]} [{status}]", callback_data=f"adm_manage:{ch['id']}")])
+                buttons.append([InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")])
                 await update.message.reply_text(
-                    "📋 <b>Select a Challenge to Manage:</b>",
+                    "<b>Challenge Management</b>\n\nSelect a challenge below to manage:",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(buttons),
                 )
@@ -442,7 +444,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             active_ch = await get_active_challenge()
             active_ch_id = active_ch["id"] if active_ch else 0
             await update.message.reply_text(
-                "🏆 <b>Admin Leaderboard & Builder Standings</b>\n\n"
+                "<b>Admin Leaderboard & Builder Standings</b>\n\n"
                 "View live participant scores, ranks, and monthly cumulative standings:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_leaderboard_keyboard(active_ch_id),
@@ -453,28 +455,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             champions = rep.get("champions", [])
             champs_text = ""
             if champions:
-                medals = ["🥇", "🥈", "🥉"]
-                for idx, c in enumerate(champions[:3]):
+                for idx, c in enumerate(champions[:3], 1):
                     name = html.escape(c["user_name"])
                     uname = f" (@{html.escape(c['username'])})" if c.get("username") else ""
-                    champs_text += f"• {medals[idx]} <b>{name}</b>{uname} — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
+                    champs_text += f"• {idx}. <b>{name}</b>{uname} — <code>{c['total_score']} pts</code> ({c['challenges_completed']} quizzes)\n"
             else:
                 champs_text = "• <i>No completed challenge attempts recorded yet this month.</i>\n"
 
             report_card = (
-                f"✦ <b>AWS Student Builder Monthly Activity Report</b>\n"
-                f"📅 <b>Period:</b> {rep['month_name']}\n\n"
-                f"◆ <b>Community Engagement</b>\n"
-                f"▫️ Registered Members › <code>{rep['total_users']}</code>\n"
-                f"▫️ Feedback Tickets › <code>{rep['feedback_count']}</code>\n"
-                f"▫️ Staff Replies › <code>{rep['reply_count']}</code>\n\n"
-                f"◆ <b>Challenges & Quizzes</b>\n"
-                f"▫️ Quizzes Hosted › <code>{rep['total_challenges']}</code>\n"
-                f"▫️ Submissions › <code>{rep['total_attempts']}</code>\n"
-                f"▫️ Accuracy › <code>{rep['accuracy_pct']}%</code>\n"
-                f"▫️ Average Score › <code>{rep['avg_score']} pts</code>\n"
-                f"▫️ Points Awarded › <code>{rep['total_score']} pts</code>\n\n"
-                f"◆ <b>Top 3 Builders</b>\n"
+                f"<b>AWS Student Builder Monthly Activity Report</b>\n"
+                f"<b>Period:</b> {rep['month_name']}\n\n"
+                f"<b>Community Engagement</b>\n"
+                f"• Registered Members: <code>{rep['total_users']}</code>\n"
+                f"• Feedback Tickets: <code>{rep['feedback_count']}</code>\n"
+                f"• Staff Replies: <code>{rep['reply_count']}</code>\n\n"
+                f"<b>Challenges & Quizzes</b>\n"
+                f"• Quizzes Hosted: <code>{rep['total_challenges']}</code>\n"
+                f"• Submissions: <code>{rep['total_attempts']}</code>\n"
+                f"• Accuracy: <code>{rep['accuracy_pct']}%</code>\n"
+                f"• Average Score: <code>{rep['avg_score']} pts</code>\n"
+                f"• Points Awarded: <code>{rep['total_score']} pts</code>\n\n"
+                f"<b>Top 3 Builders</b>\n"
                 f"{champs_text}"
             )
             await update.message.reply_text(
@@ -487,16 +488,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users = await get_all_broadcast_user_ids()
             count = len(users)
             await update.message.reply_text(
-                f"✦ <b>Community Broadcast Center</b>\n\n"
-                f"▫️ <b>Target Audience:</b> <code>{count}</code> registered members\n\n"
-                f"➤ <i>Select an announcement preset or compose a custom broadcast:</i>",
+                f"<b>Community Broadcast Center</b>\n\n"
+                f"• <b>Target Audience:</b> <code>{count}</code> registered members\n\n"
+                f"Select an announcement preset or compose a custom broadcast:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_broadcast_presets_keyboard(),
             )
             return
         elif text in ("Exit Admin", "🚪 Exit Admin", "🚪 Leave Admin", "Leave Admin"):
             await update.message.reply_text(
-                "✦ <b>Exited Admin Panel</b>\n\nReturning to member menu:",
+                "<b>Exited Admin Panel</b>\n\nReturning to member menu:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_main_menu_keyboard(),
             )
@@ -572,12 +573,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["wiz_duration_mins"] = duration_mins
 
             await update.message.reply_text(
-                f"✨ <b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
-                f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
-                f"🏗️ <b>Category:</b> {html.escape(category)}\n"
-                f"📝 <b>Description:</b> <i>{html.escape(description)}</i>\n"
-                f"⏱️ <b>Exam Time Limit:</b> <code>{duration_mins} Minutes</code>\n\n"
-                f"⏰ <b>Select Start Schedule & Deadline:</b>",
+                f"<b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
+                f"<blockquote><b>{html.escape(title)}</b>\n"
+                f"Category: {html.escape(category)}\n"
+                f"<i>{html.escape(description)}</i></blockquote>\n\n"
+                f"• <b>Exam Time Limit:</b> <code>{duration_mins} Minutes</code>\n\n"
+                f"Select start schedule & deadline:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_schedule_presets_keyboard(ch_id, duration_mins),
             )
@@ -608,9 +609,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await set_user_state(user_id, f"WAITING_FOR_CHALLENGE_DESC:{ch_id}")
         await update.message.reply_text(
-            f"✨ <b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
-            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n\n"
-            f"📝 <b>Please enter the challenge description:</b>\n"
+            f"<b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
+            f"<b>Title:</b> <b>{html.escape(title)}</b>\n\n"
+            f"Please enter the challenge description:\n"
             f"<i>(Explain what community members will learn or test in this challenge)</i>\n\n"
             f"<i>Example:</i> <code>Master EC2, S3, VPC, Lambda, and high-availability design patterns in this weekly challenge.</code>\n\n"
             f"<i>(Or tap below to use default description)</i>",
@@ -631,7 +632,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = current_state.split(":")
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("wiz_ch_id")
         if not ch_id:
-            await update.message.reply_text("⚠️ No active challenge creation session.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No active challenge creation session.", reply_markup=get_main_menu_keyboard())
             return
 
         desc = text.strip()
@@ -642,10 +643,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dur_mins = int(dur_secs // 60)
 
         await update.message.reply_text(
-            f"✨ <b>Create Challenge Wizard (Step 3/4: Exam Time Limit)</b>\n\n"
-            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
-            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n\n"
-            f"⏱️ <b>Select the allowed exam time for community members:</b>\n"
+            f"<b>Create Challenge Wizard (Step 3/4: Exam Time Limit)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"<i>{html.escape(desc)}</i></blockquote>\n\n"
+            f"Select the allowed exam time for community members:\n"
             f"<i>(Timer begins when participant starts the challenge)</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_timer_keyboard(ch_id),
@@ -664,7 +665,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("wiz_ch_id")
         if not ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No active challenge creation session.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No active challenge creation session.", reply_markup=get_main_menu_keyboard())
             return
 
         try:
@@ -673,7 +674,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise ValueError("Minutes out of range")
         except Exception:
             await update.message.reply_text(
-                "⚠️ <b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
+                "<b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
                 "<i>Example:</i> <code>15</code>\n\n"
                 "<i>(Or send /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
@@ -688,11 +689,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         desc = ch.get("description", "") if ch else ""
 
         await update.message.reply_text(
-            f"✨ <b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
-            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
-            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{mins} Minutes</code>\n\n"
-            f"⏰ <b>Select Start Schedule & Deadline:</b>",
+            f"<b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"<i>{html.escape(desc)}</i></blockquote>\n\n"
+            f"• <b>Exam Time Limit:</b> <code>{mins} Minutes</code>\n\n"
+            f"Select start schedule & deadline:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_schedule_presets_keyboard(ch_id, mins),
         )
@@ -710,7 +711,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = current_state.split(":")
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
-            await update.message.reply_text("⚠️ No challenge selected for editing.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected for editing.", reply_markup=get_main_menu_keyboard())
             return
 
         raw = text.strip()
@@ -726,9 +727,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch = await get_challenge(ch_id)
         status = ch.get("status", "LIVE") if ch else "LIVE"
         await update.message.reply_text(
-            f"✅ <b>Challenge #{ch_id} Updated!</b>\n\n"
-            f"⚡ <b>New Title:</b> {html.escape(title)}\n"
-            f"🏗️ <b>New Category:</b> {html.escape(category)}",
+            f"<b>Challenge #{ch_id} Updated</b>\n\n"
+            f"• <b>New Title:</b> {html.escape(title)}\n"
+            f"• <b>New Category:</b> {html.escape(category)}",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
@@ -746,7 +747,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected.", reply_markup=get_main_menu_keyboard())
             return
 
         raw = text.strip()
@@ -775,7 +776,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ends_at = (s_dt + timedelta(days=7)).isoformat()
         except Exception:
             await update.message.reply_text(
-                "⚠️ <b>Invalid Date/Time Format.</b>\n\n"
+                "<b>Invalid Date/Time Format.</b>\n\n"
                 "Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code>\n"
                 "<i>Example:</i> <code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
                 "<i>(Or send /cancel to abort)</i>",
@@ -789,10 +790,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update_challenge_status(ch_id, status)
 
         await update.message.reply_text(
-            f"✅ <b>Schedule Updated for Challenge #{ch_id}!</b>\n\n"
-            f"🟢 <b>Starts:</b> <code>{starts_at}</code>\n"
-            f"🏁 <b>Ends:</b> <code>{ends_at}</code>\n"
-            f"🚦 <b>Status:</b> {status}",
+            f"<b>Schedule Updated for Challenge #{ch_id}</b>\n\n"
+            f"• <b>Starts:</b> <code>{starts_at}</code>\n"
+            f"• <b>Ends:</b> <code>{ends_at}</code>\n"
+            f"• <b>Status:</b> <code>{status}</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
@@ -810,7 +811,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.pop("edit_ch_id", None)
         if not ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected.", reply_markup=get_main_menu_keyboard())
             return
 
         try:
@@ -819,7 +820,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 raise ValueError("Minutes out of range")
         except Exception:
             await update.message.reply_text(
-                "⚠️ <b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
+                "<b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
                 "<i>Example:</i> <code>15</code>\n\n"
                 "<i>(Or send /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
@@ -833,8 +834,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         status = ch.get("status", "DRAFT") if ch else "DRAFT"
 
         await update.message.reply_text(
-            f"✅ <b>Exam Time Limit Updated for Challenge #{ch_id}!</b>\n\n"
-            f"⏱️ <b>Allowed Test Duration:</b> <code>{mins} minutes total</code>",
+            f"<b>Exam Time Limit Updated for Challenge #{ch_id}</b>\n\n"
+            f"• <b>Allowed Test Duration:</b> <code>{mins} minutes total</code>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, status),
         )
@@ -850,7 +851,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parsed = parse_single_question_text(text)
         if not parsed:
             await update.message.reply_text(
-                "⚠️ <b>Could not parse question format.</b>\n\n"
+                "<b>Could not parse question format.</b>\n\n"
                 "Please make sure your message includes the question and 4 options:\n\n"
                 "<code>What is Amazon DynamoDB?\n"
                 "A: Relational database\n"
@@ -882,10 +883,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         await update.message.reply_text(
-            f"✅ <b>Question #{q_id} Added to Question Bank!</b>\n\n"
-            f"❓ <b>Question:</b> {html.escape(parsed['question_text'])}\n"
-            f"🎯 <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
-            f"🏷️ <b>Category:</b> {html.escape(parsed.get('category', 'General'))} | <b>Difficulty:</b> {parsed.get('difficulty', 'MEDIUM')}\n\n"
+            f"<b>Question #{q_id} Added to Question Bank</b>\n\n"
+            f"• <b>Question:</b> {html.escape(parsed['question_text'])}\n"
+            f"• <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
+            f"• <b>Category:</b> {html.escape(parsed.get('category', 'General'))} | <b>Difficulty:</b> {parsed.get('difficulty', 'MEDIUM')}\n\n"
             f"<i>This question is now available in your Question Bank to be linked to challenges.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_question_bank_actions_keyboard(),
@@ -907,19 +908,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         err_text = ""
         if errors:
             err_list = "\n".join(errors[:5])
-            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+            err_text = f"\n\n<b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
         if imported > 0:
             await update.message.reply_text(
-                f"📥 <b>Questions Imported Successfully!</b>\n\n"
-                f"✅ <b>Imported:</b> <code>{imported}</code> questions into the Question Bank.{err_text}\n\n"
+                f"<b>Questions Imported Successfully</b>\n\n"
+                f"• <b>Imported:</b> <code>{imported}</code> questions into the Question Bank.{err_text}\n\n"
                 f"These questions are now active and available for challenges.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_question_bank_actions_keyboard(),
             )
         else:
             await update.message.reply_text(
-                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"<b>No valid questions could be imported.</b>{err_text}\n\n"
                 f"Please ensure your text follows the CSV format:\n"
                 f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>",
                 parse_mode=ParseMode.HTML,
@@ -943,13 +944,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not target_ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
             return
 
         parsed = parse_single_question_text(text)
         if not parsed:
             await update.message.reply_text(
-                "⚠️ <b>Could not parse question format.</b>\n\n"
+                "<b>Could not parse question format.</b>\n\n"
                 "Please format your question as follows:\n\n"
                 "<code>What is Amazon DynamoDB?\n"
                 "A: Relational database\n"
@@ -970,10 +971,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ch_questions = await get_challenge_questions(target_ch_id)
 
         await update.message.reply_text(
-            f"✅ <b>Question #{q_id} Added to Challenge #{target_ch_id}!</b>\n\n"
-            f"❓ <b>Question:</b> {html.escape(parsed['question_text'])}\n"
-            f"🎯 <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
-            f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>\n\n"
+            f"<b>Question #{q_id} Added to Challenge #{target_ch_id}!</b>\n\n"
+            f"• <b>Question:</b> {html.escape(parsed['question_text'])}\n"
+            f"• <b>Correct Answer:</b> Option {parsed['correct_option']}\n"
+            f"• <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>\n\n"
             f"<i>You can add another question, import CSV, or publish the challenge.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_questions_keyboard(target_ch_id),
@@ -996,13 +997,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not target_ch_id:
             await set_user_state(user_id, None)
-            await update.message.reply_text("⚠️ No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
+            await update.message.reply_text("No challenge selected. Please use /admin to select a challenge.", reply_markup=get_main_menu_keyboard())
             return
 
         loading_msg = None
         try:
             loading_msg = await update.message.reply_text(
-                "⏳ <b>Processing CSV lines...</b>\n<i>Parsing questions and linking to challenge...</i>",
+                "<b>Processing CSV lines...</b>\n<i>Parsing questions and linking to challenge...</i>",
                 parse_mode=ParseMode.HTML,
             )
         except Exception:
@@ -1016,19 +1017,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         err_text = ""
         if errors:
             err_list = "\n".join(errors[:5])
-            err_text = f"\n\n⚠️ <b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
+            err_text = f"\n\n<b>Errors Encountered ({len(errors)}):</b>\n{html.escape(err_list)}"
 
         ch_questions = await get_challenge_questions(target_ch_id)
 
         if imported > 0:
             final_text = (
-                f"📥 <b>Questions Imported for Challenge #{target_ch_id}!</b>\n\n"
-                f"✅ <b>Linked:</b> <code>{imported}</code> questions to this challenge.\n"
-                f"📊 <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}"
+                f"<b>Questions Imported for Challenge #{target_ch_id}!</b>\n\n"
+                f"• <b>Linked:</b> <code>{imported}</code> questions to this challenge.\n"
+                f"• <b>Total Attached Questions:</b> <code>{len(ch_questions)}</code>{err_text}"
             )
         else:
             final_text = (
-                f"⚠️ <b>No valid questions could be imported.</b>{err_text}\n\n"
+                f"<b>No valid questions could be imported.</b>{err_text}\n\n"
                 f"Please ensure your text follows the CSV format:\n"
                 f"<code>question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation</code>"
             )
@@ -1081,7 +1082,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ends_at = (s_dt + timedelta(days=7)).isoformat()
         except Exception:
             await update.message.reply_text(
-                "⚠️ <b>Invalid date/time format.</b>\n\n"
+                "<b>Invalid date/time format.</b>\n\n"
                 "Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code>\n"
                 "Example: <code>2026-09-05 14:00 to 2026-09-12 18:00</code>",
                 parse_mode=ParseMode.HTML,
@@ -1124,19 +1125,18 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update_challenge_status(ch_id, status)
             q_count = 0
 
-        status_text = "🟢 <b>LIVE</b>" if status == "LIVE" else "⏳ <b>SCHEDULED</b>"
+        status_text = f"<code>{status}</code>"
 
         await update.message.reply_text(
-            f"✨ <b>Challenge #{ch_id} Configured! (Step 4/4: Add Questions)</b>\n\n"
-            f"⚡ <b>Title:</b> {html.escape(title)}\n"
-            f"🏗️ <b>Category:</b> {html.escape(category)}\n"
-            f"🚦 <b>Status:</b> {status_text}\n"
-            f"🟢 <b>Starts:</b> <code>{starts_at}</code>\n"
-            f"🏁 <b>Ends:</b> <code>{ends_at}</code>\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
-            f"📊 <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"👉 <b>Next step: Attach questions to this challenge.</b>\n"
+            f"<b>Challenge #{ch_id} Configured! (Step 4/4: Add Questions)</b>\n\n"
+            f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"Category: {html.escape(category)}</blockquote>\n\n"
+            f"• <b>Status:</b> {status_text}\n"
+            f"• <b>Starts:</b> <code>{starts_at}</code>\n"
+            f"• <b>Ends:</b> <code>{ends_at}</code>\n"
+            f"• <b>Exam Time Limit:</b> <code>{exam_mins} minutes total</code>\n"
+            f"• <b>Questions Attached:</b> <code>{q_count}</code>\n\n"
+            f"<b>Next step: Attach questions to this challenge.</b>\n"
             f"Add questions one-by-one or bulk import via CSV file below:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_questions_keyboard(ch_id),
@@ -1156,8 +1156,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         count = len(users)
 
         preview_text = (
-            f"📢 <b>BROADCAST PREVIEW (Custom Message)</b>\n"
-            f"👥 <b>Target Audience:</b> <code>{count}</code> members\n\n"
+            f"<b>BROADCAST PREVIEW (Custom Message)</b>\n\n"
+            f"• <b>Target Audience:</b> <code>{count}</code> members\n\n"
             f"<blockquote>{text}</blockquote>\n\n"
             f"<i>Confirm to deliver this announcement to all community members:</i>"
         )
