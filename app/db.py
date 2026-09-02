@@ -38,9 +38,10 @@ async def get_pg_pool():
         min_size=2,
         max_size=10,
         open=False,
+        kwargs={"prepare_threshold": None},
     )
     await _pg_pool.open()
-    logger.info("PostgreSQL connection pool opened (min=2, max=10).")
+    logger.info("PostgreSQL connection pool opened (min=2, max=10, prepare_threshold=None).")
     return _pg_pool
 
 

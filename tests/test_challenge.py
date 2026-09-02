@@ -1025,6 +1025,38 @@ def test_draft_challenges_never_exposed_to_students():
     assert "Secret Draft Challenge" not in cb_lb.edited_text
 
 
+def test_pg_pool_prepared_statement_disabled_for_pooler(monkeypatch):
+    """Verifies that the PostgreSQL connection pool explicitly disables prepared statements
+
+    (prepare_threshold=None) to ensure full compatibility with transaction connection poolers
+    (e.g. Supabase port 6543 / PgBouncer / Supavisor).
+    """
+    import app.db as db
+    monkeypatch.setattr(db, "DATABASE_URL", "postgresql://user:pass@localhost:6543/postgres")
+    monkeypatch.setattr(db, "_pg_pool", None)
+
+    captured = {}
+
+    class MockAsyncConnectionPool:
+        def __init__(self, conninfo, min_size=2, max_size=10, open=False, kwargs=None):
+            captured["conninfo"] = conninfo
+            captured["kwargs"] = kwargs
+
+        async def open(self):
+            pass
+
+    import sys
+    from unittest.mock import MagicMock
+    mock_module = MagicMock()
+    mock_module.AsyncConnectionPool = MockAsyncConnectionPool
+    monkeypatch.setitem(sys.modules, "psycopg_pool", mock_module)
+
+    asyncio.run(db.get_pg_pool())
+    assert captured.get("kwargs") == {"prepare_threshold": None}
+    monkeypatch.setattr(db, "_pg_pool", None)
+
+
+
 
 
 

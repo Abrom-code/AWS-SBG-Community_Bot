@@ -166,7 +166,7 @@ async def _execute(query: str, params: tuple = (), fetch: str = "none") -> Any:
                     # PostgreSQL requires RETURNING id to get the inserted row's ID
                     if fetch == "id" and "RETURNING" not in pg_query.upper():
                         pg_query = pg_query.rstrip().rstrip(";") + " RETURNING id"
-                    await cur.execute(pg_query, params)
+                    await cur.execute(pg_query, params, prepare=False)
                     if fetch == "one":
                         return await cur.fetchone()
                     elif fetch == "all":
