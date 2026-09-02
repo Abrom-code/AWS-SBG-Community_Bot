@@ -526,9 +526,9 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text(
             f"<b>Edit Schedule for Challenge #{ch_id} ({title})</b>\n\n"
             f"• <b>Current Status:</b> <code>{status}</code>\n"
-            f"• <b>Starts At:</b> <code>{starts_str}</code>\n"
-            f"• <b>Ends At:</b> <code>{ends_str}</code>\n\n"
-            f"Select a preset schedule below or enter custom start & end dates:",
+            f"• <b>Starts At:</b> <code>{format_datetime_12h(starts_str, fallback='Not scheduled')}</code>\n"
+            f"• <b>Ends At:</b> <code>{format_datetime_12h(ends_str, fallback='Not scheduled')}</code>\n\n"
+            f"Select a preset schedule below or enter custom start & end dates (EAT):",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_schedule_edit_keyboard(ch_id),
         )
@@ -599,7 +599,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         await set_user_state(user.id, f"WAITING_FOR_EDIT_CHALLENGE_SCHEDULE:{ch_id}")
         await query.edit_message_text(
             f"<b>Custom Schedule for Challenge #{ch_id}</b>\n\n"
-            "Please send the <b>Start Date/Time to End Date/Time</b>:\n\n"
+            "Please send the <b>Start Date/Time to End Date/Time (East Africa Time / EAT)</b>:\n\n"
             "<code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
             "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,

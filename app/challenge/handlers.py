@@ -24,6 +24,8 @@ from app.challenge.service import (
     get_challenge_review_data,
     to_utc_datetime,
     update_challenge_status,
+    LOCAL_TZ,
+    BOT_TIMEZONE_NAME,
 )
 from app.challenge.keyboards import (
     get_challenge_start_keyboard,
@@ -48,20 +50,21 @@ from datetime import datetime, timezone
 
 
 def _format_scheduled_datetime(starts_at_str: Optional[str]) -> str:
-    """Formats an ISO timestamp into a clear human-readable date and time (e.g. 'Saturday, Sep 5, 2026 · 2:30 PM UTC')."""
+    """Formats an ISO timestamp into a clear human-readable date and time in East Africa Time (EAT)."""
     if not starts_at_str:
         return "To be announced"
     dt = to_utc_datetime(starts_at_str)
     if not dt:
         return str(starts_at_str)
-    day = dt.day
-    hour_12 = dt.strftime("%I").lstrip("0") or "12"
-    minute = dt.strftime("%M")
-    ampm = dt.strftime("%p")
-    month_name = dt.strftime("%b")
-    weekday = dt.strftime("%A")
-    year = dt.year
-    return f"{weekday}, {month_name} {day}, {year} · {hour_12}:{minute} {ampm} UTC"
+    local_dt = dt.astimezone(LOCAL_TZ)
+    day = local_dt.day
+    hour_12 = local_dt.strftime("%I").lstrip("0") or "12"
+    minute = local_dt.strftime("%M")
+    ampm = local_dt.strftime("%p")
+    month_name = local_dt.strftime("%b")
+    weekday = local_dt.strftime("%A")
+    year = local_dt.year
+    return f"{weekday}, {month_name} {day}, {year} · {hour_12}:{minute} {ampm} {BOT_TIMEZONE_NAME}"
 
 
 def _format_time_until(starts_at_str: Optional[str]) -> str:

@@ -1369,12 +1369,12 @@ def test_edit_schedule_with_copied_chat_prefix_and_direct_input(monkeypatch):
     assert len(up_date.message.reply_text_calls) == 1
     resp = up_date.message.reply_text_calls[0]["text"]
     assert f"Schedule Updated for Challenge #{ch_id}" in resp
-    assert "Sep 2, 2026 · 3:25 PM UTC" in resp
-    assert "Sep 2, 2026 · 3:50 PM UTC" in resp
+    assert "Sep 2, 2026 · 3:25 PM EAT" in resp
+    assert "Sep 2, 2026 · 3:50 PM EAT" in resp
 
     ch = asyncio.run(get_challenge(ch_id))
-    assert "2026-09-02T15:25:00" in ch["starts_at"]
-    assert "2026-09-02T15:50:00" in ch["ends_at"]
+    assert "2026-09-02T12:25:00" in ch["starts_at"]
+    assert "2026-09-02T12:50:00" in ch["ends_at"]
 
 
 

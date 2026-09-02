@@ -5,15 +5,20 @@ import json
 import logging
 import math
 import random
+import os
 import re
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import app.db as db
 from app.challenge.scoring import calculate_score, calculate_exam_score
 
 logger = logging.getLogger(__name__)
+
+BOT_TIMEZONE_OFFSET_HOURS = int(os.getenv("BOT_TIMEZONE_OFFSET_HOURS", "3"))
+BOT_TIMEZONE_NAME = os.getenv("BOT_TIMEZONE_NAME", "EAT")
+LOCAL_TZ = timezone(timedelta(hours=BOT_TIMEZONE_OFFSET_HOURS))
 
 # In-memory caching for challenge metadata and questions during active quizzes
 _challenge_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
@@ -311,8 +316,8 @@ def to_utc_datetime(val: Any) -> Optional[datetime]:
 
 
 def format_datetime_12h(val: Any, fallback: str = "Unscheduled") -> str:
-    """Formats an ISO string, timestamp, or datetime into a clean 12-hour UTC format.
-    Example: 'Sep 2, 2026 · 11:10 AM UTC'.
+    """Formats an ISO string, timestamp, or datetime into a clean 12-hour East Africa Time (EAT) format.
+    Example: 'Sep 2, 2026 · 3:10 PM EAT'.
 
     If val is None or invalid, returns fallback.
     """
@@ -321,13 +326,14 @@ def format_datetime_12h(val: Any, fallback: str = "Unscheduled") -> str:
     dt = to_utc_datetime(val)
     if not dt:
         return str(val)
-    month_name = dt.strftime("%b")
-    day = dt.day
-    year = dt.year
-    hour_12 = dt.strftime("%I").lstrip("0") or "12"
-    minute = dt.strftime("%M")
-    ampm = dt.strftime("%p")
-    return f"{month_name} {day}, {year} · {hour_12}:{minute} {ampm} UTC"
+    local_dt = dt.astimezone(LOCAL_TZ)
+    month_name = local_dt.strftime("%b")
+    day = local_dt.day
+    year = local_dt.year
+    hour_12 = local_dt.strftime("%I").lstrip("0") or "12"
+    minute = local_dt.strftime("%M")
+    ampm = local_dt.strftime("%p")
+    return f"{month_name} {day}, {year} · {hour_12}:{minute} {ampm} {BOT_TIMEZONE_NAME}"
 
 
 async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:

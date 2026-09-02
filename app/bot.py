@@ -61,6 +61,8 @@ from app.challenge.service import (
     list_challenges,
     get_active_challenge,
     format_datetime_12h,
+    LOCAL_TZ,
+    BOT_TIMEZONE_NAME,
 )
 from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
@@ -848,30 +850,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             s_clean = s_str.replace(" ", "T") if "T" in s_str or " " in s_str else f"{s_str}T00:00"
             s_dt = datetime.fromisoformat(s_clean)
             if s_dt.tzinfo is None:
-                s_dt = s_dt.replace(tzinfo=timezone.utc)
-            starts_at = s_dt.isoformat()
+                s_dt = s_dt.replace(tzinfo=LOCAL_TZ)
+            s_utc = s_dt.astimezone(timezone.utc)
+            starts_at = s_utc.isoformat()
 
             if e_str:
                 e_clean = e_str.replace(" ", "T") if "T" in e_str or " " in e_str else f"{e_str}T23:59"
                 e_dt = datetime.fromisoformat(e_clean)
                 if e_dt.tzinfo is None:
-                    e_dt = e_dt.replace(tzinfo=timezone.utc)
-                ends_at = e_dt.isoformat()
+                    e_dt = e_dt.replace(tzinfo=LOCAL_TZ)
+                e_utc = e_dt.astimezone(timezone.utc)
+                ends_at = e_utc.isoformat()
             else:
                 e_dt = s_dt + timedelta(days=7)
-                ends_at = e_dt.isoformat()
+                ends_at = e_dt.astimezone(timezone.utc).isoformat()
         except Exception:
             await update.message.reply_text(
-                "<b>Invalid Date/Time Format.</b>\n\n"
-                "Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code>\n"
-                "<i>Example:</i> <code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
-                "<i>(Or send /cancel to abort)</i>",
+                f"<b>Invalid Date/Time Format.</b>\n\n"
+                f"Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code> ({BOT_TIMEZONE_NAME})\n"
+                f"<i>Example:</i> <code>2026-09-05 18:00 to 2026-09-12 18:00</code>\n\n"
+                f"<i>(Or send /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
 
         await set_user_state(user_id, None)
-        status = "LIVE" if s_dt <= now_dt else "SCHEDULED"
+        status = "LIVE" if s_utc <= now_dt else "SCHEDULED"
         await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
         await update_challenge_status(ch_id, status)
 
@@ -1170,29 +1174,31 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             s_clean = s_str.replace(" ", "T") if "T" in s_str or " " in s_str else f"{s_str}T00:00"
             s_dt = datetime.fromisoformat(s_clean)
             if s_dt.tzinfo is None:
-                s_dt = s_dt.replace(tzinfo=timezone.utc)
-            starts_at = s_dt.isoformat()
+                s_dt = s_dt.replace(tzinfo=LOCAL_TZ)
+            s_utc = s_dt.astimezone(timezone.utc)
+            starts_at = s_utc.isoformat()
 
             if e_str:
                 e_clean = e_str.replace(" ", "T") if "T" in e_str or " " in e_str else f"{e_str}T23:59"
                 e_dt = datetime.fromisoformat(e_clean)
                 if e_dt.tzinfo is None:
-                    e_dt = e_dt.replace(tzinfo=timezone.utc)
-                ends_at = e_dt.isoformat()
+                    e_dt = e_dt.replace(tzinfo=LOCAL_TZ)
+                e_utc = e_dt.astimezone(timezone.utc)
+                ends_at = e_utc.isoformat()
             else:
                 e_dt = s_dt + timedelta(days=7)
-                ends_at = e_dt.isoformat()
+                ends_at = e_dt.astimezone(timezone.utc).isoformat()
         except Exception:
             await update.message.reply_text(
-                "<b>Invalid date/time format.</b>\n\n"
-                "Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code>\n"
-                "Example: <code>2026-09-05 14:00 to 2026-09-12 18:00</code>",
+                f"<b>Invalid date/time format.</b>\n\n"
+                f"Please use: <code>YYYY-MM-DD HH:MM to YYYY-MM-DD HH:MM</code> ({BOT_TIMEZONE_NAME})\n"
+                f"Example: <code>2026-09-05 14:00 to 2026-09-12 18:00</code>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_main_menu_keyboard(),
             )
             return
 
-        status = "LIVE" if datetime.fromisoformat(starts_at.replace("Z", "+00:00")) <= now_dt else "SCHEDULED"
+        status = "LIVE" if s_utc <= now_dt else "SCHEDULED"
 
         if existing_ch_id:
             ch_id = existing_ch_id
