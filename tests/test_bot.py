@@ -208,7 +208,7 @@ def test_help_command_returns_expected_shortcuts():
 
     asyncio.run(bot.help_command(update, context))
 
-    assert update.message.reply_text_calls[0]["text"].startswith("📘")
+    assert update.message.reply_text_calls[0]["text"].startswith("✦")
     assert "/start" in update.message.reply_text_calls[0]["text"]
     assert "/challenge" in update.message.reply_text_calls[0]["text"]
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
@@ -270,7 +270,7 @@ def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
     
     submission = asyncio.run(db.get_feedback_submission(message_id))
     assert submission["sender_chat_id"] == 333
-    assert update.message.reply_text_calls[-1]["text"].startswith("✅ <b>Thank you!")
+    assert update.message.reply_text_calls[-1]["text"].startswith("✓ <b>Thank you!")
     assert update.message.reply_text_calls[-1]["parse_mode"] == ParseMode.HTML
     
     state = asyncio.run(db.get_user_state(333))
@@ -297,7 +297,7 @@ def test_handle_admin_reply_routes_multiple_staff_replies_to_original_member():
     chat_id, text, _, parse_mode = context.bot.sent_messages[0]
     assert chat_id == 444
     assert parse_mode == ParseMode.HTML
-    assert "💬 <b>Response from the AWS Student Builder Core Team</b>" in text
+    assert "✦ <b>Response from the AWS Student Builder Core Team</b>" in text
     assert "<blockquote>Thanks for sharing this.</blockquote>" in text
     
     # 2. Second admin reply to the same original message (ID 7)

@@ -109,7 +109,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Switch bottom buttons to admin menu (includes 🔙 Main Menu)
     await update.message.reply_text(
-        "👑 <b>AWS SBG Challenge Admin Panel</b>\n\n"
+        "✦ <b>AWS SBG Challenge Admin Panel</b>\n\n"
         "Welcome to the challenge operations center. You can schedule weekly competitions, "
         "manage questions, view leaderboards, and publish live quizzes.",
         parse_mode=ParseMode.HTML,
@@ -117,7 +117,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     # Render admin dashboard with inline keyboard panel
     await update.message.reply_text(
-        "⬇️ <i>Use the buttons below or tap an option:</i>",
+        "➤ <i>Use the buttons below or tap an option:</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=get_admin_panel_keyboard(),
     )
@@ -1004,60 +1004,60 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         users = await get_all_broadcast_user_ids()
         count = len(users)
         await query.edit_message_text(
-            f"📢 <b>Community Broadcast System</b>\n\n"
+            f"✦ <b>Community Broadcast System</b>\n\n"
             f"Deliver an announcement notification to all registered bot participants.\n\n"
-            f"👥 <b>Active Members in Reach:</b> <code>{count}</code>\n\n"
-            f"<i>Select a preset below or compose a custom message:</i>",
+            f"▫️ <b>Active Members in Reach:</b> <code>{count}</code>\n\n"
+            f"➤ <i>Select a preset below or compose a custom message:</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_broadcast_presets_keyboard(),
         )
 
     elif data == "adm_bcast_custom":
         try:
-            await query.answer("✍️ Opening broadcast composer...", show_alert=False)
+            await query.answer("✦ Opening broadcast composer...", show_alert=False)
         except Exception:
             pass
         await set_user_state(user.id, "WAITING_FOR_ADMIN_BROADCAST")
         await query.edit_message_text(
-            "✍️ <b>Custom Announcement Broadcast</b>\n\n"
+            "✦ <b>Custom Announcement Broadcast</b>\n\n"
             "Please type and send the announcement text now.\n\n"
-            "• Supports HTML formatting (<b>bold</b>, <i>italic</i>, <code>code</code>)\n"
-            "• Supports URLs and emojis\n\n"
-            "<i>(Type /cancel to abort)</i>",
+            "▫️ Supports HTML formatting (<b>bold</b>, <i>italic</i>, <code>code</code>)\n"
+            "▫️ Supports URLs and links\n\n"
+            "➤ <i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
         )
 
     elif data == "adm_bcast_preset:challenge":
         try:
-            await query.answer("📢 Preparing challenge broadcast...", show_alert=False)
+            await query.answer("✦ Preparing challenge broadcast...", show_alert=False)
         except Exception:
             pass
         active_ch = await get_active_challenge()
         users = await get_all_broadcast_user_ids()
         count = len(users)
         if not active_ch:
-            await query.answer("⚠️ No live or scheduled challenge found.", show_alert=True)
+            await query.answer("▪️ No live or scheduled challenge found.", show_alert=True)
             return
 
         title = active_ch["title"]
         cat = active_ch["category"]
         time_l = active_ch["question_time_limit_seconds"]
         bcast_text = (
-            f"🚀 <b>AWS Builder Challenge Announcement!</b>\n\n"
+            f"✦ <b>AWS Builder Challenge Announcement!</b>\n\n"
             f"A cloud competition is active:\n"
-            f"⚡ <b>{html.escape(title)}</b>\n"
-            f"🏗️ <b>Category:</b> {html.escape(cat)}\n"
-            f"⏱️ <b>Time Limit:</b> {time_l}s per question\n\n"
-            f"👉 Open /challenge in the bot now to take the quiz and climb the leaderboard!\n\n"
-            f"📢 @AWSAASTU"
+            f"<b>{html.escape(title)}</b>\n"
+            f"▫️ <b>Category:</b> {html.escape(cat)}\n"
+            f"▫️ <b>Time Limit:</b> {time_l}s per question\n\n"
+            f"➤ <i>Open /challenge in the bot now to take the quiz and climb the leaderboard!</i>\n\n"
+            f"✦ @AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
 
         preview_text = (
-            f"📢 <b>BROADCAST PREVIEW</b>\n"
-            f"👥 <b>Target Audience:</b> <code>{count}</code> members\n\n"
+            f"✦ <b>BROADCAST PREVIEW</b>\n"
+            f"▫️ <b>Target Audience:</b> <code>{count}</code> members\n\n"
             f"<blockquote>{bcast_text}</blockquote>\n\n"
-            f"Ready to deliver this notification?"
+            f"➤ <i>Ready to deliver this notification?</i>"
         )
         await query.edit_message_text(
             preview_text,
@@ -1067,25 +1067,25 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_bcast_preset:leaderboard":
         try:
-            await query.answer("🏆 Preparing leaderboard broadcast...", show_alert=False)
+            await query.answer("✦ Preparing leaderboard broadcast...", show_alert=False)
         except Exception:
             pass
         users = await get_all_broadcast_user_ids()
         count = len(users)
         bcast_text = (
-            "🏆 <b>AWS Builder Championship Standings Updated!</b>\n\n"
+            "✦ <b>AWS Builder Championship Standings Updated!</b>\n\n"
             "The Weekly & Monthly championship leaderboards are refreshed with latest scores!\n\n"
             "Check where you rank among student cloud builders.\n\n"
-            "👉 Send /leaderboard to view the rankings!\n\n"
-            "📢 @AWSAASTU"
+            "➤ <i>Send /leaderboard to view the rankings!</i>\n\n"
+            "✦ @AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
 
         preview_text = (
-            f"📢 <b>BROADCAST PREVIEW</b>\n"
-            f"👥 <b>Target Audience:</b> <code>{count}</code> members\n\n"
+            f"✦ <b>BROADCAST PREVIEW</b>\n"
+            f"▫️ <b>Target Audience:</b> <code>{count}</code> members\n\n"
             f"<blockquote>{bcast_text}</blockquote>\n\n"
-            f"Ready to deliver this notification?"
+            f"➤ <i>Ready to deliver this notification?</i>"
         )
         await query.edit_message_text(
             preview_text,
@@ -1095,7 +1095,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data == "adm_bcast_preset:report":
         try:
-            await query.answer("📊 Preparing report broadcast...", show_alert=False)
+            await query.answer("✦ Preparing report broadcast...", show_alert=False)
         except Exception:
             pass
         rep = await get_monthly_analytics_report()
@@ -1112,24 +1112,24 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             champs_text = "• <i>Check /leaderboard for latest championship rankings!</i>\n"
 
         bcast_text = (
-            f"📊 <b>AWS SBG Monthly Season Wrap-Up ({month})</b>\n\n"
+            f"✦ <b>AWS SBG Monthly Season Wrap-Up ({month})</b>\n\n"
             f"Awesome work builders! Here is what our community achieved this month:\n\n"
-            f"👥 <b>Active Members:</b> <code>{rep['total_users']}</code>\n"
-            f"⚡ <b>Challenges Completed:</b> <code>{rep['total_attempts']}</code>\n"
-            f"🎯 <b>Community Accuracy:</b> <code>{rep['accuracy_pct']}%</code>\n"
-            f"🏆 <b>Total Points Earned:</b> <code>{rep['total_score']} pts</code>\n\n"
-            f"🌟 <b>Top 3 Builders of the Month:</b>\n"
+            f"▫️ <b>Active Members:</b> <code>{rep['total_users']}</code>\n"
+            f"▫️ <b>Challenges Completed:</b> <code>{rep['total_attempts']}</code>\n"
+            f"▫️ <b>Community Accuracy:</b> <code>{rep['accuracy_pct']}%</code>\n"
+            f"▫️ <b>Total Points Earned:</b> <code>{rep['total_score']} pts</code>\n\n"
+            f"◆ <b>Top 3 Builders of the Month:</b>\n"
             f"{champs_text}\n"
-            f"👉 Tap <b>/challenge</b> and <b>/leaderboard</b> to participate in upcoming events!\n\n"
-            f"📢 @AWSAASTU"
+            f"➤ <i>Tap /challenge and /leaderboard to participate in upcoming events!</i>\n\n"
+            f"✦ @AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
         users = await get_all_broadcast_user_ids()
         preview_text = (
-            f"📢 <b>BROADCAST PREVIEW (Monthly Report)</b>\n"
-            f"👥 <b>Target Audience:</b> <code>{len(users)}</code> members\n\n"
+            f"✦ <b>BROADCAST PREVIEW (Monthly Report)</b>\n"
+            f"▫️ <b>Target Audience:</b> <code>{len(users)}</code> members\n\n"
             f"<blockquote>{bcast_text}</blockquote>\n\n"
-            f"Ready to deliver this report announcement to the community?"
+            f"➤ <i>Ready to deliver this report announcement to the community?</i>"
         )
         await query.edit_message_text(
             preview_text,
@@ -1139,12 +1139,12 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_bcast_send:"):
         try:
-            await query.answer("🚀 Broadcasting announcement...", show_alert=False)
+            await query.answer("✦ Broadcasting announcement...", show_alert=False)
         except Exception:
             pass
         bcast_text = context.user_data.get("bcast_text")
         if not bcast_text:
-            await query.answer("⚠️ No broadcast message prepared.", show_alert=True)
+            await query.answer("▪️ No broadcast message prepared.", show_alert=True)
             return
 
         users = await get_all_broadcast_user_ids()
@@ -1152,7 +1152,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
         if not users:
             await query.edit_message_text(
-                "⚠️ <b>No Registered Bot Members Found</b>\n\n"
+                "▪️ <b>No Registered Bot Members Found</b>\n\n"
                 "Telegram requires members to send /start to the bot at least once before the bot can message them.\n\n"
                 "Once members interact with the bot, they will be reachable via broadcast.",
                 parse_mode=ParseMode.HTML,
@@ -1186,10 +1186,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             err_block = f"\n\n⚠️ <b>Delivery Issues ({failed}):</b>\n{preview_errs}"
 
         await query.edit_message_text(
-            f"📢 <b>Broadcast Complete!</b>\n\n"
-            f"✅ <b>Delivered Successfully:</b> <code>{sent}</code> members\n"
-            f"⚠️ <b>Failed / Blocked:</b> <code>{failed}</code>{err_block}\n\n"
-            f"<i>The announcement has been broadcast to all reachable community members.</i>",
+            f"✓ <b>Broadcast Complete!</b>\n\n"
+            f"▫️ <b>Delivered Successfully:</b> <code>{sent}</code> members\n"
+            f"▫️ <b>Failed / Blocked:</b> <code>{failed}</code>{err_block}\n\n"
+            f"➤ <i>The announcement has been broadcast to all reachable community members.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_panel_keyboard(),
         )

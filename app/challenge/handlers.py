@@ -92,19 +92,19 @@ def _format_question_card(q_data: dict) -> str:
 
     idx = q_data.get("question_index", q_num - 1)
     is_answered = idx in q_data.get("answered_indices", [])
-    status_tag = " • ✅ <i>Answered</i>" if is_answered else ""
-    prompt_line = "✅ <i>You have submitted an answer for this question.</i>" if is_answered else "👉 <i>Select your answer below:</i>"
+    status_tag = " • ✓ <i>Answered</i>" if is_answered else ""
+    prompt_line = "✓ <i>Answer submitted for this question.</i>" if is_answered else "➤ <i>Select your answer below:</i>"
 
     if timer_str:
         if is_capped:
-            timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code> ⚠️ <i>(Capped by Deadline • 30% Speed Weight)</i>\n\n"
+            timer_line = f"⏱️ <code>{timer_str}</code> left ⚠️ <i>(Capped by Deadline • 30% Speed Weight)</i>\n\n"
         else:
-            timer_line = f"⏱️ <b>Exam Time Left:</b> <code>{timer_str}</code> <i>(⚡ Speed bonus applies to remaining time)</i>\n\n"
+            timer_line = f"⏱️ <code>{timer_str}</code> left <i>(Speed bonus applies to remaining time)</i>\n\n"
     else:
         timer_line = ""
 
     return (
-        f"🧩 <b>Question {q_num} of {total}</b> <i>[{cat} • {diff}]</i>{status_tag}\n"
+        f"✦ <b>Question {q_num} of {total}</b> <i>[{cat} • {diff}]</i>{status_tag}\n"
         f"{timer_line}"
         f"<b>{q_text}</b>\n\n"
         f"<b>A.</b> {opt_a}\n"
@@ -138,27 +138,27 @@ def _format_review_card(q_data: dict) -> str:
     for key in ["A", "B", "C", "D"]:
         opt_text = html.escape(options.get(key, ""))
         if key == correct_opt:
-            prefix = "✅ <b>Option " + key + ":</b> "
+            prefix = "✓ <b>Option " + key + ":</b> "
         elif user_opt and key == user_opt and not is_correct:
-            prefix = "❌ <b>Option " + key + ":</b> "
+            prefix = "▪️ <b>Option " + key + ":</b> "
         else:
-            prefix = "⚪ <b>Option " + key + ":</b> "
+            prefix = "▫️ <b>Option " + key + ":</b> "
         opt_lines.append(f"{prefix}{opt_text}")
 
     if user_opt:
         if is_correct:
-            result_badge = f"🎉 <b>Your Answer:</b> Option {user_opt} (Correct ✅)"
+            result_badge = f"✓ <b>Your Answer:</b> Option {user_opt} (Correct)"
         else:
-            result_badge = f"❌ <b>Your Answer:</b> Option {user_opt} (Incorrect — Correct: Option {correct_opt})"
+            result_badge = f"▪️ <b>Your Answer:</b> Option {user_opt} (Incorrect › Correct: Option {correct_opt})"
     else:
-        result_badge = f"⚪ <b>Correct Answer:</b> Option {correct_opt}"
+        result_badge = f"✓ <b>Correct Answer:</b> Option {correct_opt}"
 
     card = (
-        f"📖 <b>Question Review ({q_num} of {total})</b> <i>[{cat} • {diff}]</i>\n\n"
+        f"✦ <b>Question Review ({q_num} of {total})</b> <i>[{cat} • {diff}]</i>\n\n"
         f"<b>{q_text}</b>\n\n"
         + "\n".join(opt_lines) + f"\n\n"
         f"{result_badge}\n\n"
-        f"<blockquote><b>💡 Explanation:</b>\n{explanation}</blockquote>"
+        f"<blockquote><b>Explanation:</b>\n{explanation}</blockquote>"
     )
     return card
 
@@ -263,17 +263,15 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not challenge:
         from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         no_ch_kb = InlineKeyboardMarkup([
-            [
-                InlineKeyboardButton("📚 Past Challenges", callback_data="ch_past_list"),
-                InlineKeyboardButton("🏆 Monthly Leaderboard", callback_data="lb_monthly:0:1"),
-            ],
+            [InlineKeyboardButton("📚 Past Challenges", callback_data="ch_past_list")],
+            [InlineKeyboardButton("🏆 Monthly Leaderboard", callback_data="lb_monthly:0:1")],
             [InlineKeyboardButton("📖 Scoring & Rules", callback_data="ch_rules")],
         ])
         await sender_func(
-            "⚡ <b>AWS Builder Challenges</b>\n\n"
-            "There is no live challenge at the moment.\n"
+            "✦ <b>AWS Builder Challenges</b>\n\n"
+            "No live challenge is active at the moment.\n"
             "Weekly challenges are scheduled by the core team. Check back soon or stay tuned to @AWSAASTU!\n\n"
-            "<i>Browse past challenges or check the leaderboard below:</i>",
+            "➤ <i>Browse past challenges or check the leaderboard below:</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=no_ch_kb,
         )
@@ -299,11 +297,11 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         correct = part["correct_count"]
         answered = part["answered_count"]
         await sender_func(
-            f"🏁 <b>You already completed this challenge!</b>\n\n"
-            f"⚡ <b>{title}</b>\n"
-            f"🏆 <b>Your Score:</b> <code>{score} pts</code>\n"
-            f"✅ <b>Accuracy:</b> {correct} / {answered} correct\n\n"
-            f"Check the leaderboard to see where you rank!",
+            f"✓ <b>Challenge Already Completed!</b>\n\n"
+            f"✦ <b>{title}</b>\n"
+            f"▫️ <b>Your Score:</b> <code>{score} pts</code>\n"
+            f"▫️ <b>Accuracy:</b> {correct} / {answered} correct\n\n"
+            f"➤ <i>Check the leaderboard below to see where you rank!</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_leaderboard_keyboard(ch_id),
         )
@@ -319,15 +317,15 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         starts_at = challenge.get("starts_at", "Soon")
         await sender_func(
             f"\n"
-            f"📅 <b>Upcoming AWS Builder Challenge</b>\n\n"
-            f"<blockquote>⚡ <b>{title}</b>\n"
+            f"✦ <b>Upcoming AWS Builder Challenge</b>\n\n"
+            f"<blockquote><b>{title}</b>\n"
             f"{desc}</blockquote>\n\n"
-            f"🏗️ <b>Category:</b>  {category}\n"
-            f"⏳ <b>Starts:</b>  {time_until} <i>({starts_at})</i>\n"
-            f"📊 <b>Questions:</b>  {total_q} questions\n"
-            f"⏱️ <b>Exam Time Limit:</b>  {duration_str}\n"
-            f"🎯 <b>Scoring Breakdown:</b>  {acc_pct}% Accuracy + {spd_pct}% Speed Bonus (faster completion = higher score)\n\n"
-            f"<i>The challenge will automatically unlock at the scheduled start time.</i>",
+            f"▫️ <b>Category:</b> {category}\n"
+            f"▫️ <b>Starts:</b> {time_until} <i>({starts_at})</i>\n"
+            f"▫️ <b>Questions:</b> {total_q}\n"
+            f"▫️ <b>Exam Time Limit:</b> {duration_str}\n"
+            f"▫️ <b>Scoring Breakdown:</b> {acc_pct}% Accuracy + {spd_pct}% Speed Bonus\n\n"
+            f"➤ <i>The challenge will automatically unlock at the scheduled start time.</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_start_keyboard(ch_id),
         )
@@ -337,8 +335,8 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(challenge, None)
     if ends_at_str and remaining_sec <= 0:
         await sender_func(
-            f"🏁 <b>This challenge has concluded!</b>\n\n"
-            f"⚡ <b>{title}</b>\n"
+            f"▪️ <b>This challenge has concluded!</b>\n\n"
+            f"✦ <b>{title}</b>\n"
             f"The challenge closing deadline was reached.\n"
             f"Check the leaderboard or stay tuned for our next weekly competition!",
             parse_mode=ParseMode.HTML,
@@ -359,14 +357,14 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Challenge is LIVE and participant can take it
     await sender_func(
         f"\n"
-        f"⚡ <b>{title}</b>\n\n"
+        f"✦ <b>Active Challenge: {title}</b>\n\n"
         f"<blockquote>{desc}</blockquote>\n\n"
-        f"📊 <b>Questions:</b>  {total_q} questions\n"
-        f"⏱️ <b>Exam Time Limit:</b>  {duration_str}\n"
-        f"🎯 <b>Scoring Breakdown:</b>  {acc_pct}% Accuracy + {spd_pct}% Speed Bonus (faster answers & completion earn more points)\n"
-        f"🏗️ <b>Category:</b>  {category}"
+        f"▫️ <b>Category:</b> {category}\n"
+        f"▫️ <b>Questions:</b> {total_q}\n"
+        f"▫️ <b>Exam Time Limit:</b> {duration_str}\n"
+        f"▫️ <b>Scoring Breakdown:</b> {acc_pct}% Accuracy + {spd_pct}% Speed Bonus"
         f"{capped_notice}\n\n"
-        f"<i>Tap</i> <b>Start Challenge</b> <i>when you're ready — the exam timer begins immediately.</i>",
+        f"➤ <i>Tap <b>Start Challenge</b> below when ready. The timer begins immediately!</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=get_challenge_start_keyboard(ch_id),
     )
@@ -491,16 +489,16 @@ async def past_challenges_command(update: Update, context: ContextTypes.DEFAULT_
     challenges = await list_past_challenges(limit=15)
     if not challenges:
         await update.message.reply_text(
-            "📚 <b>Past Challenges Archive</b>\n\n"
+            "✦ <b>Past Challenges Archive</b>\n\n"
             "No archived challenges available yet. Check back once weekly competitions conclude!",
             parse_mode=ParseMode.HTML,
         )
         return
 
     text = (
-        "📚 <b>AWS Builder Challenge Archive</b>\n\n"
-        "Browse previous competitions to inspect final leaderboards or practice quiz questions:\n\n"
-        "<i>Select a challenge below:</i>"
+        "✦ <b>AWS Builder Challenge Archive</b>\n\n"
+        "Browse previous competitions to inspect final standings or practice questions:\n\n"
+        "➤ <i>Select a challenge below:</i>"
     )
     await update.message.reply_text(
         text,
@@ -516,21 +514,21 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
 
     if data == "ch_past_list":
         try:
-            await query.answer("📚 Loading archive...", show_alert=False)
+            await query.answer("✦ Loading archive...", show_alert=False)
         except Exception:
             pass
         challenges = await list_past_challenges(limit=15)
         if not challenges:
             await query.edit_message_text(
-                "📚 <b>Past Challenges Archive</b>\n\nNo archived challenges found.",
+                "✦ <b>Past Challenges Archive</b>\n\nNo archived challenges found.",
                 parse_mode=ParseMode.HTML,
             )
             return
 
         text = (
-            "📚 <b>AWS Builder Challenge Archive</b>\n\n"
-            "Browse previous competitions to inspect final leaderboards or practice quiz questions:\n\n"
-            "<i>Select a challenge below:</i>"
+            "✦ <b>AWS Builder Challenge Archive</b>\n\n"
+            "Browse previous competitions to inspect final standings or practice questions:\n\n"
+            "➤ <i>Select a challenge below:</i>"
         )
         await query.edit_message_text(
             text,
@@ -540,13 +538,13 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
 
     elif data.startswith("ch_past:"):
         try:
-            await query.answer("📋 Loading challenge details...", show_alert=False)
+            await query.answer("✦ Loading challenge details...", show_alert=False)
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
         ch = await get_challenge(ch_id)
         if not ch:
-            await query.answer("⚠️ Challenge not found.", show_alert=True)
+            await query.answer("▪️ Challenge not found.", show_alert=True)
             return
 
         title = html.escape(ch["title"])
@@ -562,12 +560,12 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
         status_tag = status_icons.get(status, status)
 
         card = (
-            f"⚡ <b>{title}</b> <i>[{status_tag}]</i>\n\n"
+            f"✦ <b>{title}</b> <i>[{status_tag}]</i>\n\n"
             f"<blockquote>{desc}</blockquote>\n\n"
-            f"🏗️ <b>Category:</b> {category}\n"
-            f"📊 <b>Total Questions:</b> {total_q} questions\n"
-            f"⏱️ <b>Exam Time:</b> {exam_mins} minutes\n\n"
-            f"<i>You can inspect the final leaderboard or practice all questions below:</i>"
+            f"▫️ <b>Category:</b> {category}\n"
+            f"▫️ <b>Total Questions:</b> {total_q}\n"
+            f"▫️ <b>Exam Time:</b> {exam_mins} minutes\n\n"
+            f"➤ <i>Inspect final rankings or practice questions below:</i>"
         )
         await query.edit_message_text(
             card,
@@ -633,12 +631,12 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         total = result["total_questions"]
 
         completion_text = (
-            f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
-            f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
-            f"📊 <b>Total Questions:</b> {total}\n"
-            f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
-            f"🏆 <b>Final Score:</b> <code>{score} pts</code> <i>(Accuracy + Speed Bonus included)</i>\n\n"
-            f"<i>Your score has been submitted to the leaderboard.</i>"
+            f"✓ <b>Challenge Completed!</b>\n\n"
+            f"✦ <b>Results</b>\n"
+            f"▫️ <b>Total Questions:</b> {total}\n"
+            f"▫️ <b>Correct Answers:</b> {correct} / {total}\n"
+            f"▫️ <b>Final Score:</b> <code>{score} pts</code> <i>(Accuracy + Speed)</i>\n\n"
+            f"➤ <i>Your score has been submitted to the leaderboard.</i>"
         )
         await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
         return
@@ -652,12 +650,12 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         correct = part["correct_count"]
         total = len(part["question_order"])
         completion_text = (
-            f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
-            f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
-            f"📊 <b>Total Questions:</b> {total}\n"
-            f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
-            f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
-            f"<i>Your score has been submitted to the leaderboard.</i>"
+            f"✓ <b>Challenge Completed!</b>\n\n"
+            f"✦ <b>Results</b>\n"
+            f"▫️ <b>Total Questions:</b> {total}\n"
+            f"▫️ <b>Correct Answers:</b> {correct} / {total}\n"
+            f"▫️ <b>Final Score:</b> <code>{score} pts</code>\n\n"
+            f"➤ <i>Your score has been submitted to the leaderboard.</i>"
         )
         await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
         return
@@ -690,7 +688,7 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
     user_id = query.from_user.id
 
     try:
-        await query.answer(f"📖 Loading Question {target_idx + 1}...", show_alert=False)
+        await query.answer(f"✦ Loading Question {target_idx + 1}...", show_alert=False)
     except Exception:
         pass
 
@@ -699,7 +697,7 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
     except Exception as exc:
         logger.exception("get_next_question_for_participant crashed in nav: %s", exc)
         try:
-            await query.answer("⚠️ Failed to load question. Please try again.", show_alert=True)
+            await query.answer("▪️ Failed to load question. Please try again.", show_alert=True)
         except Exception:
             pass
         return
@@ -711,17 +709,17 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
             correct = part["correct_count"]
             total = len(part["question_order"])
             completion_text = (
-                f"🏁 <b>CHALLENGE COMPLETE!</b>\n\n"
-                f"🎉 <b>Outstanding effort, Builder!</b>\n\n"
-                f"📊 <b>Total Questions:</b> {total}\n"
-                f"✅ <b>Correct Answers:</b> {correct} / {total}\n"
-                f"🏆 <b>Final Score:</b> <code>{score} pts</code>\n\n"
-                f"<i>Your score has been submitted to the leaderboard.</i>"
+                f"✓ <b>Challenge Completed!</b>\n\n"
+                f"✦ <b>Results</b>\n"
+                f"▫️ <b>Total Questions:</b> {total}\n"
+                f"▫️ <b>Correct Answers:</b> {correct} / {total}\n"
+                f"▫️ <b>Final Score:</b> <code>{score} pts</code>\n\n"
+                f"➤ <i>Your score has been submitted to the leaderboard.</i>"
             )
             await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
         else:
             try:
-                await query.answer("⚠️ Could not load question. Time may have expired.", show_alert=True)
+                await query.answer("▪️ Could not load question. Time may have expired.", show_alert=True)
             except Exception:
                 pass
         return
@@ -822,12 +820,12 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
 
         if not entries:
             text = (
-                f"🏆 <b>Weekly Leaderboard: {title}</b>\n\n"
+                f"✦ <b>Weekly Leaderboard: {title}</b>\n\n"
                 f"<i>No completed submissions yet. Be the first to top the board!</i>"
             )
         else:
             page_info = f" <i>(Page {page} of {total_pages})</i>" if total_pages > 1 else ""
-            lines = [f"🏆 <b>Weekly Leaderboard: {title}</b>{page_info}\n"]
+            lines = [f"✦ <b>Weekly Leaderboard: {title}</b>{page_info}\n"]
             for row in entries:
                 rank_icon = _get_rank_badge(row["rank"])
                 escaped_name = html.escape(row["user_name"])
@@ -841,7 +839,7 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
                 score = row["score"]
                 correct = row["correct_count"]
                 total = row["answered_count"]
-                lines.append(f"{rank_icon} {name_display} — <code>{score} pts</code> ({correct}/{total} ✅)")
+                lines.append(f"{rank_icon} {name_display} — <code>{score} pts</code> ({correct}/{total} ✓)")
             text = "\n".join(lines)
     else:
         lb_data = await get_monthly_leaderboard(limit=10, page=page)
@@ -851,12 +849,12 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
 
         if not entries:
             text = (
-                f"📅 <b>Monthly Cumulative Leaderboard</b>\n\n"
+                f"✦ <b>Monthly Cumulative Leaderboard</b>\n\n"
                 f"<i>No completed challenge data for this season yet.</i>"
             )
         else:
             page_info = f" <i>(Page {page} of {total_pages})</i>" if total_pages > 1 else ""
-            lines = [f"📅 <b>Monthly Cumulative Champions</b>{page_info}\n"]
+            lines = [f"✦ <b>Monthly Cumulative Champions</b>{page_info}\n"]
             for row in entries:
                 rank_icon = _get_rank_badge(row["rank"])
                 escaped_name = html.escape(row["user_name"])
@@ -885,58 +883,40 @@ async def send_leaderboard_view(sender_func, challenge_id: int, mode: str = "wee
 def get_scoring_rules_text() -> str:
     """Returns formatted explanation of overall exam timing and two-factor scoring."""
     return (
-        "📖 <b>How Scoring Works</b>\n\n"
-        "<blockquote>⏱️ <b>Overall Exam Timer & Self-Pacing</b>\n\n"
-        "Each challenge has a unified <b>Overall Test Time Limit</b> "
-        "(e.g. 10 minutes total for all questions).\n"
-        "• You control your own pacing across the entire exam\n"
-        "• Spend more time on harder questions, answer simpler ones quickly\n"
-        "• The countdown clock is displayed live at the top of each question</blockquote>\n\n"
-        "<blockquote>🎯 <b>Two-Factor Scoring Formula</b>\n\n"
-        "Your final score combines <b>Accuracy (70%)</b> and <b>Speed Bonus (30%)</b>:\n\n"
-        "<b>Score = Raw Points × (0.70 + 0.30 × (1 - Time Used / Allotted Time))</b></blockquote>\n\n"
-        "📊 <b>Efficiency Multiplier Examples (10-min exam):</b>\n"
-        "  ⚡ <b>2 mins →</b> <code>~94%</code> of max points\n"
-        "  ⚡ <b>5 mins →</b> <code>85%</code> of max points\n"
-        "  ⚡ <b>8 mins →</b> <code>76%</code> of max points\n"
-        "  ⚡ <b>10 mins →</b> <code>70%</code> (Full accuracy baseline)\n"
-        "  ❌ <b>Overtime →</b> Auto-submits answered questions\n\n"
-        "<blockquote>🏆 <b>Leaderboards & Tie-Breakers</b>\n\n"
-        "• <b>Weekly Leaderboard:</b> Instant rankings for each quiz\n"
-        "• <b>Monthly Championship:</b> Cumulative score across all weeks\n"
-        "• <b>Tie-Breaker:</b> Fastest completion time wins</blockquote>\n\n"
-        "<i>Compete weekly, master AWS cloud, and climb the leaderboard!</i>"
+        "✦ <b>How Scoring Works</b>\n\n"
+        "<blockquote>⏱️ <b>Exam Timer & Self-Pacing</b>\n"
+        "Each challenge has a unified overall test time limit. "
+        "Manage your time freely across questions. A live countdown displays on each question.</blockquote>\n\n"
+        "<blockquote>🎯 <b>Two-Factor Scoring Formula</b>\n"
+        "<b>Score = Raw Points × (0.70 + 0.30 × (1 - Time Used / Allotted Time))</b>\n"
+        "▫️ <b>70% Accuracy:</b> Points earned for correct answers\n"
+        "▫️ <b>30% Speed:</b> Bonus awarded for faster completion</blockquote>\n\n"
+        "◆ <b>Speed Multiplier Scale (10-min exam)</b>\n"
+        "‣ 2 mins used › <code>~94%</code> of max points\n"
+        "‣ 5 mins used › <code>85%</code> of max points\n"
+        "‣ 8 mins used › <code>76%</code> of max points\n"
+        "‣ 10 mins used › <code>70%</code> (Accuracy baseline)\n"
+        "‣ Overtime › Auto-submits answered questions\n\n"
+        "◆ <b>Leaderboards & Tie-Breakers</b>\n"
+        "▫️ <b>Weekly Leaderboard:</b> Instant rankings for each quiz\n"
+        "▫️ <b>Monthly Championship:</b> Cumulative score across all weeks\n"
+        "▫️ <b>Tie-Breaker:</b> Fastest completion time wins\n\n"
+        "➤ <i>Compete weekly, master AWS cloud, and climb the leaderboard!</i>"
     )
 
 
 def get_guidelines_text() -> str:
     """Returns the community guidelines and code of conduct text."""
     return (
-        "🛡️ <b>Community Guidelines & Code of Conduct</b>\n\n"
-        "These rules apply to <b>all</b> AWS Builder Challenges. "
-        "Please read and follow them carefully.\n\n"
-        "<blockquote>🚫 <b>Strictly One Account</b>\n\n"
-        "Participating using multiple or secondary Telegram accounts is strictly forbidden. "
-        "Builders caught using duplicate accounts will have all entries disqualified from "
-        "weekly and monthly championship boards.</blockquote>\n\n"
-        "<blockquote>🤖 <b>No AI or Automation Assistance</b>\n\n"
-        "The goal is to build genuine cloud engineering competence. "
-        "Using automated bots, OCR scrapers, or pasting questions into "
-        "AI tools during timed quizzes is prohibited.</blockquote>\n\n"
-        "<blockquote>⏱️ <b>Single Continuous Attempt</b>\n\n"
-        "Once you tap <b>Start Challenge</b>, your exam clock runs continuously. "
-        "Leaving Telegram does not pause the timer. "
-        "You get only <b>one attempt</b> per challenge.</blockquote>\n\n"
-        "<blockquote>🔒 <b>Academic Integrity & No Leaks</b>\n\n"
-        "Do not share question screenshots, answer keys, or question dumps "
-        "with others before the weekly challenge concludes.</blockquote>\n\n"
-        "<blockquote>📸 <b>Screenshots Disabled</b>\n\n"
-        "Questions are sent with content protection enabled. "
-        "Forwarding and screenshots of quiz questions are restricted.</blockquote>\n\n"
-        "<blockquote>📚 <b>Post-Exam Review</b>\n\n"
-        "Full explanations and correct answers are revealed right after you submit. "
-        "Past challenges remain in /archive for open practice!</blockquote>\n\n"
-        "<i>Fair play ensures a level playing field for all builders. Good luck! 🍀</i>"
+        "✦ <b>Community Guidelines & Code of Conduct</b>\n\n"
+        "These rules apply to all AWS Builder Challenges to ensure fair competition:\n\n"
+        "▫️ <b>Strictly One Account</b> › Secondary accounts will be disqualified\n"
+        "▫️ <b>No AI or Automation Assistance</b> › Automated bots and AI tool assistance are prohibited\n"
+        "▫️ <b>Single Continuous Attempt</b> › Timer runs continuously once started\n"
+        "▫️ <b>Academic Integrity & No Leaks</b> › Do not share or dump questions before challenge ends\n"
+        "▫️ <b>Screenshots Disabled</b> › Quiz questions are content protected\n"
+        "▫️ <b>Post-Exam Review</b> › Full explanations unlock right after submission\n\n"
+        "➤ <i>Fair play ensures equal opportunity for all builders. Good luck!</i>"
     )
 
 

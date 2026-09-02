@@ -144,15 +144,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await register_or_update_bot_user(user.id, user.first_name, user.username)
 
     welcome_text = (
-        "<b>Welcome to the AWS SBG AASTU Community & Challenge Bot!</b>\n\n"
-        "✨ <b>What you can do here:</b>\n"
-        "    ⚡ <b>Weekly Challenges:</b> Test your cloud skills, earn points, and climb the leaderboard\n"
-        "    🏆 <b>Leaderboards:</b> View weekly and monthly season rankings\n"
-        "    💬 <b>Feedback & Support:</b> Submit suggestions directly to the core team\n"
-        "    🛡️ <b>Community Guidelines:</b> Read our community rules & code of conduct\n"
-        "    🤝 <b>Community Help:</b> Connect with AWS Student Builder leads\n\n"
-        "Tap <b>⚡ Challenge Center</b>, <b>🛡️ Community Guidelines</b>, or <b>💬 Feedback & Support</b> below to get started!\n\n"
-        "📢 <b>Join our community:</b> @AWSAASTU"
+        "✦ <b>AWS SBG AASTU Community & Challenge Bot!</b>\n\n"
+        "Welcome! Test your cloud skills, track your rank, and connect with fellow builders.\n\n"
+        "◆ <b>Features</b>\n"
+        "🔹 <b>Challenges</b> › Compete in weekly quizzes & earn points\n"
+        "🔹 <b>Leaderboards</b> › Weekly & monthly championship rankings\n"
+        "🔹 <b>Feedback & Support</b> › Direct line to the core team\n"
+        "🔹 <b>Guidelines</b> › Rules & code of conduct\n\n"
+        "➤ <i>Select an option below to get started:</i>\n\n"
+        "✦ <b>Join our community:</b> @AWSAASTU"
     )
 
     logo_path = os.path.join(
@@ -219,18 +219,18 @@ async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
     hub_text = (
-        "⚡ <b>AWS Builder Challenge Center</b>\n\n"
-        "Participate in weekly cloud competitions to test your architecture and serverless knowledge.\n\n"
-        "• <b>🚀 Take Active Challenge:</b> Start or resume the current quiz\n"
-        "• <b>🏆 Leaderboards:</b> View Weekly & Monthly championship standings\n"
-        "• <b>📚 Past Challenges:</b> Practice archived quizzes & inspect final standings\n"
-        "• <b>📖 Scoring & Rules:</b> Learn how timing and accuracy points work\n\n"
-        "<i>Select an option below:</i>"
+        "✦ <b>AWS Builder Challenge Center</b>\n\n"
+        "Compete in weekly cloud quizzes and sharpen your AWS knowledge.\n\n"
+        "🔹 <b>Take Challenge</b> › Start or resume the current quiz\n"
+        "🔹 <b>Leaderboards</b> › Weekly & monthly standings\n"
+        "🔹 <b>Past Challenges</b> › Browse archive & practice\n"
+        "🔹 <b>Scoring Rules</b> › Accuracy & speed formula\n\n"
+        "➤ <i>Choose an option below:</i>"
     )
     cb_query = getattr(update, "callback_query", None)
     if cb_query:
         try:
-            await cb_query.answer("⚡ Loading Challenge Center...", show_alert=False)
+            await cb_query.answer("✦ Loading Challenge Center...", show_alert=False)
         except Exception:
             pass
         await cb_query.message.reply_text(
@@ -254,11 +254,11 @@ async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
     hub_text = (
-        "💬 <b>Feedback & Community Support Hub</b>\n\n"
-        "Have an idea for upcoming AWS workshops, a feature suggestion, or an issue to report?\n\n"
-        "• <b>📝 Submit Feedback:</b> Send a direct ticket to our core admin team\n"
-        "• <b>ℹ️ About Support:</b> Learn how our team processes your messages\n\n"
-        "<i>Select an action below:</i>"
+        "✦ <b>Feedback & Community Support Hub</b>\n\n"
+        "Have an idea for workshops, suggestions, or an issue to report?\n\n"
+        "🔹 <b>Submit Feedback</b> › Send a direct ticket to the core team\n"
+        "🔹 <b>About Support</b> › How our team handles your messages\n\n"
+        "➤ <i>Select an option below:</i>"
     )
     await update.message.reply_text(
         hub_text,
@@ -270,17 +270,17 @@ async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the available visible commands for members."""
     help_text = (
-        "📘 <b>AWS SBG Community Bot Shortcuts</b>\n\n"
-        "• /start — Open the main welcome menu\n"
-        "• /challenge — Open the Challenge Center & start quiz\n"
-        "• /archive — Browse & practice past challenges\n"
-        "• /leaderboard — View weekly & monthly championship rankings\n"
-        "• /rules — See how speed & accuracy scoring is calculated\n"
-        "• /guidelines — Read community rules & code of conduct\n"
-        "• /feedback — Drop a suggestion or issue for the core team\n"
-        "• /about — Learn more about what we do\n"
-        "• /cancel — Return to the main menu\n\n"
-        "💡 <b>Tip:</b> Tap any /command above to send it directly, or use the menu buttons below!"
+        "✦ <b>AWS SBG Community Bot Shortcuts</b>\n\n"
+        "▫️ /start › Welcome menu\n"
+        "▫️ /challenge › Challenge center & active quiz\n"
+        "▫️ /leaderboard › Weekly & monthly standings\n"
+        "▫️ /archive › Past challenges & practice\n"
+        "▫️ /rules › Scoring formula & timing\n"
+        "▫️ /guidelines › Rules & code of conduct\n"
+        "▫️ /feedback › Contact the core team\n"
+        "▫️ /about › About AWS SBG AASTU\n"
+        "▫️ /cancel › Return to main menu\n\n"
+        "➤ <i>Tap any command above or use the menu buttons below.</i>"
     )
     await update.message.reply_text(
         help_text,
@@ -292,11 +292,11 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Provides details about the bot and community group."""
     about_text = (
-        "ℹ️ <b>About AWS SBG AASTU</b>\n\n"
-        "The AWS Student Builder Group at AASTU empowers students with practical cloud computing knowledge, "
-        "certifications, architectural challenges, and hackathons.\n\n"
-        "Participate in our weekly challenges via /challenge to sharpen your AWS expertise!\n\n"
-        "📢 <b>Join our community:</b> @AWSAASTU"
+        "✦ <b>About AWS SBG AASTU</b>\n\n"
+        "The AWS Student Builder Group at AASTU empowers students through hands-on cloud learning, "
+        "certifications, architecture challenges, and hackathons.\n\n"
+        "▫️ <b>Weekly Quizzes:</b> /challenge\n"
+        "▫️ <b>Community Channel:</b> @AWSAASTU"
     )
     await update.message.reply_text(
         about_text,
@@ -311,8 +311,9 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await set_user_state(user_id, WAITING_FOR_FEEDBACK)
 
     await update.message.reply_text(
-        "✍️ <b>Please type your feedback, suggestion, or issue below:</b>\n\n"
-        "<i>(Type /cancel if you change your mind)</i>",
+        "✦ <b>Submit Feedback</b>\n\n"
+        "Please type your feedback, suggestion, or issue below:\n\n"
+        "➤ <i>(Type /cancel if you change your mind)</i>",
         parse_mode=ParseMode.HTML,
         reply_markup=ReplyKeyboardRemove(),
     )
@@ -354,7 +355,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     else:
         await update.message.reply_text(
-            "🔙 <b>Main Menu</b>\n\nChoose an option below:",
+            "✦ <b>Main Menu</b>\n\nChoose an option below:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard(),
         )
@@ -445,19 +446,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 champs_text = "• <i>No completed challenge attempts recorded yet this month.</i>\n"
 
             report_card = (
-                f"📊 <b>AWS Student Builder Monthly Activity Report</b>\n"
+                f"✦ <b>AWS Student Builder Monthly Activity Report</b>\n"
                 f"📅 <b>Period:</b> {rep['month_name']}\n\n"
-                f"👥 <b>Community Engagement:</b>\n"
-                f"• Registered Bot Members: <code>{rep['total_users']}</code>\n"
-                f"• Feedback Tickets Received: <code>{rep['feedback_count']}</code>\n"
-                f"• Staff Replies Delivered: <code>{rep['reply_count']}</code>\n\n"
-                f"⚡ <b>Challenges & Competitions:</b>\n"
-                f"• Total Challenges: <code>{rep['total_challenges']}</code>\n"
-                f"• Total Submissions: <code>{rep['total_attempts']}</code>\n"
-                f"• Community Accuracy: <code>{rep['accuracy_pct']}%</code> ({rep['total_correct']}/{rep['total_answered']})\n"
-                f"• Average Score: <code>{rep['avg_score']} pts</code>\n"
-                f"• Total Points Earned: <code>{rep['total_score']} pts</code>\n\n"
-                f"🏆 <b>Top 3 Builders of the Month:</b>\n"
+                f"◆ <b>Community Engagement</b>\n"
+                f"▫️ Registered Members › <code>{rep['total_users']}</code>\n"
+                f"▫️ Feedback Tickets › <code>{rep['feedback_count']}</code>\n"
+                f"▫️ Staff Replies › <code>{rep['reply_count']}</code>\n\n"
+                f"◆ <b>Challenges & Quizzes</b>\n"
+                f"▫️ Quizzes Hosted › <code>{rep['total_challenges']}</code>\n"
+                f"▫️ Submissions › <code>{rep['total_attempts']}</code>\n"
+                f"▫️ Accuracy › <code>{rep['accuracy_pct']}%</code>\n"
+                f"▫️ Average Score › <code>{rep['avg_score']} pts</code>\n"
+                f"▫️ Points Awarded › <code>{rep['total_score']} pts</code>\n\n"
+                f"◆ <b>Top 3 Builders</b>\n"
                 f"{champs_text}"
             )
             await update.message.reply_text(
@@ -470,16 +471,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             users = await get_all_broadcast_user_ids()
             count = len(users)
             await update.message.reply_text(
-                f"📢 <b>Community Broadcast Center</b>\n\n"
-                f"👥 <b>Target Audience:</b> <code>{count}</code> registered members\n\n"
-                f"Select an announcement preset or compose a custom broadcast:",
+                f"✦ <b>Community Broadcast Center</b>\n\n"
+                f"▫️ <b>Target Audience:</b> <code>{count}</code> registered members\n\n"
+                f"➤ <i>Select an announcement preset or compose a custom broadcast:</i>",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_broadcast_presets_keyboard(),
             )
             return
         elif text in ("Exit Admin", "🚪 Exit Admin", "🚪 Leave Admin", "Leave Admin"):
             await update.message.reply_text(
-                "🔙 <b>Exited Admin Panel.</b>\n\nReturning to member menu:",
+                "✦ <b>Exited Admin Panel</b>\n\nReturning to member menu:",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_main_menu_keyboard(),
             )
@@ -1102,10 +1103,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         safe_text = html.escape(text)
 
         admin_notification = (
+            f"✦ <b>New Feedback Ticket</b>\n"
             f"👤 <b>From:</b> {safe_name} ({safe_username})\n"
             f"🆔 <b>User ID:</b> <code>{user_id}</code>\n\n"
-            f"💬 <b>Message:</b>\n"
-            f"<blockquote>{safe_text}</blockquote>"
+            f"<blockquote>{safe_text}</blockquote>\n\n"
+            f"➤ <i>Reply directly to this message to respond to the user.</i>"
         )
 
         try:
@@ -1128,7 +1130,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             # Confirm submission success to the member
             await update.message.reply_text(
-                "✅ <b>Thank you!</b> Your feedback has been successfully delivered to the AWS Student Builder core team.",
+                "✓ <b>Thank you!</b> Your feedback has been successfully delivered to the AWS Student Builder core team.",
                 parse_mode=ParseMode.HTML,
                 reply_markup=reply_markup,
             )
@@ -1136,12 +1138,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"Failed to forward feedback to admin group: {e}")
             await update.message.reply_text(
-                "⚠️ Your feedback was received, but there was an error forwarding it to the team. Please try again later."
+                "▪️ Your feedback was received, but there was an error forwarding it to the team. Please try again later."
             )
     else:
         # Default response if they type random text outside of feedback flow
         await update.message.reply_text(
-            "I didn't quite catch that. Use the buttons below or type <code>/challenge</code> to take our weekly quiz!",
+            "I didn't quite catch that. Use the buttons below or send <code>/challenge</code> to take our weekly quiz!",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard(),
         )
@@ -1169,9 +1171,9 @@ async def handle_admin_reply(update: Update, context: ContextTypes.DEFAULT_TYPE)
     safe_reply = html.escape(response_text)
 
     reply_message = (
-        f"💬 <b>Response from the AWS Student Builder Core Team</b>\n\n"
+        f"✦ <b>Response from the AWS Student Builder Core Team</b>\n\n"
         f"<blockquote>{safe_reply}</blockquote>\n\n"
-        f"<i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
+        f"➤ <i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
     )
 
     try:
@@ -1215,9 +1217,9 @@ async def handle_admin_edited_reply(update: Update, context: ContextTypes.DEFAUL
     safe_reply = html.escape(response_text)
 
     reply_message = (
-        f"💬 <b>Response from the AWS Student Builder Core Team</b> <i>(edited)</i>\n\n"
+        f"✦ <b>Response from the AWS Student Builder Core Team</b> <i>(edited)</i>\n\n"
         f"<blockquote>{safe_reply}</blockquote>\n\n"
-        f"<i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
+        f"➤ <i>Thank you for reaching out! You can submit more feedback anytime with /feedback.</i>"
     )
 
     try:
@@ -1251,9 +1253,9 @@ async def handle_user_edited_feedback(update: Update, context: ContextTypes.DEFA
     safe_text = html.escape(text)
 
     admin_notification = (
+        f"✦ <b>Feedback Ticket (edited)</b>\n"
         f"👤 <b>From:</b> {safe_name} ({safe_username}) <i>(edited)</i>\n"
         f"🆔 <b>User ID:</b> <code>{user.id}</code>\n\n"
-        f"💬 <b>Message:</b>\n"
         f"<blockquote>{safe_text}</blockquote>"
     )
 
@@ -1281,19 +1283,19 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
     cmd = html.escape(raw_text.split()[0])
 
     response_text = (
-        f"❓ <b>Unrecognized Command:</b> <code>{cmd}</code>\n\n"
-        f"I didn't recognize that command. Here are the commands you can use:\n\n"
-        f"⚡ <b>Challenges:</b>\n"
-        f"• /challenge — Take active competition\n"
-        f"• /leaderboard — View championship rankings\n"
-        f"• /archive — Browse past quizzes & practice\n"
-        f"• /rules — Scoring & timing guide\n\n"
-        f"💬 <b>Support & Community:</b>\n"
-        f"• /feedback — Submit feedback to core team\n"
-        f"• /start — Open main menu\n"
-        f"• /help — Full bot guide\n"
-        f"• /cancel — Return to main menu\n\n"
-        f"<i>Tap any command above or choose from the menu below:</i>"
+        f"✦ <b>Unrecognized Command:</b> <code>{cmd}</code>\n\n"
+        f"Available shortcuts:\n\n"
+        f"◆ <b>Challenges</b>\n"
+        f"▫️ /challenge › Active quiz\n"
+        f"▫️ /leaderboard › Championship rankings\n"
+        f"▫️ /archive › Past quizzes & practice\n"
+        f"▫️ /rules › Scoring & timing guide\n\n"
+        f"◆ <b>Support & Community</b>\n"
+        f"▫️ /feedback › Submit feedback\n"
+        f"▫️ /start › Main menu\n"
+        f"▫️ /help › Full bot guide\n"
+        f"▫️ /cancel › Return to main menu\n\n"
+        f"➤ <i>Tap any command above or use the menu below.</i>"
     )
     await update.message.reply_text(
         response_text,
