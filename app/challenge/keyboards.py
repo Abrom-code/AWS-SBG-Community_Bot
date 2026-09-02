@@ -34,13 +34,16 @@ def get_active_challenges_nav_keyboard(
     if is_completed:
         buttons.append([InlineKeyboardButton("🏆 View Leaderboard", callback_data=f"lb_weekly:{challenge_id}:1")])
         buttons.append([InlineKeyboardButton("📖 Review Answers", callback_data=f"ch_review:{challenge_id}:0")])
+        buttons.append([InlineKeyboardButton("Refresh Status", callback_data=f"ch_refresh:{challenge_id}:{current_index}")])
     elif is_scheduled:
-        btn_label = f"🕒 Opens {scheduled_countdown}" if scheduled_countdown else "🕒 Scheduled Challenge"
+        btn_label = f"Opens {scheduled_countdown}" if scheduled_countdown else "Scheduled Challenge"
         if len(btn_label) > 38:
             btn_label = btn_label[:35] + "..."
         buttons.append([InlineKeyboardButton(btn_label, callback_data=f"ch_sched_info:{challenge_id}")])
+        buttons.append([InlineKeyboardButton("Refresh Status", callback_data=f"ch_refresh:{challenge_id}:{current_index}")])
     else:
         buttons.append([InlineKeyboardButton("🚀 Start Challenge", callback_data=f"ch_start:{challenge_id}")])
+        buttons.append([InlineKeyboardButton("Refresh Status", callback_data=f"ch_refresh:{challenge_id}:{current_index}")])
 
     # 2. Smart Navigation Bar (if there are multiple challenges)
     if total_challenges > 1:

@@ -336,12 +336,15 @@ def format_datetime_12h(val: Any, fallback: str = "Unscheduled") -> str:
     return f"{month_name} {day}, {year} · {hour_12}:{minute} {ampm} {BOT_TIMEZONE_NAME}"
 
 
-async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
+async def get_challenge(challenge_id: int, force_refresh: bool = False) -> Optional[Dict[str, Any]]:
     """Retrieves a single challenge by ID with automatic time-based status transitions and caching."""
     now_time = time.time()
-    cached = _challenge_cache.get(challenge_id)
-    if cached and (now_time - cached[0] < CACHE_TTL_SECONDS):
-        return dict(cached[1])
+    if not force_refresh:
+        cached = _challenge_cache.get(challenge_id)
+        if cached and (now_time - cached[0] < CACHE_TTL_SECONDS):
+            return dict(cached[1])
+    else:
+        _challenge_cache.pop(challenge_id, None)
 
     row = await _execute(
         """

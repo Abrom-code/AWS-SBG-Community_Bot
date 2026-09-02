@@ -795,6 +795,47 @@ def test_multi_active_challenges_sorting_and_selection():
     asyncio.run(handle_scheduled_challenge_info_callback(cb_info_update, context))
 
 
+def test_refresh_status_button_transitions_to_live():
+    """Verifies that tapping the 'Refresh Status' button without emoji unlocks a scheduled challenge in real time."""
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import handle_challenge_refresh_callback
+
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(
+        service.create_challenge(
+            title="Realtime Refresh Challenge",
+            category="DevOps",
+            starts_at="2099-01-01T00:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch_id, "SCHEDULED"))
+
+    context = FakeContext()
+    cb = FakeCallbackQuery(data=f"ch_refresh:{ch_id}:0", user_id=101)
+    up = FakeUpdate(callback_query=cb)
+
+    # First refresh: challenge is still scheduled
+    asyncio.run(handle_challenge_refresh_callback(up, context))
+    assert cb.edited_text is not None
+    assert "Status: Upcoming Challenge" in cb.edited_text
+    labels = [btn.text for row in cb.reply_markup.inline_keyboard for btn in row]
+    assert "Refresh Status" in labels
+
+    # Now time arrives: update starts_at to the past
+    past_iso = "2026-01-01T00:00:00+00:00"
+    asyncio.run(service.update_challenge_details(ch_id, starts_at=past_iso))
+
+    cb2 = FakeCallbackQuery(data=f"ch_refresh:{ch_id}:0", user_id=101)
+    up2 = FakeUpdate(callback_query=cb2)
+    asyncio.run(handle_challenge_refresh_callback(up2, context))
+
+    assert cb2.edited_text is not None
+    assert "Status: Live Now" in cb2.edited_text
+    labels2 = [btn.text for row in cb2.reply_markup.inline_keyboard for btn in row]
+    assert any("Start Challenge" in label for label in labels2)
+    assert "Refresh Status" in labels2
+
+
 def test_leaderboard_review_button_visibility_and_locking():
     from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
     from app.challenge.handlers import handle_leaderboard_callback, handle_challenge_review_callback

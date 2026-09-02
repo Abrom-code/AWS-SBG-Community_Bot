@@ -526,11 +526,79 @@ async def handle_scheduled_challenge_info_callback(update: Update, context: Cont
     countdown = _format_time_until(challenge.get("starts_at"))
     opening_time = _format_scheduled_datetime(challenge.get("starts_at"))
     await query.answer(
-        f"🕒 Scheduled Challenge\n\n"
+        f"Scheduled Challenge\n\n"
         f"Opening: {opening_time}\n"
         f"Countdown: Opens {countdown}",
         show_alert=True,
     )
+
+
+async def handle_challenge_refresh_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Refreshes the challenge status and re-renders the challenge card in real time without emojis."""
+    query = update.callback_query
+    if not query:
+        return
+    data = query.data.split(":")
+    ch_id = int(data[1]) if len(data) > 1 and data[1].isdigit() else 0
+    curr_idx = int(data[2]) if len(data) > 2 and data[2].isdigit() else 0
+
+    user = query.from_user
+    user_id = user.id if user else 0
+    user_name = f"{user.first_name} {user.last_name or ''}".strip() if user else ""
+    username = user.username or "" if user else ""
+
+    # Clear cache and evaluate real-time status transitions
+    await get_challenge(ch_id, force_refresh=True)
+    active_challenges = await get_active_challenges()
+
+    if not active_challenges:
+        try:
+            await query.answer("No active challenges found.", show_alert=True)
+        except Exception:
+            pass
+        return
+
+    # Match target index
+    target_idx = curr_idx
+    for idx, ch in enumerate(active_challenges):
+        if ch["id"] == ch_id:
+            target_idx = idx
+            break
+    if target_idx >= len(active_challenges):
+        target_idx = 0
+
+    cur_ch = active_challenges[target_idx]
+    if cur_ch.get("status") == "LIVE":
+        try:
+            await query.answer("Challenge is LIVE. Ready to start.", show_alert=False)
+        except Exception:
+            pass
+    elif cur_ch.get("status") == "SCHEDULED":
+        countdown = _format_time_until(cur_ch.get("starts_at"))
+        try:
+            await query.answer(f"Status refreshed. Opens {countdown}.", show_alert=False)
+        except Exception:
+            pass
+    else:
+        try:
+            await query.answer("Status refreshed.", show_alert=False)
+        except Exception:
+            pass
+
+    try:
+        await _render_active_challenge_card(
+            query.edit_message_text,
+            active_challenges,
+            current_index=target_idx,
+            user_id=user_id,
+            user_name=user_name,
+            username=username,
+        )
+    except BadRequest as e:
+        if "Message is not modified" in str(e):
+            pass
+        else:
+            raise
 
 
 async def handle_challenge_start_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
