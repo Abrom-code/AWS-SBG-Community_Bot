@@ -1190,9 +1190,9 @@ def test_power_user_challenge_creation_title_description_duration(monkeypatch):
     assert "this   is test challeng" in resp
     assert "20 Minutes" in resp
 
-    # State must be reset
+    # State allows typing custom dates immediately on Step 4 screen
     state_after = asyncio.run(db.get_user_state(88888))
-    assert state_after is None
+    assert state_after is not None and state_after.startswith("WAITING_FOR_EDIT_CHALLENGE_SCHEDULE")
 
     # Verify challenge in database
     from app.challenge.service import list_challenges

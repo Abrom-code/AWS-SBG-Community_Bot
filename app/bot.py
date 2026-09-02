@@ -499,50 +499,42 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-    # Check user state
-    current_state = await get_user_state(user_id)
+    # Power-User Direct Challenge Creation Shortcut (usable anytime by admins)
+    raw = text.strip()
+    parts = [p.strip() for p in raw.split("|")]
+    chat_id = update.effective_chat.id if update.effective_chat else None
 
-    # Check if admin is entering challenge title (Wizard Step 1/4)
-    if current_state == "WAITING_FOR_CHALLENGE_TITLE":
-        chat_id = update.effective_chat.id if update.effective_chat else None
-        if not await is_admin_user(user_id, chat_id, context.bot):
-            await set_user_state(user_id, None)
-            return
-
+    if len(parts) >= 3 and await is_admin_user(user_id, chat_id, context.bot):
         await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        raw = text.strip()
-        parts = [p.strip() for p in raw.split("|")]
+        duration_mins = 10
+        category = "Architecture"
+        description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
+        title = parts[0]
 
-        # Power-user multi-part shortcut (3 or 4 parts: Title | Category | Description | Duration OR Title | Description | Duration)
-        if len(parts) >= 3:
-            await set_user_state(user_id, None)
-            duration_mins = 10
-            category = "Architecture"
-            description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
-            title = parts[0]
+        def _parse_dur(val: str) -> Optional[int]:
+            cleaned = val.lower().replace("minutes", "").replace("minute", "").replace("mins", "").replace("min", "").replace("m", "").strip()
+            return int(cleaned) if cleaned.isdigit() else None
 
-            def _parse_dur(val: str) -> Optional[int]:
-                cleaned = val.lower().replace("minutes", "").replace("minute", "").replace("mins", "").replace("min", "").replace("m", "").strip()
-                return int(cleaned) if cleaned.isdigit() else None
-
-            if len(parts) >= 4:
-                # Format: Title | Category | Description | Duration
+        if len(parts) >= 4:
+            # Format: Title | Category | Description | Duration
+            category = parts[1] or "Architecture"
+            description = parts[2] or description
+            duration_mins = _parse_dur(parts[3]) or 10
+        elif len(parts) == 3:
+            # Format: Title | Description | Duration  OR  Title | Category | Description
+            dur = _parse_dur(parts[2])
+            if dur is not None:
+                # Power user: Title | Description | Duration
+                description = parts[1] or description
+                duration_mins = dur
+            else:
+                # Power user: Title | Category | Description
                 category = parts[1] or "Architecture"
                 description = parts[2] or description
-                duration_mins = _parse_dur(parts[3]) or 10
-            elif len(parts) == 3:
-                # Format: Title | Description | Duration  OR  Title | Category | Description
-                dur = _parse_dur(parts[2])
-                if dur is not None:
-                    # Power user: Title | Description | Duration
-                    description = parts[1] or description
-                    duration_mins = dur
-                else:
-                    # Power user: Title | Category | Description
-                    category = parts[1] or "Architecture"
-                    description = parts[2] or description
 
-            duration_mins = max(1, min(300, duration_mins))
+        duration_mins = max(1, min(300, duration_mins))
+
+        try:
             ch_id = await create_challenge(
                 title=title,
                 description=description,
@@ -556,10 +548,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 created_by=user_id,
             )
 
+            context.user_data["wiz_ch_id"] = ch_id
             context.user_data["wiz_title"] = title
             context.user_data["wiz_category"] = category
             context.user_data["wiz_description"] = description
             context.user_data["wiz_duration_mins"] = duration_mins
+
+            await set_user_state(user_id, f"WAITING_FOR_EDIT_CHALLENGE_SCHEDULE:{ch_id}")
 
             await update.message.reply_text(
                 f"<b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
@@ -567,11 +562,35 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Category: {html.escape(category)}\n"
                 f"<i>{html.escape(description)}</i></blockquote>\n\n"
                 f"• <b>Exam Time Limit:</b> <code>{duration_mins} Minutes</code>\n\n"
-                f"Select start schedule & deadline:",
+                f"Select start schedule & deadline (or type custom start & end dates in EAT):",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_admin_schedule_presets_keyboard(ch_id, duration_mins),
             )
+        except Exception as exc:
+            logger.exception("Failed to create challenge via shortcut: %s", exc)
+            await update.message.reply_text(
+                f"⚠️ <b>Failed to create challenge:</b> {html.escape(str(exc))}\n\nPlease try again or use the step-by-step wizard.",
+                parse_mode=ParseMode.HTML,
+            )
+        return
+
+    # Check user state
+    current_state = await get_user_state(user_id)
+
+    # Check if admin is entering challenge title (Wizard Step 1/4)
+    if current_state == "WAITING_FOR_CHALLENGE_TITLE":
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            await update.message.reply_text(
+                "⛔ <b>Access Denied:</b> This action requires administrator permissions.",
+                parse_mode=ParseMode.HTML,
+            )
             return
+
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        raw = text.strip()
+        parts = [p.strip() for p in raw.split("|")]
 
         # Step-by-Step Flow: (1 part: Title  OR  2 parts: Title | Category)
         if len(parts) == 2:

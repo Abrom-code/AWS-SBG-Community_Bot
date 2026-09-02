@@ -60,11 +60,16 @@ ADMIN_GROUP_ID = int(os.getenv("ADMIN_GROUP_CHAT_ID", "0"))
 def get_configured_admin_ids() -> set:
     """Returns the set of explicitly configured admin Telegram user IDs."""
     admin_ids = set()
-    raw_ids = os.getenv("ADMIN_USER_IDS", "") or os.getenv("ADMIN_IDS", "")
-    for part in raw_ids.replace(";", ",").split(","):
-        part = part.strip()
-        if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
-            admin_ids.add(int(part))
+    raw_parts = [
+        os.getenv("ADMIN_USER_IDS", ""),
+        os.getenv("ADMIN_IDS", ""),
+        os.getenv("ADMIN_USER_ID", ""),
+    ]
+    for raw in raw_parts:
+        for part in raw.replace(";", ",").split(","):
+            part = part.strip()
+            if part.isdigit() or (part.startswith("-") and part[1:].isdigit()):
+                admin_ids.add(int(part))
     return admin_ids
 
 
