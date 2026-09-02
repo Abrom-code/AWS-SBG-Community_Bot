@@ -424,17 +424,19 @@ def test_challenge_hub_and_feedback_hub_commands():
     context = FakeContext()
 
     asyncio.run(bot.challenge_hub_command(update, context))
-    assert len(update.message.reply_text_calls) == 1
-    assert "AWS Builder Challenges" in update.message.reply_text_calls[0]["text"]
+    assert len(update.message.reply_text_calls) == 2
+    assert "Challenge Center" in update.message.reply_text_calls[0]["text"]
+    assert "Leaderboards" in [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert "AWS Builder Challenges" in update.message.reply_text_calls[1]["text"]
 
     asyncio.run(bot.feedback_hub_command(update, context))
-    assert len(update.message.reply_text_calls) == 2
-    assert "Feedback & Community Support Hub" in update.message.reply_text_calls[1]["text"]
-    assert "Submit Feedback" in [b.text for row in update.message.reply_text_calls[1]["reply_markup"].keyboard for b in row]
+    assert len(update.message.reply_text_calls) == 3
+    assert "Feedback & Community Support Hub" in update.message.reply_text_calls[2]["text"]
+    assert "Submit Feedback" in [b.text for row in update.message.reply_text_calls[2]["reply_markup"].keyboard for b in row]
 
 
 def test_main_menu_challenges_click_displays_active_challenges_directly():
-    """Verifies that clicking 'Challenges' in the main menu directly displays the challenge card."""
+    """Verifies that clicking 'Challenges' or typing /challenges updates the bottom keyboard and displays the card."""
     asyncio.run(db.reset_db())
     from app.challenge import service
     ch_id = asyncio.run(service.create_challenge(title="Direct Challenge Sprint", category="DevOps"))
@@ -444,13 +446,28 @@ def test_main_menu_challenges_click_displays_active_challenges_directly():
     context = FakeContext()
 
     asyncio.run(bot.handle_message(update, context))
-    assert len(update.message.reply_text_calls) == 1
-    resp = update.message.reply_text_calls[0]["text"]
+    assert len(update.message.reply_text_calls) == 2
+    # First call updates the bottom persistent keyboard
+    assert "Challenge Center" in update.message.reply_text_calls[0]["text"]
+    bottom_buttons = [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert "Leaderboards" in bottom_buttons
+    assert "Past Challenges" in bottom_buttons
+    assert "Main Menu" in bottom_buttons
+
+    # Second call displays the challenge card with inline buttons
+    resp = update.message.reply_text_calls[1]["text"]
     assert "Direct Challenge Sprint" in resp
     assert "Status: Live Now" in resp
-    btn_labels = [b.text for row in update.message.reply_text_calls[0]["reply_markup"].inline_keyboard for b in row]
+    btn_labels = [b.text for row in update.message.reply_text_calls[1]["reply_markup"].inline_keyboard for b in row]
     assert any("Start Challenge" in b for b in btn_labels)
     assert "Refresh Status" in btn_labels
+
+    # Also verify /challenges command directly
+    update_cmd = FakeUpdate(user_id=123)
+    asyncio.run(bot.challenge_command(update_cmd, context))
+    assert len(update_cmd.message.reply_text_calls) == 2
+    cmd_bottom = [b.text for row in update_cmd.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert "Leaderboards" in cmd_bottom
 
 
 def test_direct_feedback_and_support_navigation():

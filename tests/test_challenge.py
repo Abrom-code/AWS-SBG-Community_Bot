@@ -747,8 +747,9 @@ def test_multi_active_challenges_sorting_and_selection():
     context = FakeContext()
     asyncio.run(challenge_command(update, context))
 
-    assert len(update.message.reply_text_calls) == 1
-    call = update.message.reply_text_calls[0]
+    assert len(update.message.reply_text_calls) == 2
+    assert "Challenge Center" in update.message.reply_text_calls[0]["text"]
+    call = update.message.reply_text_calls[1]
     assert "Active Challenge" in call["text"]
     assert "Challenge Beta" in call["text"]  # Newest live is index 0
     assert "(1 of 3)" in call["text"]

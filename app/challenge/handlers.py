@@ -40,6 +40,7 @@ from app.challenge.keyboards import (
     get_guidelines_keyboard,
     get_review_navigation_keyboard,
     get_challenge_completion_keyboard,
+    get_challenge_menu_keyboard,
 )
 from app.db import register_or_update_bot_user
 
@@ -406,6 +407,14 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
             except Exception:
                 pass
+        try:
+            await update.message.reply_text(
+                "✦ <b>Challenge Center</b>",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_menu_keyboard(),
+            )
+        except Exception:
+            pass
         sender_func = lambda text, **kwargs: update.message.reply_text(text, protect_content=True, **kwargs)
     else:
         return

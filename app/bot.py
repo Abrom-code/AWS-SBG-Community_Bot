@@ -1527,6 +1527,7 @@ def create_application(token: str = None):
 
     # Challenge & Leaderboard Commands
     app.add_handler(CommandHandler("challenge", challenge_command))
+    app.add_handler(CommandHandler("challenges", challenge_command))
     app.add_handler(CommandHandler("archive", past_challenges_command))
     app.add_handler(CommandHandler("past", past_challenges_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard_command))

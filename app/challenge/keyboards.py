@@ -3,6 +3,18 @@ from typing import Dict, Optional, List, Any
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
 
+def get_challenge_menu_keyboard() -> ReplyKeyboardMarkup:
+    """Returns persistent sub-menu keyboard for the Challenge Center."""
+    return ReplyKeyboardMarkup(
+        [
+            ["Leaderboards", "Past Challenges"],
+            ["Scoring Rules", "Guidelines"],
+            ["Main Menu"],
+        ],
+        resize_keyboard=True,
+    )
+
+
 def get_challenge_start_keyboard(challenge_id: int, has_multiple: bool = False) -> InlineKeyboardMarkup:
     """Button to initiate an active challenge, with optional back button if multiple challenges active."""
     buttons = [
