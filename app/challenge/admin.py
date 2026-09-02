@@ -514,7 +514,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             pass
         ch_id = int(data.split(":")[1])
         context.user_data["edit_ch_id"] = ch_id
-        await set_user_state(user.id, "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE")
+        await set_user_state(user.id, f"WAITING_FOR_EDIT_CHALLENGE_SCHEDULE:{ch_id}")
         await query.edit_message_text(
             f"<b>Custom Schedule for Challenge #{ch_id}</b>\n\n"
             "Please send the <b>Start Date/Time to End Date/Time</b>:\n\n"
