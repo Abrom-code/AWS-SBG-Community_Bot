@@ -501,10 +501,9 @@ def test_admin_command_security_restrictions(monkeypatch):
     admin_context = FakeContext()
     asyncio.run(admin_command(admin_update, admin_context))
 
-    assert len(admin_update.message.reply_text_calls) == 2
+    assert len(admin_update.message.reply_text_calls) == 1
     assert "AWS SBG Challenge Admin Panel" in admin_update.message.reply_text_calls[0]["text"]
     assert admin_update.message.reply_text_calls[0]["reply_markup"] is not None
-    assert admin_update.message.reply_text_calls[1]["reply_markup"] is not None
 
 
 def test_past_challenges_command_and_shortcuts():
@@ -741,6 +740,12 @@ def test_admin_challenge_schedule_and_timer_edit_flow(monkeypatch):
     asyncio.run(db.reset_db())
 
     ch_id = asyncio.run(create_challenge(title="Schedule & Timer Test", category="Testing"))
+    from app.challenge.service import add_question_to_challenge
+    asyncio.run(add_question_to_challenge(ch_id, {
+        "question_text": "Sample test question?",
+        "option_a": "Option A", "option_b": "Option B", "option_c": "Option C", "option_d": "Option D",
+        "correct_option": "A", "category": "Testing", "explanation": "Explanation",
+    }))
 
     # 1. Edit Schedule via Preset
     q_s1 = FakeCallbackQuery(user_id=99999, data=f"adm_sched_set:{ch_id}:now:7d")
@@ -1043,15 +1048,22 @@ def test_modern_step_by_step_creation_wizard(monkeypatch):
 
     assert len(up_desc.message.reply_text_calls) == 1
     resp2 = up_desc.message.reply_text_calls[0]["text"]
-    assert "Step 3/4: Schedule & Start/End Time" in resp2
+    assert "Step 3/4: Exam Time Limit" in resp2
     assert "DynamoDB, Lambda, CI/CD" in resp2
 
-    # Step 3: Select Schedule preset
+    # Step 3: Select Exam Time Limit (15 Mins)
+    q_timer = FakeCallbackQuery(user_id=99999, data=f"adm_wiz_timer:{ch_id}:15")
+    up_t = FakeUpdate(user_id=99999, callback_query=q_timer)
+    asyncio.run(handle_admin_callback(up_t, ctx))
+    assert "Step 4/4: Schedule & Start/End Time" in q_timer.edited_text
+    assert "15 Minutes" in q_timer.edited_text
+
+    # Step 4: Select Schedule preset
     q_sched = FakeCallbackQuery(user_id=99999, data=f"adm_cr_sched:{ch_id}:now:7d")
     up_s = FakeUpdate(user_id=99999, callback_query=q_sched)
     asyncio.run(handle_admin_callback(up_s, ctx))
 
-    assert "Step 4/4: Add Questions" in q_sched.edited_text or "Add Questions" in q_sched.edited_text
+    assert "Add Questions" in q_sched.edited_text
 
     # Step 4: Add single question
     q_single = FakeCallbackQuery(user_id=99999, data=f"adm_add_q_to_ch:{ch_id}")
@@ -1076,6 +1088,12 @@ def test_modern_step_by_step_creation_wizard(monkeypatch):
     resp_q = up_q.message.reply_text_calls[0]["text"]
     assert f"Added to Challenge #{ch_id}!" in resp_q
 
+    # Step 5: Publish LIVE
+    q_pub = FakeCallbackQuery(user_id=99999, data=f"adm_pub:{ch_id}")
+    up_pub = FakeUpdate(user_id=99999, callback_query=q_pub)
+    asyncio.run(handle_admin_callback(up_pub, ctx))
+    assert "is now LIVE" in q_pub.edited_text
+
     # Verify final challenge state
     final_ch = asyncio.run(get_challenge(ch_id))
     assert final_ch["title"] == "AWS Developer Associate Sprint"
@@ -1084,6 +1102,138 @@ def test_modern_step_by_step_creation_wizard(monkeypatch):
 
     questions = asyncio.run(get_challenge_questions(ch_id))
     assert len(questions) == 1
+
+
+def test_power_user_challenge_creation_title_description_duration(monkeypatch):
+    """Tests power user single-line creation with format: Title | Description | Duration."""
+    import app.bot as bot
+    from app.challenge.service import get_challenge
+
+    asyncio.run(db.reset_db())
+    monkeypatch.setenv("ADMIN_USER_IDS", "88888")
+
+    ctx = FakeContext()
+
+    # Admin initiates create challenge
+    up_start = FakeUpdate(user_id=88888, text="Create Challenge")
+    asyncio.run(bot.handle_message(up_start, ctx))
+
+    state = asyncio.run(db.get_user_state(88888))
+    assert state == "WAITING_FOR_CHALLENGE_TITLE"
+
+    # Enter power-user multi-part format: Test | this   is test challeng | 20
+    up_power = FakeUpdate(user_id=88888, text="Test | this   is test challeng | 20")
+    asyncio.run(bot.handle_message(up_power, ctx))
+
+    assert len(up_power.message.reply_text_calls) == 1
+    resp = up_power.message.reply_text_calls[0]["text"]
+
+    # Must be Step 4/4
+    assert "Step 4/4: Schedule & Start/End Time" in resp
+    assert "Test" in resp
+    assert "this   is test challeng" in resp
+    assert "20 Minutes" in resp
+
+    # State must be reset
+    state_after = asyncio.run(db.get_user_state(88888))
+    assert state_after is None
+
+    # Verify challenge in database
+    from app.challenge.service import list_challenges
+    all_ch = asyncio.run(list_challenges(limit=1))
+    assert len(all_ch) == 1
+    ch_full = asyncio.run(get_challenge(all_ch[0]["id"]))
+    assert ch_full is not None
+    assert ch_full["title"] == "Test"
+    assert ch_full["description"] == "this   is test challeng"
+    assert ch_full["duration_seconds"] == 20 * 60
+
+
+def test_zero_question_challenge_remains_draft_and_independent_publishing(monkeypatch):
+    """Verifies that selecting Go LIVE with 0 questions leaves status as DRAFT,
+
+    rejects going LIVE on the next screen with an alert, and allows independent
+    publishing for Go LIVE and Schedule once questions are attached.
+    """
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import get_challenge, add_question_to_challenge
+
+    asyncio.run(db.reset_db())
+    monkeypatch.setenv("ADMIN_USER_IDS", "77777")
+    ctx = FakeContext()
+
+    # 1. Admin creates a challenge and selects 'Go LIVE' in Step 4
+    q_sched = FakeCallbackQuery(user_id=77777, data="adm_cr_sched:now:7d")
+    ctx.user_data["wiz_title"] = "Zero Question Challenge"
+    ctx.user_data["wiz_category"] = "Networking"
+    ctx.user_data["wiz_description"] = "Networking test quiz."
+    ctx.user_data["wiz_duration_mins"] = 15
+
+    up_s = FakeUpdate(user_id=77777, callback_query=q_sched)
+    asyncio.run(handle_admin_callback(up_s, ctx))
+
+    # Next screen shows Add Questions prompt
+    assert "Add Questions" in q_sched.edited_text
+
+    # Find created challenge
+    from app.challenge.service import list_challenges
+    all_ch = asyncio.run(list_challenges(limit=1))
+    assert len(all_ch) == 1
+    ch_id = all_ch[0]["id"]
+    ch = asyncio.run(get_challenge(ch_id))
+
+    # CRITICAL: Must be DRAFT, NEVER prematurely LIVE with 0 questions!
+    assert ch["status"] == "DRAFT"
+
+    # 2. Admin taps 'Go LIVE' on the next screen with 0 questions
+    q_pub_fail = FakeCallbackQuery(user_id=77777, data=f"adm_pub:{ch_id}:live")
+    up_pub_fail = FakeUpdate(user_id=77777, callback_query=q_pub_fail)
+    asyncio.run(handle_admin_callback(up_pub_fail, ctx))
+
+    # Must alert requiring at least 1 question, and remain DRAFT
+    assert q_pub_fail.answered is True
+    assert "attach at least 1 question" in q_pub_fail.answered_text
+    assert asyncio.run(get_challenge(ch_id))["status"] == "DRAFT"
+
+    # 3. Admin taps 'Publish (Schedule)' on the next screen with 0 questions
+    q_sched_fail = FakeCallbackQuery(user_id=77777, data=f"adm_pub:{ch_id}:sched")
+    up_sched_fail = FakeUpdate(user_id=77777, callback_query=q_sched_fail)
+    asyncio.run(handle_admin_callback(up_sched_fail, ctx))
+
+    # Must also alert requiring at least 1 question
+    assert q_sched_fail.answered is True
+    assert "attach at least 1 question" in q_sched_fail.answered_text
+    assert asyncio.run(get_challenge(ch_id))["status"] == "DRAFT"
+
+    # 4. Attach a question
+    asyncio.run(add_question_to_challenge(ch_id, {
+        "question_text": "What is Amazon VPC?",
+        "option_a": "Isolated virtual network",
+        "option_b": "Database",
+        "option_c": "Storage",
+        "option_d": "Monitoring",
+        "correct_option": "A",
+        "category": "Networking",
+        "explanation": "VPC provides isolated virtual cloud networking.",
+    }))
+
+    # 5. Now publish for Future (Schedule)
+    q_sched_ok = FakeCallbackQuery(user_id=77777, data=f"adm_pub:{ch_id}:sched")
+    up_sched_ok = FakeUpdate(user_id=77777, callback_query=q_sched_ok)
+    asyncio.run(handle_admin_callback(up_sched_ok, ctx))
+
+    ch_sched = asyncio.run(get_challenge(ch_id))
+    assert ch_sched["status"] == "SCHEDULED"
+
+    # 6. Now publish LIVE directly from manage
+    q_live_ok = FakeCallbackQuery(user_id=77777, data=f"adm_pub:{ch_id}:live")
+    up_live_ok = FakeUpdate(user_id=77777, callback_query=q_live_ok)
+    asyncio.run(handle_admin_callback(up_live_ok, ctx))
+
+    ch_live = asyncio.run(get_challenge(ch_id))
+    assert ch_live["status"] == "LIVE"
+
+
 
 
 

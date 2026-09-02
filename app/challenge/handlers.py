@@ -646,6 +646,7 @@ async def past_challenges_command(update: Update, context: ContextTypes.DEFAULT_
         except Exception:
             pass
     challenges = await list_past_challenges(limit=15)
+    challenges = [c for c in challenges if c.get("status") not in ("DRAFT", "SCHEDULED")]
     if not challenges:
         await update.message.reply_text(
             "✦ <b>Past Challenges Archive</b>\n\n"
@@ -677,6 +678,7 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
         except Exception:
             pass
         challenges = await list_past_challenges(limit=15)
+        challenges = [c for c in challenges if c.get("status") not in ("DRAFT", "SCHEDULED")]
         if not challenges:
             await query.edit_message_text(
                 "✦ <b>Past Challenges Archive</b>\n\nNo archived challenges found.",
@@ -706,6 +708,16 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
             await query.answer("▪️ Challenge not found.", show_alert=True)
             return
 
+        from app.challenge.admin import is_admin_user
+        user = query.from_user
+        chat = getattr(query.message, "chat", None)
+        chat_id = chat.id if chat else getattr(query.message, "chat_id", None)
+        is_admin = await is_admin_user(user.id if user else 0, chat_id, context.bot)
+
+        if ch.get("status") == "DRAFT" and not is_admin:
+            await query.answer("🛠️ This challenge is in draft mode and not yet published.", show_alert=True)
+            return
+
         title = html.escape(ch["title"])
         category = html.escape(ch["category"])
         status = ch["status"]
@@ -715,7 +727,7 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
         dur_secs = ch.get("duration_seconds") or 600
         exam_mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
 
-        status_icons = {"ENDED": "🏁 Ended", "LIVE": "🟢 Live", "CANCELLED": "❌ Cancelled"}
+        status_icons = {"ENDED": "✔️ Ended", "LIVE": "🟢 Live", "CANCELLED": "❌ Cancelled", "SCHEDULED": "🕒 Scheduled"}
         status_tag = status_icons.get(status, status)
 
         card = (
@@ -905,7 +917,12 @@ async def leaderboard_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         except Exception:
             pass
     challenge = await get_active_challenge()
-    ch_id = challenge["id"] if challenge else 0
+    if challenge:
+        ch_id = challenge["id"]
+    else:
+        from app.challenge.service import list_challenges
+        recent = await list_challenges(status="ENDED", limit=1)
+        ch_id = recent[0]["id"] if recent else 0
     user = update.effective_user
     chat = update.effective_chat
     from app.challenge.admin import is_admin_user
@@ -933,28 +950,36 @@ async def handle_leaderboard_callback(update: Update, context: ContextTypes.DEFA
     is_admin = await is_admin_user(user.id if user else 0, chat_id, context.bot)
     user_id = user.id if user else None
 
+    ch_id = int(data[1]) if len(data) > 1 and data[1].isdigit() else 0
+    page = int(data[2]) if len(data) > 2 and data[2].isdigit() else 1
+
     if mode_prefix == "lb_weekly":
         try:
             await query.answer("🏆 Loading weekly leaderboard...", show_alert=False)
         except Exception:
             pass
-        ch_id = int(data[1]) if len(data) > 1 and data[1].isdigit() else 0
-        page = int(data[2]) if len(data) > 2 and data[2].isdigit() else 1
         if ch_id == 0:
             active = await get_active_challenge()
-            ch_id = active["id"] if active else 0
-        # If still no active challenge, show monthly cumulative instead of an empty weekly view
-        if ch_id == 0:
-            await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin, user_id=user_id)
-        else:
-            await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page, is_admin=is_admin, user_id=user_id)
+            if active:
+                ch_id = active["id"]
+            else:
+                from app.challenge.service import list_challenges
+                recent = await list_challenges(status="ENDED", limit=1)
+                ch_id = recent[0]["id"] if recent else 0
+
+        await send_leaderboard_view(query.edit_message_text, ch_id, mode="weekly", page=page, is_admin=is_admin, user_id=user_id)
+
     elif mode_prefix == "lb_monthly":
         try:
             await query.answer("📅 Loading monthly standings...", show_alert=False)
         except Exception:
             pass
-        page = int(data[2]) if len(data) > 2 and data[2].isdigit() else (int(data[1]) if len(data) > 1 and data[1].isdigit() else 1)
-        await send_leaderboard_view(query.edit_message_text, 0, mode="monthly", page=page, is_admin=is_admin, user_id=user_id)
+        if ch_id == 0:
+            active = await get_active_challenge()
+            if active:
+                ch_id = active["id"]
+
+        await send_leaderboard_view(query.edit_message_text, ch_id, mode="monthly", page=page, is_admin=is_admin, user_id=user_id)
 
 
 def _get_rank_badge(rank: int) -> str:
@@ -981,51 +1006,69 @@ async def send_leaderboard_view(
     is_active = False
     can_review = False
 
-    if mode == "weekly" and challenge_id > 0:
-        ch = await get_challenge(challenge_id)
-        title = html.escape(ch["title"]) if ch else "Challenge"
-        lb_data = await get_weekly_leaderboard(challenge_id, limit=10, page=page)
-        entries = lb_data["entries"]
-        total_pages = lb_data["total_pages"]
-        total_count = lb_data["total_count"]
+    if mode == "weekly":
+        ch = None
+        if challenge_id > 0:
+            ch = await get_challenge(challenge_id)
+            if not ch or (ch.get("status") == "DRAFT" and not is_admin):
+                ch = None
+                challenge_id = 0
 
-        # Check challenge status
-        is_active = bool(ch and ch.get("status") in ("LIVE", "SCHEDULED"))
-        remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(ch, None) if ch else (0, False, None)
-        is_ended = bool(ch and (ch.get("status") in ("ENDED", "CANCELLED") or (ends_at_str is not None and remaining_sec <= 0)))
+        if challenge_id > 0 and ch:
+            title = html.escape(ch["title"])
+            lb_data = await get_weekly_leaderboard(challenge_id, limit=10, page=page)
+            entries = lb_data["entries"]
+            total_pages = lb_data["total_pages"]
+            total_count = lb_data["total_count"]
 
-        is_completed = False
-        if user_id:
-            part = await register_or_get_participant(challenge_id, user_id)
-            is_completed = bool(part and part.get("status") == "COMPLETED")
+            # Check challenge status
+            is_active = bool(ch and ch.get("status") in ("LIVE", "SCHEDULED"))
+            remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(ch, None) if ch else (0, False, None)
+            is_ended = bool(ch and (ch.get("status") in ("ENDED", "CANCELLED") or (ends_at_str is not None and remaining_sec <= 0)))
 
-        # Can only review if user completed it OR challenge ended/archived
-        can_review = bool(is_completed or is_ended)
+            is_completed = False
+            if user_id:
+                part = await register_or_get_participant(challenge_id, user_id)
+                is_completed = bool(part and part.get("status") == "COMPLETED")
 
-        if not entries:
-            text = (
-                f"✦ <b>Weekly Leaderboard: {title}</b>\n\n"
-                f"<i>No completed submissions yet. Be the first to top the board!</i>"
-            )
+            # Can only review if user completed it OR challenge ended/archived
+            can_review = bool(is_completed or is_ended)
+
+            if not entries:
+                text = (
+                    f"🏆 <b>Weekly Leaderboard: {title}</b>\n\n"
+                    f"<i>No completed submissions yet. Be the first to take the challenge!</i>"
+                )
+            else:
+                page_info = f" <i>(Page {page} of {total_pages})</i>" if total_pages > 1 else ""
+                lines = [f"🏆 <b>Weekly Leaderboard: {title}</b>{page_info}\n"]
+                for row in entries:
+                    rank_icon = _get_rank_badge(row["rank"])
+                    escaped_name = html.escape(row["user_name"])
+                    username = row.get("username", "")
+
+                    if is_admin and username:
+                        name_display = f"<b>{escaped_name}</b> (@{html.escape(username)})"
+                    else:
+                        name_display = f"<b>{escaped_name}</b>"
+
+                    score = row["score"]
+                    correct = row["correct_count"]
+                    total = row["answered_count"]
+                    lines.append(f"{rank_icon} {name_display} — <code>{score} pts</code> ({correct}/{total} ✓)")
+                text = "\n".join(lines)
         else:
-            page_info = f" <i>(Page {page} of {total_pages})</i>" if total_pages > 1 else ""
-            lines = [f"✦ <b>Weekly Leaderboard: {title}</b>{page_info}\n"]
-            for row in entries:
-                rank_icon = _get_rank_badge(row["rank"])
-                escaped_name = html.escape(row["user_name"])
-                username = row.get("username", "")
-
-                if is_admin and username:
-                    name_display = f"<b>{escaped_name}</b> (@{html.escape(username)})"
-                else:
-                    name_display = f"<b>{escaped_name}</b>"
-
-                score = row["score"]
-                correct = row["correct_count"]
-                total = row["answered_count"]
-                lines.append(f"{rank_icon} {name_display} — <code>{score} pts</code> ({correct}/{total} ✓)")
-            text = "\n".join(lines)
+            total_pages = 1
+            total_count = 0
+            text = (
+                f"🏆 <b>Weekly Challenge Leaderboard</b>\n\n"
+                f"<i>No active challenge at the moment. Check back soon or view Monthly standings!</i>"
+            )
     else:
+        if challenge_id > 0:
+            ch = await get_challenge(challenge_id)
+            is_active = bool(ch and ch.get("status") in ("LIVE", "SCHEDULED"))
+
         lb_data = await get_monthly_leaderboard(limit=10, page=page)
         entries = lb_data["entries"]
         total_pages = lb_data["total_pages"]
@@ -1033,12 +1076,12 @@ async def send_leaderboard_view(
 
         if not entries:
             text = (
-                f"✦ <b>Monthly Cumulative Leaderboard</b>\n\n"
+                f"📅 <b>Monthly Championship Leaderboard</b>\n\n"
                 f"<i>No completed challenge data for this season yet.</i>"
             )
         else:
             page_info = f" <i>(Page {page} of {total_pages})</i>" if total_pages > 1 else ""
-            lines = [f"✦ <b>Monthly Cumulative Champions</b>{page_info}\n"]
+            lines = [f"📅 <b>Monthly Championship Leaderboard</b>{page_info}\n"]
             for row in entries:
                 rank_icon = _get_rank_badge(row["rank"])
                 escaped_name = html.escape(row["user_name"])

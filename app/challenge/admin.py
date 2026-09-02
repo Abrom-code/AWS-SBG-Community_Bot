@@ -29,6 +29,7 @@ from app.challenge.service import (
     add_question_to_challenge,
     import_questions_for_challenge,
     remove_question_from_challenge,
+    to_utc_datetime,
 )
 from app.challenge.keyboards import (
     get_admin_menu_keyboard,
@@ -40,6 +41,7 @@ from app.challenge.keyboards import (
     get_admin_report_keyboard,
     get_wizard_questions_keyboard,
     get_wizard_skip_desc_keyboard,
+    get_wizard_timer_keyboard,
     get_challenge_delete_confirm_keyboard,
     get_admin_leaderboard_keyboard,
     get_challenge_questions_view_keyboard,
@@ -110,16 +112,10 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Switch bottom buttons to admin menu (includes 🔙 Main Menu)
     await update.message.reply_text(
         "✦ <b>AWS SBG Challenge Admin Panel</b>\n\n"
-        "Welcome to the challenge operations center. You can schedule weekly competitions, "
-        "manage questions, view leaderboards, and publish live quizzes.",
+        "Welcome to the challenge operations center. Manage competitions, questions, "
+        "leaderboards, and broadcasts using the admin menu below.",
         parse_mode=ParseMode.HTML,
         reply_markup=get_admin_menu_keyboard(),
-    )
-    # Render admin dashboard with inline keyboard panel
-    await update.message.reply_text(
-        "➤ <i>Use the buttons below or tap an option:</i>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=get_admin_panel_keyboard(),
     )
 
 
@@ -195,12 +191,11 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         lines = ["📋 <b>Active & Recent Challenges:</b>\n"]
         buttons = []
         for ch in challenges:
-            status_icon = "🟢" if ch["status"] == "LIVE" else "⏳" if ch["status"] == "SCHEDULED" else "🏁" if ch["status"] == "ENDED" else "🛠️"
+            status_icon = "🟢" if ch["status"] == "LIVE" else "🕒" if ch["status"] == "SCHEDULED" else "✔️" if ch["status"] == "ENDED" else "🛠️"
             title = html.escape(ch["title"])
             lines.append(f"{status_icon} <b>#{ch['id']} {title}</b> — <i>{ch['status']}</i>")
             buttons.append([InlineKeyboardButton(f"{status_icon} Manage #{ch['id']} {title[:20]}", callback_data=f"adm_manage:{ch['id']}")])
 
-        buttons.append([InlineKeyboardButton("➕ Create New Challenge", callback_data="adm_create_ch")])
         buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
         await query.edit_message_text(
             "\n".join(lines),
@@ -294,7 +289,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
                 "<i>No questions found in repository yet.</i>\n\n"
                 "💡 <b>How to Add Questions:</b>\n"
                 "Questions belong directly to weekly topic challenges.\n"
-                "Tap <b>Manage Challenges</b> below to create a challenge or add questions to an existing one!",
+                "Tap <b>« All Challenges</b> below to create a challenge or add questions to an existing one!",
                 parse_mode=ParseMode.HTML,
                 reply_markup=get_question_bank_actions_keyboard(),
             )
@@ -307,7 +302,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             c_opt = q.get("correct_option", "A")
             lines.append(f"<b>{idx+1}.</b> [{cat}] {q_t}... <i>(Ans: {c_opt})</i>")
 
-        lines.append("\n💡 <i>To add new questions or import CSV, select a challenge in <b>Manage Challenges</b>.</i>")
+        lines.append("\n💡 <i>To add new questions or import CSV, select a challenge in <b>« All Challenges</b>.</i>")
         await query.edit_message_text(
             "\n".join(lines),
             parse_mode=ParseMode.HTML,
@@ -332,7 +327,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
     elif data.startswith("adm_wiz_skip_desc:"):
         try:
-            await query.answer("⏭️ Default description applied...", show_alert=False)
+            await query.answer()
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
@@ -341,16 +336,50 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
         category = ch.get("category", "Architecture") if ch else "Architecture"
         desc = ch.get("description", "Weekly test on AWS core services and cloud architecture patterns.") if ch else "Weekly test on AWS core services and cloud architecture patterns."
-        dur_secs = ch.get("duration_seconds") or 600 if ch else 600
-        dur_mins = int(dur_secs // 60)
         await query.edit_message_text(
-            f"✨ <b>Create Challenge Wizard (Step 3/4: Schedule & Start/End Time)</b>\n\n"
+            f"✨ <b>Create Challenge Wizard (Step 3/4: Exam Time Limit)</b>\n\n"
+            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n\n"
+            f"⏱️ <b>Select the allowed exam time for community members:</b>\n"
+            f"<i>(Timer begins when participant starts the challenge)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_wizard_timer_keyboard(ch_id),
+        )
+
+    elif data.startswith("adm_wiz_timer:"):
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        parts = data.split(":")
+        ch_id = int(parts[1])
+        mins = int(parts[2])
+        await update_challenge_details(ch_id, duration_seconds=mins * 60)
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+        desc = ch.get("description", "") if ch else ""
+        await query.edit_message_text(
+            f"✨ <b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
             f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
             f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{dur_mins} Minutes</code>\n\n"
+            f"⏱️ <b>Exam Time Limit:</b> <code>{mins} Minutes</code>\n\n"
             f"⏰ <b>Select Start Schedule & Deadline:</b>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_schedule_presets_keyboard(ch_id, dur_mins),
+            reply_markup=get_admin_schedule_presets_keyboard(ch_id, mins),
+        )
+
+    elif data.startswith("adm_wiz_timer_custom:"):
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        ch_id = int(data.split(":")[1])
+        await set_user_state(user.id, f"WAITING_FOR_CHALLENGE_TIMER:{ch_id}")
+        await query.edit_message_text(
+            f"⏱️ <b>Custom Exam Time Limit for Challenge #{ch_id}</b>\n\n"
+            "Please send the total allowed exam time in minutes (e.g. <code>12</code>, <code>25</code>, <code>60</code>):\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
         )
 
     elif data.startswith("adm_del_prompt:"):
@@ -429,17 +458,25 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         start_opt = parts[2]
         from datetime import datetime, timezone, timedelta
         now_dt = datetime.now(timezone.utc)
+        questions = await get_challenge_questions(ch_id)
 
         if start_opt == "now":
+            if not questions:
+                try:
+                    await query.answer("⚠️ Please attach at least 1 question before going LIVE!", show_alert=True)
+                except Exception:
+                    pass
+                return
             starts_at = now_dt.isoformat()
             ends_at = (now_dt + timedelta(days=7)).isoformat()
             status = "LIVE"
-        elif start_opt == "1h":
-            s_dt = now_dt + timedelta(hours=1)
-            starts_at = s_dt.isoformat()
-            ends_at = (s_dt + timedelta(days=7)).isoformat()
-            status = "SCHEDULED"
-        elif start_opt == "24h":
+        elif start_opt in ("24h", "tomorrow", "1h"):
+            if not questions:
+                try:
+                    await query.answer("⚠️ Please attach at least 1 question before scheduling!", show_alert=True)
+                except Exception:
+                    pass
+                return
             s_dt = now_dt + timedelta(days=1)
             starts_at = s_dt.isoformat()
             ends_at = (s_dt + timedelta(days=7)).isoformat()
@@ -557,28 +594,24 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             ch_id = None
             start_opt = parts[1]
 
+        is_scheduled = False
         if start_opt == "now":
             starts_at = now_dt.isoformat()
             ends_at = (now_dt + timedelta(days=7)).isoformat()
-            status = "LIVE"
-            schedule_note = "🟢 <b>Status:</b> LIVE immediately (Ends in 7 days)"
-        elif start_opt == "1h":
-            s_dt = now_dt + timedelta(hours=1)
-            starts_at = s_dt.isoformat()
-            ends_at = (s_dt + timedelta(days=7)).isoformat()
-            status = "SCHEDULED"
-            schedule_note = "⏳ <b>Status:</b> SCHEDULED (Starts in 1 hour)"
-        elif start_opt == "24h":
+            schedule_note = "🟢 <b>Schedule:</b> Ready to Go LIVE (Ends in 7 days — Pending questions)"
+        elif start_opt in ("24h", "tomorrow", "1h"):
             s_dt = now_dt + timedelta(days=1)
             starts_at = s_dt.isoformat()
             ends_at = (s_dt + timedelta(days=7)).isoformat()
-            status = "SCHEDULED"
-            schedule_note = "📅 <b>Status:</b> SCHEDULED (Starts in 24 hours)"
+            is_scheduled = True
+            schedule_note = "🕒 <b>Schedule:</b> Scheduled for Tomorrow (Starts in 24 hours — Pending questions)"
         else:
             starts_at = None
             ends_at = None
-            status = "DRAFT"
-            schedule_note = "🛠️ <b>Status:</b> DRAFT (Unscheduled)"
+            schedule_note = "🛠️ <b>Schedule:</b> DRAFT (Unscheduled)"
+
+        # Challenge ALWAYS remains in DRAFT until questions are attached and it is published!
+        status = "DRAFT"
 
         if ch_id:
             await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
@@ -608,12 +641,11 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
                 accuracy_weight=0.70,
                 speed_weight=0.30,
             )
-            if status != "DRAFT":
-                await update_challenge_status(ch_id, status)
+            await update_challenge_status(ch_id, "DRAFT")
             q_count = 0
 
         await query.edit_message_text(
-            f"✅ <b>Challenge #{ch_id} Configured! (Step 2/2: Add Questions)</b>\n\n"
+            f"✅ <b>Challenge #{ch_id} Configured! (Add Questions)</b>\n\n"
             f"⚡ <b>Title:</b> {html.escape(title)}\n"
             f"🏗️ <b>Category:</b> {html.escape(category)}\n"
             f"{schedule_note}\n"
@@ -623,7 +655,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             f"👉 <b>Next step: Attach questions to this challenge.</b>\n"
             f"Add them one-by-one or bulk import via CSV file below:",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_wizard_questions_keyboard(ch_id),
+            reply_markup=get_wizard_questions_keyboard(ch_id, is_scheduled=is_scheduled),
         )
 
     elif data.startswith("adm_add_q_to_ch:"):
@@ -811,44 +843,99 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         )
 
     elif data.startswith("adm_pub:"):
-        try:
-            await query.answer("🚀 Publishing challenge...", show_alert=False)
-        except Exception:
-            pass
-        ch_id = int(data.split(":")[1])
+        parts = data.split(":")
+        ch_id = int(parts[1])
+        pub_mode = parts[2] if len(parts) > 2 else "live"
+
         questions = await get_challenge_questions(ch_id)
         if not questions:
-            await query.answer("⚠️ Please attach at least 1 question before publishing!", show_alert=True)
+            action_desc = "scheduling" if pub_mode == "sched" else "going LIVE"
+            try:
+                await query.answer(f"⚠️ Please attach at least 1 question before {action_desc}!", show_alert=True)
+            except Exception:
+                pass
             return
-        await update_challenge_status(ch_id, "LIVE")
-        await query.edit_message_text(
-            f"🚀 <b>Challenge #{ch_id} is now LIVE!</b>\n\n"
-            f"📊 <b>Questions:</b> <code>{len(questions)}</code>\n\n"
-            f"Community members can now participate using /challenge.",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_manage_keyboard(ch_id, "LIVE"),
-        )
+
+        from datetime import datetime, timezone, timedelta
+        now_dt = datetime.now(timezone.utc)
+        now_iso = now_dt.isoformat()
+        ch = await get_challenge(ch_id)
+
+        if pub_mode == "sched":
+            try:
+                await query.answer("🕒 Scheduling challenge...", show_alert=False)
+            except Exception:
+                pass
+            starts_dt = to_utc_datetime(ch.get("starts_at")) if ch else None
+            if not starts_dt or starts_dt <= now_dt:
+                starts_iso = (now_dt + timedelta(days=1)).isoformat()
+                ends_iso = (now_dt + timedelta(days=8)).isoformat()
+            else:
+                starts_iso = ch.get("starts_at")
+                ends_iso = ch.get("ends_at") or (starts_dt + timedelta(days=7)).isoformat()
+
+            await update_challenge_details(ch_id, starts_at=starts_iso, ends_at=ends_iso)
+            await update_challenge_status(ch_id, "SCHEDULED")
+
+            await query.edit_message_text(
+                f"🕒 <b>Challenge #{ch_id} has been SCHEDULED!</b>\n\n"
+                f"📊 <b>Questions Attached:</b> <code>{len(questions)}</code>\n"
+                f"🕒 <b>Opens:</b> <code>{starts_iso}</code>\n"
+                f"🏁 <b>Ends:</b> <code>{ends_iso}</code>\n\n"
+                f"Challenge will automatically go LIVE at the scheduled opening time.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_manage_keyboard(ch_id, "SCHEDULED"),
+            )
+        else:
+            try:
+                await query.answer("🚀 Publishing challenge...", show_alert=False)
+            except Exception:
+                pass
+            ends_dt = to_utc_datetime(ch.get("ends_at")) if ch else None
+            if not ends_dt or ends_dt <= now_dt:
+                end_iso = (now_dt + timedelta(days=7)).isoformat()
+            else:
+                end_iso = ch.get("ends_at")
+
+            await update_challenge_details(ch_id, starts_at=now_iso, ends_at=end_iso)
+            await update_challenge_status(ch_id, "LIVE")
+
+            await query.edit_message_text(
+                f"🚀 <b>Challenge #{ch_id} is now LIVE!</b>\n\n"
+                f"📊 <b>Questions:</b> <code>{len(questions)}</code>\n"
+                f"🟢 <b>Starts:</b> <code>{now_iso}</code>\n"
+                f"🏁 <b>Ends:</b> <code>{end_iso}</code>\n\n"
+                f"Community members can now participate using /challenge.",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_manage_keyboard(ch_id, "LIVE"),
+            )
 
     elif data.startswith("adm_end:"):
+        ch_id = int(data.split(":")[1])
         try:
             await query.answer("🏁 Concluding challenge...", show_alert=False)
         except Exception:
             pass
-        ch_id = int(data.split(":")[1])
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await update_challenge_details(ch_id, ends_at=now_iso)
         await update_challenge_status(ch_id, "ENDED")
         await query.edit_message_text(
             f"🏁 <b>Challenge #{ch_id} has been ENDED.</b>\n\n"
-            f"Final leaderboard standings are now locked.",
+            f"Final leaderboard standings are now locked and review answers are available.",
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_manage_keyboard(ch_id, "ENDED"),
         )
 
     elif data.startswith("adm_can:"):
+        ch_id = int(data.split(":")[1])
         try:
             await query.answer("❌ Cancelling challenge...", show_alert=False)
         except Exception:
             pass
-        ch_id = int(data.split(":")[1])
+        from datetime import datetime, timezone
+        now_iso = datetime.now(timezone.utc).isoformat()
+        await update_challenge_details(ch_id, ends_at=now_iso)
         await update_challenge_status(ch_id, "CANCELLED")
         await query.edit_message_text(
             f"❌ <b>Challenge #{ch_id} has been CANCELLED.</b>",

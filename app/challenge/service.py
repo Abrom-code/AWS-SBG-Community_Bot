@@ -394,7 +394,7 @@ async def list_past_challenges(limit: int = 20) -> List[Dict[str, Any]]:
         SELECT id, season_id, title, description, category, starts_at, ends_at,
                question_time_limit_seconds, status
         FROM challenges
-        WHERE status IN ('ENDED', 'LIVE')
+        WHERE status = 'ENDED'
         ORDER BY id DESC LIMIT ?
         """,
         (limit,),
@@ -985,6 +985,9 @@ async def get_challenge_review_data(challenge_id: int, user_id: int, question_in
     challenge = await get_challenge(challenge_id)
     if not challenge:
         return {"error": "Challenge not found."}
+
+    if challenge.get("status") == "DRAFT":
+        return {"error": "🛠️ This challenge is in draft mode and not yet published."}
 
     # 1. Verify access permissions: participant completed OR challenge ended/cancelled/past deadline
     part_row = await _execute(

@@ -840,6 +840,194 @@ def test_leaderboard_review_button_visibility_and_locking():
     assert "Review Questions & Answers" in btn2_texts
 
 
+def test_admin_challenge_management_and_wizard_timer(monkeypatch):
+    """Tests admin challenge publishing, concluding, and wizard timer customization."""
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import (
+        create_challenge,
+        get_challenge,
+        create_question,
+        add_question_to_challenge,
+    )
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "88888")
+    asyncio.run(db.reset_db())
+    ctx = FakeContext()
+
+    # 1. Create a draft challenge with future start date
+    ch_id = asyncio.run(create_challenge(title="Draft DevOps Quiz", category="DevOps", starts_at="2099-01-01T00:00:00+00:00"))
+
+    # 2. Try to publish with 0 questions attached -> should alert and remain DRAFT
+    q_pub = FakeCallbackQuery(user_id=88888, data=f"adm_pub:{ch_id}")
+    up_pub = FakeUpdate(user_id=88888, callback_query=q_pub)
+    asyncio.run(handle_admin_callback(up_pub, ctx))
+    assert q_pub.answered is True
+    assert "attach at least 1 question" in q_pub.answered_text
+    ch_draft = asyncio.run(get_challenge(ch_id))
+    assert ch_draft["status"] == "DRAFT"
+
+    # 3. Attach a question
+    asyncio.run(add_question_to_challenge(ch_id, {
+        "question_text": "What is S3?",
+        "option_a": "Storage",
+        "option_b": "Database",
+        "option_c": "Compute",
+        "option_d": "DNS",
+        "correct_option": "A",
+        "category": "Storage",
+        "explanation": "S3 is object storage.",
+    }))
+
+    # 4. Now publish LIVE -> starts_at should be set to now, status LIVE
+    q_pub2 = FakeCallbackQuery(user_id=88888, data=f"adm_pub:{ch_id}")
+    up_pub2 = FakeUpdate(user_id=88888, callback_query=q_pub2)
+    asyncio.run(handle_admin_callback(up_pub2, ctx))
+    ch_live = asyncio.run(get_challenge(ch_id))
+    assert ch_live["status"] == "LIVE"
+    assert ch_live["starts_at"] is not None
+    assert ch_live["starts_at"] != "2099-01-01T00:00:00+00:00"
+
+    # 5. End challenge -> status ENDED, ends_at updated
+    q_end = FakeCallbackQuery(user_id=88888, data=f"adm_end:{ch_id}")
+    up_end = FakeUpdate(user_id=88888, callback_query=q_end)
+    asyncio.run(handle_admin_callback(up_end, ctx))
+    ch_ended = asyncio.run(get_challenge(ch_id))
+    assert ch_ended["status"] == "ENDED"
+
+    # 6. Test wizard timer setting via callback
+    q_wiz_timer = FakeCallbackQuery(user_id=88888, data=f"adm_wiz_timer:{ch_id}:25")
+    up_wt = FakeUpdate(user_id=88888, callback_query=q_wiz_timer)
+    asyncio.run(handle_admin_callback(up_wt, ctx))
+    assert "25 Minutes" in q_wiz_timer.edited_text
+    ch_updated = asyncio.run(get_challenge(ch_id))
+    assert ch_updated["duration_seconds"] == 25 * 60
+
+
+def test_leaderboard_weekly_monthly_tab_switching():
+    """Verifies tab switching between weekly and monthly leaderboards with state preservation."""
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import handle_leaderboard_callback
+
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(
+        service.create_challenge(
+            title="Tab Switcher Challenge",
+            category="Cloud",
+            starts_at="2026-09-01T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    ctx = FakeContext()
+
+    # 1. View weekly leaderboard via callback
+    cb_w = FakeCallbackQuery(data=f"lb_weekly:{ch_id}:1", user_id=301)
+    up_w = FakeUpdate(callback_query=cb_w)
+    asyncio.run(handle_leaderboard_callback(up_w, ctx))
+
+    assert "Weekly Leaderboard: Tab Switcher Challenge" in cb_w.edited_text
+    btn_w = [btn.text for row in cb_w.reply_markup.inline_keyboard for btn in row]
+    # Active tab is Weekly (marked with bullets), Monthly is available
+    assert "• 🏆 Weekly •" in btn_w
+    assert "📅 Monthly" in btn_w
+
+    # Find the Monthly button callback data
+    monthly_btn = next(btn for row in cb_w.reply_markup.inline_keyboard for btn in row if btn.text == "📅 Monthly")
+    assert monthly_btn.callback_data == f"lb_monthly:{ch_id}:1"
+
+    # 2. Tap Monthly button -> switches to Monthly Championship Leaderboard
+    cb_m = FakeCallbackQuery(data=monthly_btn.callback_data, user_id=301)
+    up_m = FakeUpdate(callback_query=cb_m)
+    asyncio.run(handle_leaderboard_callback(up_m, ctx))
+
+    assert "Monthly Championship Leaderboard" in cb_m.edited_text
+    btn_m = [btn.text for row in cb_m.reply_markup.inline_keyboard for btn in row]
+    # Active tab is Monthly (marked with bullets), Weekly is available
+    assert "• 📅 Monthly •" in btn_m
+    assert "🏆 Weekly" in btn_m
+    # Challenge context was preserved
+    assert "« Back to Challenge" in btn_m
+
+    # Find the Weekly button callback data
+    weekly_btn = next(btn for row in cb_m.reply_markup.inline_keyboard for btn in row if btn.text == "🏆 Weekly")
+    assert weekly_btn.callback_data == f"lb_weekly:{ch_id}:1"
+
+    # 3. Tap Weekly button -> switches right back to Weekly Leaderboard for challenge
+    cb_w2 = FakeCallbackQuery(data=weekly_btn.callback_data, user_id=301)
+    up_w2 = FakeUpdate(callback_query=cb_w2)
+    asyncio.run(handle_leaderboard_callback(up_w2, ctx))
+
+    assert "Weekly Leaderboard: Tab Switcher Challenge" in cb_w2.edited_text
+
+
+def test_draft_challenges_never_exposed_to_students():
+    """Verifies DRAFT challenges are never shown or accessible to students in past challenges, review, or leaderboards."""
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery, FakeMessage
+    from app.challenge.handlers import past_challenges_command, handle_past_challenges_callback, handle_leaderboard_callback
+    from app.challenge.service import get_challenge_review_data, list_past_challenges
+
+    asyncio.run(db.reset_db())
+
+    # Create an ENDED challenge and a DRAFT challenge
+    ended_id = asyncio.run(
+        service.create_challenge(
+            title="Archived Cloud Challenge",
+            category="Cloud",
+            starts_at="2026-08-01T10:00:00+00:00",
+            ends_at="2026-08-08T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ended_id, "ENDED"))
+
+    draft_id = asyncio.run(
+        service.create_challenge(
+            title="Secret Draft Challenge",
+            category="Serverless",
+            starts_at="2026-09-01T10:00:00+00:00",
+        )
+    )
+    # Ensure draft_id is strictly DRAFT
+    asyncio.run(service.update_challenge_status(draft_id, "DRAFT"))
+
+    ctx = FakeContext()
+
+    # 1. list_past_challenges query must NOT return the DRAFT challenge
+    past_chs = asyncio.run(list_past_challenges())
+    assert any(c["id"] == ended_id for c in past_chs)
+    assert not any(c["id"] == draft_id for c in past_chs)
+
+    # 2. /archive or /past command must not show DRAFT challenge
+    up_cmd = FakeUpdate(user_id=401, text="/archive")
+    asyncio.run(past_challenges_command(up_cmd, ctx))
+    assert len(up_cmd.message.reply_text_calls) == 1
+    kb = up_cmd.message.reply_text_calls[0]["reply_markup"]
+    btn_texts = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert any(f"#{ended_id}" in t for t in btn_texts)
+    assert not any("Secret Draft Challenge" in t for t in btn_texts)
+
+    # 3. Direct callback inspect ch_past:{draft_id} by student must be blocked
+    cb_draft = FakeCallbackQuery(data=f"ch_past:{draft_id}", user_id=401)
+    up_cb = FakeUpdate(callback_query=cb_draft)
+    asyncio.run(handle_past_challenges_callback(up_cb, ctx))
+    assert cb_draft.answered is True
+    assert "draft mode" in cb_draft.answered_text
+
+    # 4. get_challenge_review_data must reject DRAFT challenges
+    review_res = asyncio.run(get_challenge_review_data(draft_id, 401, 0))
+    assert "error" in review_res
+    assert "draft mode" in review_res["error"]
+
+    # 5. Leaderboard callback requesting draft_id must not leak draft details to non-admin
+    cb_lb = FakeCallbackQuery(data=f"lb_weekly:{draft_id}:1", user_id=401)
+    up_lb = FakeUpdate(callback_query=cb_lb)
+    asyncio.run(handle_leaderboard_callback(up_lb, ctx))
+    assert "Secret Draft Challenge" not in cb_lb.edited_text
+
+
+
+
+
 
 
 

@@ -62,6 +62,7 @@ from app.challenge.keyboards import (
     get_admin_schedule_presets_keyboard,
     get_wizard_questions_keyboard,
     get_wizard_skip_desc_keyboard,
+    get_wizard_timer_keyboard,
     get_question_bank_actions_keyboard,
     get_admin_menu_keyboard,
     get_admin_panel_keyboard,
@@ -341,6 +342,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif current_state and any(current_state.startswith(s) for s in (
         "WAITING_FOR_ADMIN_SCHEDULE",
         "WAITING_FOR_CHALLENGE_TITLE",
+        "WAITING_FOR_CHALLENGE_DESC",
+        "WAITING_FOR_CHALLENGE_TIMER",
         "WAITING_FOR_EDIT_CHALLENGE_TITLE",
         "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE",
         "WAITING_FOR_EDIT_CHALLENGE_TIMER",
@@ -405,12 +408,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if text in ("Create Challenge", "➕ Create Challenge", "➕ Create New Challenge", "Create New Challenge"):
             await set_user_state(user_id, "WAITING_FOR_CHALLENGE_TITLE")
             await update.message.reply_text(
-                "➕ <b>Create Challenge Wizard (Step 1/2: Details)</b>\n\n"
-                "Please enter the challenge details in this format:\n"
-                "<code>Title | Category | Description</code>\n\n"
-                "<b>Example:</b>\n"
-                "<code>AWS Serverless Sprint | Serverless | Master Lambda, DynamoDB, API Gateway, and EventBridge.</code>\n\n"
-                "<i>Tip: You can also just type the title.</i>",
+                "✨ <b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
+                "📌 <b>Please enter the Title for this challenge:</b>\n\n"
+                "<i>Example:</i>\n"
+                "<code>AWS Solutions Architect Associate Sprint</code>\n\n"
+                "💡 <i>(Power users can also send all at once: <code>Title | Description | Duration</code>)</i>\n\n"
+                "<i>(Type /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
             )
             return
@@ -426,14 +429,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 from telegram import InlineKeyboardMarkup, InlineKeyboardButton
                 buttons = []
                 for ch in challenges:
-                    status_emoji = {"LIVE": "🟢", "SCHEDULED": "⏳", "DRAFT": "🛠️", "ENDED": "🏁"}.get(ch["status"], "⚡")
+                    status_emoji = {"LIVE": "🟢", "SCHEDULED": "🕒", "DRAFT": "🛠️", "ENDED": "✔️"}.get(ch["status"], "⚡")
                     buttons.append([InlineKeyboardButton(f"{status_emoji} {ch['title'][:30]} ({ch['status']})", callback_data=f"adm_manage:{ch['id']}")])
-                buttons.append([InlineKeyboardButton("Back to Admin", callback_data="adm_panel")])
+                buttons.append([InlineKeyboardButton("🔙 Back to Admin", callback_data="adm_panel")])
                 await update.message.reply_text(
                     "📋 <b>Select a Challenge to Manage:</b>",
                     parse_mode=ParseMode.HTML,
                     reply_markup=InlineKeyboardMarkup(buttons),
                 )
+            return
+        elif text in ("Leaderboards", "🏆 Leaderboards", "Admin Leaderboards"):
+            active_ch = await get_active_challenge()
+            active_ch_id = active_ch["id"] if active_ch else 0
+            await update.message.reply_text(
+                "🏆 <b>Admin Leaderboard & Builder Standings</b>\n\n"
+                "View live participant scores, ranks, and monthly cumulative standings:",
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_admin_leaderboard_keyboard(active_ch_id),
+            )
             return
         elif text in ("Monthly Report", "📊 Monthly Report", "📊 Analytics Report", "Analytics Report"):
             rep = await get_monthly_analytics_report()
@@ -503,26 +516,41 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw = text.strip()
         parts = [p.strip() for p in raw.split("|")]
 
-        # Power-user shortcut: entered multiple fields at once (e.g. Title | Category | Description | Duration)
+        # Power-user shortcut: entered multiple fields at once (e.g. Title | Description | Duration)
         if len(parts) >= 2:
             await set_user_state(user_id, None)
             duration_mins = 10
+            category = "Architecture"
+            description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
+            title = parts[0]
+
+            def _parse_dur(val: str) -> Optional[int]:
+                cleaned = val.lower().replace("minutes", "").replace("minute", "").replace("mins", "").replace("min", "").replace("m", "").strip()
+                return int(cleaned) if cleaned.isdigit() else None
+
             if len(parts) >= 4:
-                title = parts[0]
+                # Format: Title | Category | Description | Duration
                 category = parts[1] or "Architecture"
-                description = parts[2] or "Weekly test on AWS core services and cloud architecture patterns."
-                try:
-                    duration_mins = int(parts[3].lower().replace("mins", "").replace("min", "").replace("m", "").strip())
-                except Exception:
-                    duration_mins = 10
+                description = parts[2] or description
+                duration_mins = _parse_dur(parts[3]) or 10
             elif len(parts) == 3:
-                title = parts[0]
-                category = parts[1] or "Architecture"
-                description = parts[2] or "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
+                # Format: Title | Description | Duration  OR  Title | Category | Description
+                dur = _parse_dur(parts[2])
+                if dur is not None:
+                    # Power user following prompt: Title | Description | Duration
+                    description = parts[1] or description
+                    duration_mins = dur
+                else:
+                    # Format: Title | Category | Description
+                    category = parts[1] or "Architecture"
+                    description = parts[2] or description
             else:
-                title = parts[0]
-                category = parts[1] or "Architecture"
-                description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
+                # len(parts) == 2: Title | Category  OR  Title | Duration
+                dur = _parse_dur(parts[1])
+                if dur is not None:
+                    duration_mins = dur
+                else:
+                    category = parts[1] or "Architecture"
 
             duration_mins = max(1, min(300, duration_mins))
             ch_id = await create_challenge(
@@ -544,7 +572,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data["wiz_duration_mins"] = duration_mins
 
             await update.message.reply_text(
-                f"✨ <b>Create Challenge Wizard (Step 3/4: Schedule & Start/End Time)</b>\n\n"
+                f"✨ <b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
                 f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
                 f"🏗️ <b>Category:</b> {html.escape(category)}\n"
                 f"📝 <b>Description:</b> <i>{html.escape(description)}</i>\n"
@@ -614,13 +642,59 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dur_mins = int(dur_secs // 60)
 
         await update.message.reply_text(
-            f"✨ <b>Create Challenge Wizard (Step 3/4: Schedule & Start/End Time)</b>\n\n"
+            f"✨ <b>Create Challenge Wizard (Step 3/4: Exam Time Limit)</b>\n\n"
+            f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n\n"
+            f"⏱️ <b>Select the allowed exam time for community members:</b>\n"
+            f"<i>(Timer begins when participant starts the challenge)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_wizard_timer_keyboard(ch_id),
+        )
+        return
+
+    # Check if admin is entering exam time limit in wizard
+    if current_state and current_state.startswith("WAITING_FOR_CHALLENGE_TIMER"):
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
+        parts = current_state.split(":")
+        ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("wiz_ch_id")
+        if not ch_id:
+            await set_user_state(user_id, None)
+            await update.message.reply_text("⚠️ No active challenge creation session.", reply_markup=get_main_menu_keyboard())
+            return
+
+        try:
+            mins = int(text.strip())
+            if mins < 1 or mins > 300:
+                raise ValueError("Minutes out of range")
+        except Exception:
+            await update.message.reply_text(
+                "⚠️ <b>Please enter a valid number of minutes</b> (between 1 and 300):\n\n"
+                "<i>Example:</i> <code>15</code>\n\n"
+                "<i>(Or send /cancel to abort)</i>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
+        await set_user_state(user_id, None)
+        dur_secs = mins * 60
+        await update_challenge_details(ch_id, duration_seconds=dur_secs)
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+        desc = ch.get("description", "") if ch else ""
+
+        await update.message.reply_text(
+            f"✨ <b>Create Challenge Wizard (Step 4/4: Schedule & Start/End Time)</b>\n\n"
             f"📌 <b>Title:</b> <b>{html.escape(title)}</b>\n"
             f"📝 <b>Description:</b> <i>{html.escape(desc)}</i>\n"
-            f"⏱️ <b>Exam Time Limit:</b> <code>{dur_mins} Minutes</code>\n\n"
+            f"⏱️ <b>Exam Time Limit:</b> <code>{mins} Minutes</code>\n\n"
             f"⏰ <b>Select Start Schedule & Deadline:</b>",
             parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_schedule_presets_keyboard(ch_id, dur_mins),
+            reply_markup=get_admin_schedule_presets_keyboard(ch_id, mins),
         )
         return
 
