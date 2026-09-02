@@ -214,6 +214,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
+        await set_user_state(user.id, None)
         ch = await get_challenge(ch_id)
         if not ch:
             await query.answer("Challenge not found.", show_alert=True)
@@ -380,6 +381,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         ch = await get_challenge(ch_id)
         title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
         cat = ch.get("category", "Architecture") if ch else "Architecture"
+        await set_user_state(user.id, f"WAITING_FOR_CHALLENGE_DESC:{ch_id}")
         await query.edit_message_text(
             f"<b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
             f"• <b>Title:</b> <b>{html.escape(title)}</b>\n"
@@ -390,6 +392,21 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             f"<i>(Or tap below to use default description or change category)</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_skip_desc_keyboard(ch_id),
+        )
+
+    elif data.startswith("adm_wiz_custom_cat:"):
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        ch_id = int(data.split(":")[1])
+        await set_user_state(user.id, f"WAITING_FOR_CHALLENGE_CUSTOM_CAT:{ch_id}")
+        await query.edit_message_text(
+            f"<b>Create Challenge Wizard (Step 2/4: Custom Category)</b>\n\n"
+            "Please send your custom category name:\n\n"
+            "<i>Examples:</i> <code>Generative AI</code>, <code>MLOps</code>, <code>Cybersecurity</code>\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
         )
 
     elif data.startswith("adm_wiz_skip_desc:"):
@@ -499,6 +516,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         except Exception:
             pass
         ch_id = int(data.split(":")[1])
+        await set_user_state(user.id, f"WAITING_FOR_EDIT_CHALLENGE_SCHEDULE:{ch_id}")
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"
         starts_str = ch.get("starts_at") or "Not scheduled"
@@ -555,6 +573,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
 
         await update_challenge_details(ch_id, starts_at=starts_at, ends_at=ends_at)
         await update_challenge_status(ch_id, status)
+        await set_user_state(user.id, None)
 
         ch = await get_challenge(ch_id)
         title = html.escape(ch["title"]) if ch else f"#{ch_id}"

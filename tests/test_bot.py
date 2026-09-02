@@ -1300,6 +1300,83 @@ def test_step_by_step_title_and_category_input(monkeypatch):
     assert ch["category"] == "Security"
 
 
+def test_wizard_custom_category_selection(monkeypatch):
+    """Tests choosing Custom Category in Step 2 and typing a custom category."""
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_create_ch")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    asyncio.run(handle_admin_callback(up1, ctx))
+
+    up_title = FakeUpdate(user_id=99999, text="AWS Bedrock & Titan Mastery")
+    asyncio.run(bot.handle_message(up_title, ctx))
+
+    state = asyncio.run(db.get_user_state(99999))
+    ch_id = int(state.split(":")[1])
+
+    # Click Custom Category
+    q_custom = FakeCallbackQuery(user_id=99999, data=f"adm_wiz_custom_cat:{ch_id}")
+    up_custom = FakeUpdate(user_id=99999, callback_query=q_custom)
+    asyncio.run(handle_admin_callback(up_custom, ctx))
+    assert "Custom Category" in q_custom.edited_text
+
+    # Type custom category
+    up_cat_input = FakeUpdate(user_id=99999, text="Generative AI")
+    asyncio.run(bot.handle_message(up_cat_input, ctx))
+
+    assert len(up_cat_input.message.reply_text_calls) == 1
+    resp = up_cat_input.message.reply_text_calls[0]["text"]
+    assert "Step 2/4: Description" in resp
+    assert "Generative AI" in resp
+
+    ch = asyncio.run(get_challenge(ch_id))
+    assert ch["category"] == "Generative AI"
+
+
+def test_edit_schedule_with_copied_chat_prefix_and_direct_input(monkeypatch):
+    """Tests entering dates directly on edit schedule screen even with copied chat prefixes."""
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import create_challenge, get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    ch_id = asyncio.run(create_challenge(
+        title="Copied Schedule Challenge",
+        description="Testing date parsing",
+        category="DevOps",
+        created_by=99999,
+    ))
+
+    # Admin opens Edit Schedule
+    q_edit = FakeCallbackQuery(user_id=99999, data=f"adm_edit_sched:{ch_id}")
+    up_edit = FakeUpdate(user_id=99999, callback_query=q_edit)
+    asyncio.run(handle_admin_callback(up_edit, ctx))
+
+    # Verify state is set so admin can directly send dates
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == f"WAITING_FOR_EDIT_CHALLENGE_SCHEDULE:{ch_id}"
+
+    # Admin sends date with chat copied prefix
+    copied_text = "[9/2/2026 3:23 PM] אַבְרָהָם: 2026-09-02 15:25 to 2026-09-02 15:50"
+    up_date = FakeUpdate(user_id=99999, text=copied_text)
+    asyncio.run(bot.handle_message(up_date, ctx))
+
+    assert len(up_date.message.reply_text_calls) == 1
+    resp = up_date.message.reply_text_calls[0]["text"]
+    assert f"Schedule Updated for Challenge #{ch_id}" in resp
+    assert "Sep 2, 2026 · 3:25 PM UTC" in resp
+    assert "Sep 2, 2026 · 3:50 PM UTC" in resp
+
+    ch = asyncio.run(get_challenge(ch_id))
+    assert "2026-09-02T15:25:00" in ch["starts_at"]
+    assert "2026-09-02T15:50:00" in ch["ends_at"]
+
+
 
 
 

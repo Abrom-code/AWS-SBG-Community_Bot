@@ -367,6 +367,7 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "WAITING_FOR_CHALLENGE_TITLE",
         "WAITING_FOR_CHALLENGE_DESC",
         "WAITING_FOR_CHALLENGE_TIMER",
+        "WAITING_FOR_CHALLENGE_CUSTOM_CAT",
         "WAITING_FOR_EDIT_CHALLENGE_TITLE",
         "WAITING_FOR_EDIT_CHALLENGE_SCHEDULE",
         "WAITING_FOR_EDIT_CHALLENGE_TIMER",
@@ -679,11 +680,46 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text(
             f"<b>Create Challenge Wizard (Step 3/4: Exam Time Limit)</b>\n\n"
             f"<blockquote><b>{html.escape(title)}</b>\n"
+            f"Category: {html.escape(ch.get('category', 'Architecture'))}\n"
             f"<i>{html.escape(desc)}</i></blockquote>\n\n"
             f"Select the allowed exam time for community members:\n"
             f"<i>(Timer begins when participant starts the challenge)</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_timer_keyboard(ch_id),
+        )
+        return
+
+    # Check if admin is entering custom category in wizard
+    if current_state and current_state.startswith("WAITING_FOR_CHALLENGE_CUSTOM_CAT"):
+        chat_id = update.effective_chat.id if update.effective_chat else None
+        if not await is_admin_user(user_id, chat_id, context.bot):
+            await set_user_state(user_id, None)
+            return
+
+        parts = current_state.split(":")
+        ch_id = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else context.user_data.get("wiz_ch_id")
+        if not ch_id:
+            await set_user_state(user_id, None)
+            await update.message.reply_text("No active challenge creation session.", reply_markup=get_main_menu_keyboard())
+            return
+
+        new_cat = text.strip()
+        await update_challenge_details(ch_id, category=new_cat)
+        context.user_data["wiz_category"] = new_cat
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+
+        await set_user_state(user_id, f"WAITING_FOR_CHALLENGE_DESC:{ch_id}")
+        await update.message.reply_text(
+            f"<b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
+            f"• <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"• <b>Category:</b> <code>{html.escape(new_cat)}</code>\n\n"
+            f"Please enter the challenge description:\n"
+            f"<i>(Explain what community members will learn or test in this challenge)</i>\n\n"
+            f"<i>Example:</i> <code>Master EC2, S3, VPC, Lambda, and high-availability design patterns in this weekly challenge.</code>\n\n"
+            f"<i>(Or tap below to use default description or change category)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_wizard_skip_desc_keyboard(ch_id),
         )
         return
 
@@ -785,29 +821,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         raw = text.strip()
-        parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+        import re
+        m = re.search(
+            r"(\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2})?)\s*(?:to|,|--|-)\s*(\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2})?)",
+            raw,
+            re.IGNORECASE,
+        )
+        if m:
+            s_str, e_str = m.group(1).strip(), m.group(2).strip()
+        else:
+            parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+            if len(parts) >= 2:
+                s_str, e_str = parts[0], parts[1]
+            elif len(parts) == 1 and parts[0]:
+                s_str, e_str = parts[0], None
+            else:
+                s_str, e_str = None, None
+
         now_dt = datetime.now(timezone.utc)
         starts_at = None
         ends_at = None
 
         try:
-            if len(parts) >= 2:
-                s_str = parts[0]
-                e_str = parts[1]
-                s_dt = datetime.fromisoformat(s_str.replace(" ", "T"))
-                e_dt = datetime.fromisoformat(e_str.replace(" ", "T"))
-                if s_dt.tzinfo is None:
-                    s_dt = s_dt.replace(tzinfo=timezone.utc)
+            if not s_str:
+                raise ValueError("No start date provided")
+            s_clean = s_str.replace(" ", "T") if "T" in s_str or " " in s_str else f"{s_str}T00:00"
+            s_dt = datetime.fromisoformat(s_clean)
+            if s_dt.tzinfo is None:
+                s_dt = s_dt.replace(tzinfo=timezone.utc)
+            starts_at = s_dt.isoformat()
+
+            if e_str:
+                e_clean = e_str.replace(" ", "T") if "T" in e_str or " " in e_str else f"{e_str}T23:59"
+                e_dt = datetime.fromisoformat(e_clean)
                 if e_dt.tzinfo is None:
                     e_dt = e_dt.replace(tzinfo=timezone.utc)
-                starts_at = s_dt.isoformat()
                 ends_at = e_dt.isoformat()
             else:
-                s_dt = datetime.fromisoformat(parts[0].replace(" ", "T"))
-                if s_dt.tzinfo is None:
-                    s_dt = s_dt.replace(tzinfo=timezone.utc)
-                starts_at = s_dt.isoformat()
-                ends_at = (s_dt + timedelta(days=7)).isoformat()
+                e_dt = s_dt + timedelta(days=7)
+                ends_at = e_dt.isoformat()
         except Exception:
             await update.message.reply_text(
                 "<b>Invalid Date/Time Format.</b>\n\n"
@@ -1091,29 +1143,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await set_user_state(user_id, None)
 
         raw = text.strip()
-        parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+        import re
+        m = re.search(
+            r"(\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2})?)\s*(?:to|,|--|-)\s*(\d{4}-\d{2}-\d{2}(?:[T\s]\d{1,2}:\d{2})?)",
+            raw,
+            re.IGNORECASE,
+        )
+        if m:
+            s_str, e_str = m.group(1).strip(), m.group(2).strip()
+        else:
+            parts = [p.strip() for p in raw.split("to")] if "to" in raw.lower() else [p.strip() for p in raw.split(",")]
+            if len(parts) >= 2:
+                s_str, e_str = parts[0], parts[1]
+            elif len(parts) == 1 and parts[0]:
+                s_str, e_str = parts[0], None
+            else:
+                s_str, e_str = None, None
+
         now_dt = datetime.now(timezone.utc)
         starts_at = None
         ends_at = None
 
         try:
-            if len(parts) >= 2:
-                s_str = parts[0]
-                e_str = parts[1]
-                s_dt = datetime.fromisoformat(s_str.replace(" ", "T"))
-                e_dt = datetime.fromisoformat(e_str.replace(" ", "T"))
-                if s_dt.tzinfo is None:
-                    s_dt = s_dt.replace(tzinfo=timezone.utc)
+            if not s_str:
+                raise ValueError("No start date provided")
+            s_clean = s_str.replace(" ", "T") if "T" in s_str or " " in s_str else f"{s_str}T00:00"
+            s_dt = datetime.fromisoformat(s_clean)
+            if s_dt.tzinfo is None:
+                s_dt = s_dt.replace(tzinfo=timezone.utc)
+            starts_at = s_dt.isoformat()
+
+            if e_str:
+                e_clean = e_str.replace(" ", "T") if "T" in e_str or " " in e_str else f"{e_str}T23:59"
+                e_dt = datetime.fromisoformat(e_clean)
                 if e_dt.tzinfo is None:
                     e_dt = e_dt.replace(tzinfo=timezone.utc)
-                starts_at = s_dt.isoformat()
                 ends_at = e_dt.isoformat()
-            elif len(parts) == 1:
-                s_dt = datetime.fromisoformat(parts[0].replace(" ", "T"))
-                if s_dt.tzinfo is None:
-                    s_dt = s_dt.replace(tzinfo=timezone.utc)
-                starts_at = s_dt.isoformat()
-                ends_at = (s_dt + timedelta(days=7)).isoformat()
+            else:
+                e_dt = s_dt + timedelta(days=7)
+                ends_at = e_dt.isoformat()
         except Exception:
             await update.message.reply_text(
                 "<b>Invalid date/time format.</b>\n\n"

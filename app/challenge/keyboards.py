@@ -493,14 +493,15 @@ def get_wizard_skip_desc_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
 def get_wizard_category_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
     """Category picker for Challenge Creation Wizard."""
     categories = [
+        "AI",
+        "DevOps",
+        "Web3",
+        "Cloud",
         "Architecture",
         "Serverless",
         "Security",
         "Database",
-        "DevOps",
         "Networking",
-        "Storage",
-        "General",
     ]
     buttons = []
     row = []
@@ -511,6 +512,7 @@ def get_wizard_category_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
             row = []
     if row:
         buttons.append(row)
+    buttons.append([InlineKeyboardButton("Custom Category", callback_data=f"adm_wiz_custom_cat:{challenge_id}")])
     buttons.append([InlineKeyboardButton("« Back to Description", callback_data=f"adm_wiz_back_desc:{challenge_id}")])
     return InlineKeyboardMarkup(buttons)
 
