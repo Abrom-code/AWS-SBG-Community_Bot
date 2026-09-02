@@ -369,6 +369,21 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message or not update.message.text:
         return
 
+    try:
+        await _handle_message_inner(update, context)
+    except Exception as exc:
+        logger.exception("Unhandled error in handle_message: %s", exc)
+        try:
+            await update.message.reply_text(
+                f"⚠️ An unexpected error occurred. Please try again.\n\n<code>{html.escape(str(exc)[:500])}</code>",
+                parse_mode=ParseMode.HTML,
+            )
+        except Exception:
+            pass
+
+
+async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Inner handler that does the actual work. Exceptions bubble up to handle_message."""
     text = update.message.text
     user = update.effective_user
     user_id = user.id
@@ -1613,6 +1628,22 @@ def create_application(token: str = None):
             unknown_command_handler,
         )
     )
+
+    # Global error handler — sends error details to admin and logs
+    async def error_handler(update, context):
+        logger.error("PTB caught an exception:", exc_info=context.error)
+        if update and update.effective_user:
+            try:
+                err_msg = str(context.error)[:500]
+                await context.bot.send_message(
+                    chat_id=update.effective_user.id,
+                    text=f"⚠️ An error occurred processing your request:\n\n<code>{html.escape(err_msg)}</code>",
+                    parse_mode=ParseMode.HTML,
+                )
+            except Exception:
+                pass
+
+    app.add_error_handler(error_handler)
 
     return app
 
