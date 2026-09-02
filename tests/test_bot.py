@@ -1050,6 +1050,17 @@ def test_modern_step_by_step_creation_wizard(monkeypatch):
     assert state.startswith("WAITING_FOR_CHALLENGE_DESC:")
     ch_id = int(state.split(":")[1])
 
+    # Test category picker & updating category
+    q_cat = FakeCallbackQuery(user_id=99999, data=f"adm_wiz_cat_menu:{ch_id}")
+    up_cat = FakeUpdate(user_id=99999, callback_query=q_cat)
+    asyncio.run(handle_admin_callback(up_cat, ctx))
+    assert "Choose Category" in q_cat.edited_text
+
+    q_set_cat = FakeCallbackQuery(user_id=99999, data=f"adm_wiz_set_cat:{ch_id}:DevOps")
+    up_set_cat = FakeUpdate(user_id=99999, callback_query=q_set_cat)
+    asyncio.run(handle_admin_callback(up_set_cat, ctx))
+    assert "DevOps" in q_set_cat.edited_text
+
     # Step 2: Enter Description
     up_desc = FakeUpdate(user_id=99999, text="Hands-on practice quiz covering DynamoDB, Lambda, CI/CD, and ECS architectures.")
     asyncio.run(bot.handle_message(up_desc, ctx))
@@ -1257,6 +1268,36 @@ def test_setup_bot_commands_and_notifications_command():
     assert len(up.message.reply_text_calls) == 1
     assert "Community Notifications" in up.message.reply_text_calls[0]["text"]
     assert up.message.reply_text_calls[0]["reply_markup"] is not None
+
+
+def test_step_by_step_title_and_category_input(monkeypatch):
+    """Tests entering 'Title | Category' in Step 1 proceeds to Step 2 with the specified category."""
+    from app.challenge.admin import handle_admin_callback
+    from app.challenge.service import get_challenge
+
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    ctx = FakeContext()
+
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_create_ch")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    asyncio.run(handle_admin_callback(up1, ctx))
+
+    up_title = FakeUpdate(user_id=99999, text="AWS Security Specialty | Security")
+    asyncio.run(bot.handle_message(up_title, ctx))
+
+    assert len(up_title.message.reply_text_calls) == 1
+    resp = up_title.message.reply_text_calls[0]["text"]
+    assert "Step 2/4: Description" in resp
+    assert "AWS Security Specialty" in resp
+    assert "Security" in resp
+
+    state = asyncio.run(db.get_user_state(99999))
+    assert state.startswith("WAITING_FOR_CHALLENGE_DESC:")
+    ch_id = int(state.split(":")[1])
+
+    ch = asyncio.run(get_challenge(ch_id))
+    assert ch["title"] == "AWS Security Specialty"
+    assert ch["category"] == "Security"
 
 
 

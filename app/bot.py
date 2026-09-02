@@ -432,11 +432,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await set_user_state(user_id, "WAITING_FOR_CHALLENGE_TITLE")
             await update.message.reply_text(
                 "<b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
-                "Please enter the Title for this challenge:\n\n"
-                "<i>Example:</i>\n"
-                "<code>AWS Solutions Architect Associate Sprint</code>\n\n"
+                "Please enter the Title (or <code>Title | Category</code>) for this challenge:\n\n"
+                "<i>Examples:</i>\n"
+                "• <code>AWS Solutions Architect Associate Sprint</code>\n"
+                "• <code>AWS Solutions Architect Sprint | Architecture</code>\n\n"
                 "<blockquote>Tip: Power users can send all in one line:\n"
-                "<code>Title | Description | Duration</code></blockquote>\n\n"
+                "<code>Title | Category | Description | Duration</code></blockquote>\n\n"
                 "<i>(Type /cancel to abort)</i>",
                 parse_mode=ParseMode.HTML,
             )
@@ -540,8 +541,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         raw = text.strip()
         parts = [p.strip() for p in raw.split("|")]
 
-        # Power-user shortcut: entered multiple fields at once (e.g. Title | Description | Duration)
-        if len(parts) >= 2:
+        # Power-user multi-part shortcut (3 or 4 parts: Title | Category | Description | Duration OR Title | Description | Duration)
+        if len(parts) >= 3:
             await set_user_state(user_id, None)
             duration_mins = 10
             category = "Architecture"
@@ -561,20 +562,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 # Format: Title | Description | Duration  OR  Title | Category | Description
                 dur = _parse_dur(parts[2])
                 if dur is not None:
-                    # Power user following prompt: Title | Description | Duration
+                    # Power user: Title | Description | Duration
                     description = parts[1] or description
                     duration_mins = dur
                 else:
-                    # Format: Title | Category | Description
+                    # Power user: Title | Category | Description
                     category = parts[1] or "Architecture"
                     description = parts[2] or description
-            else:
-                # len(parts) == 2: Title | Category  OR  Title | Duration
-                dur = _parse_dur(parts[1])
-                if dur is not None:
-                    duration_mins = dur
-                else:
-                    category = parts[1] or "Architecture"
 
             duration_mins = max(1, min(300, duration_mins))
             ch_id = await create_challenge(
@@ -607,11 +601,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             return
 
-        # Single Title entered -> Step-by-Step Flow: proceed to Step 2 (Description)
-        title = raw
-        category = "Architecture"
+        # Step-by-Step Flow: (1 part: Title  OR  2 parts: Title | Category)
+        if len(parts) == 2:
+            title = parts[0]
+            # Check if second part was duration (e.g. Title | 15) or category
+            def _parse_dur_single(val: str) -> Optional[int]:
+                cleaned = val.lower().replace("minutes", "").replace("minute", "").replace("mins", "").replace("min", "").replace("m", "").strip()
+                return int(cleaned) if cleaned.isdigit() else None
+
+            dur = _parse_dur_single(parts[1])
+            if dur is not None:
+                category = "Architecture"
+                duration_mins = dur
+            else:
+                category = parts[1] or "Architecture"
+                duration_mins = 10
+        else:
+            title = raw
+            category = "Architecture"
+            duration_mins = 10
+
         description = "Weekly timed AWS challenge on core compute, storage, and cloud architecture (70% accuracy + 30% speed bonus)."
-        duration_mins = 10
 
         ch_id = await create_challenge(
             title=title,
@@ -633,11 +643,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await set_user_state(user_id, f"WAITING_FOR_CHALLENGE_DESC:{ch_id}")
         await update.message.reply_text(
             f"<b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
-            f"<b>Title:</b> <b>{html.escape(title)}</b>\n\n"
+            f"• <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"• <b>Category:</b> <code>{html.escape(category)}</code>\n\n"
             f"Please enter the challenge description:\n"
             f"<i>(Explain what community members will learn or test in this challenge)</i>\n\n"
             f"<i>Example:</i> <code>Master EC2, S3, VPC, Lambda, and high-availability design patterns in this weekly challenge.</code>\n\n"
-            f"<i>(Or tap below to use default description)</i>",
+            f"<i>(Or tap below to use default description or change category)</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=get_wizard_skip_desc_keyboard(ch_id),
         )

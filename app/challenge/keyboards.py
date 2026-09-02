@@ -480,13 +480,39 @@ def get_challenge_timer_edit_keyboard(challenge_id: int) -> InlineKeyboardMarkup
 
 
 def get_wizard_skip_desc_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
-    """Provides a skip/default shortcut button for Challenge Description in wizard."""
+    """Provides skip description and category picker shortcuts in wizard Step 2."""
     return InlineKeyboardMarkup(
         [
             [InlineKeyboardButton("Use Default Description", callback_data=f"adm_wiz_skip_desc:{challenge_id}")],
+            [InlineKeyboardButton("Select Category", callback_data=f"adm_wiz_cat_menu:{challenge_id}")],
             [InlineKeyboardButton("Cancel", callback_data="adm_panel")],
         ]
     )
+
+
+def get_wizard_category_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
+    """Category picker for Challenge Creation Wizard."""
+    categories = [
+        "Architecture",
+        "Serverless",
+        "Security",
+        "Database",
+        "DevOps",
+        "Networking",
+        "Storage",
+        "General",
+    ]
+    buttons = []
+    row = []
+    for cat in categories:
+        row.append(InlineKeyboardButton(cat, callback_data=f"adm_wiz_set_cat:{challenge_id}:{cat}"))
+        if len(row) == 2:
+            buttons.append(row)
+            row = []
+    if row:
+        buttons.append(row)
+    buttons.append([InlineKeyboardButton("« Back to Description", callback_data=f"adm_wiz_back_desc:{challenge_id}")])
+    return InlineKeyboardMarkup(buttons)
 
 
 def get_wizard_timer_keyboard(challenge_id: int) -> InlineKeyboardMarkup:

@@ -42,6 +42,7 @@ from app.challenge.keyboards import (
     get_admin_report_keyboard,
     get_wizard_questions_keyboard,
     get_wizard_skip_desc_keyboard,
+    get_wizard_category_keyboard,
     get_wizard_timer_keyboard,
     get_challenge_delete_confirm_keyboard,
     get_admin_leaderboard_keyboard,
@@ -320,13 +321,75 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         await set_user_state(user.id, "WAITING_FOR_CHALLENGE_TITLE")
         await query.edit_message_text(
             "<b>Create Challenge Wizard (Step 1/4: Title)</b>\n\n"
-            "Please enter the Title for this challenge:\n\n"
-            "<i>Example:</i>\n"
-            "<code>AWS Solutions Architect Associate Sprint</code>\n\n"
+            "Please enter the Title (or <code>Title | Category</code>) for this challenge:\n\n"
+            "<i>Examples:</i>\n"
+            "• <code>AWS Solutions Architect Associate Sprint</code>\n"
+            "• <code>AWS Solutions Architect Sprint | Architecture</code>\n\n"
             "<blockquote>Tip: Power users can send all in one line:\n"
-            "<code>Title | Description | Duration</code></blockquote>\n\n"
+            "<code>Title | Category | Description | Duration</code></blockquote>\n\n"
             "<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
+        )
+
+    elif data.startswith("adm_wiz_cat_menu:"):
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        current_cat = ch.get("category", "Architecture") if ch else "Architecture"
+        await query.edit_message_text(
+            f"<b>Create Challenge Wizard (Step 2/4: Choose Category)</b>\n\n"
+            f"• <b>Current Category:</b> <code>{html.escape(current_cat)}</code>\n\n"
+            f"Tap a category below for this challenge:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_wizard_category_keyboard(ch_id),
+        )
+
+    elif data.startswith("adm_wiz_set_cat:"):
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        parts = data.split(":")
+        ch_id = int(parts[1])
+        new_cat = parts[2]
+        await update_challenge_details(ch_id, category=new_cat)
+        context.user_data["wiz_category"] = new_cat
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+        await query.edit_message_text(
+            f"<b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
+            f"• <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"• <b>Category:</b> <code>{html.escape(new_cat)}</code>\n\n"
+            f"Please enter the challenge description:\n"
+            f"<i>(Explain what community members will learn or test in this challenge)</i>\n\n"
+            f"<i>Example:</i> <code>Master EC2, S3, VPC, Lambda, and high-availability design patterns in this weekly challenge.</code>\n\n"
+            f"<i>(Or tap below to use default description or change category)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_wizard_skip_desc_keyboard(ch_id),
+        )
+
+    elif data.startswith("adm_wiz_back_desc:"):
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        ch_id = int(data.split(":")[1])
+        ch = await get_challenge(ch_id)
+        title = ch.get("title", "AWS Cloud Challenge") if ch else "AWS Cloud Challenge"
+        cat = ch.get("category", "Architecture") if ch else "Architecture"
+        await query.edit_message_text(
+            f"<b>Create Challenge Wizard (Step 2/4: Description)</b>\n\n"
+            f"• <b>Title:</b> <b>{html.escape(title)}</b>\n"
+            f"• <b>Category:</b> <code>{html.escape(cat)}</code>\n\n"
+            f"Please enter the challenge description:\n"
+            f"<i>(Explain what community members will learn or test in this challenge)</i>\n\n"
+            f"<i>Example:</i> <code>Master EC2, S3, VPC, Lambda, and high-availability design patterns in this weekly challenge.</code>\n\n"
+            f"<i>(Or tap below to use default description or change category)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_wizard_skip_desc_keyboard(ch_id),
         )
 
     elif data.startswith("adm_wiz_skip_desc:"):
