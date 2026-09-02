@@ -10,6 +10,7 @@ from telegram.ext import ContextTypes
 
 from app.challenge.service import (
     get_active_challenge,
+    get_active_challenges,
     get_challenge,
     register_or_get_participant,
     start_participant_quiz,
@@ -26,6 +27,8 @@ from app.challenge.service import (
 )
 from app.challenge.keyboards import (
     get_challenge_start_keyboard,
+    get_active_challenges_keyboard,
+    get_active_challenges_nav_keyboard,
     get_question_options_keyboard,
     get_leaderboard_keyboard,
     get_scoring_rules_keyboard,
@@ -43,8 +46,25 @@ logger = logging.getLogger(__name__)
 from datetime import datetime, timezone
 
 
+def _format_scheduled_datetime(starts_at_str: Optional[str]) -> str:
+    """Formats an ISO timestamp into a clear human-readable date and time (e.g. 'Saturday, Sep 5, 2026 · 2:30 PM UTC')."""
+    if not starts_at_str:
+        return "To be announced"
+    dt = to_utc_datetime(starts_at_str)
+    if not dt:
+        return str(starts_at_str)
+    day = dt.day
+    hour_12 = dt.strftime("%I").lstrip("0") or "12"
+    minute = dt.strftime("%M")
+    ampm = dt.strftime("%p")
+    month_name = dt.strftime("%b")
+    weekday = dt.strftime("%A")
+    year = dt.year
+    return f"{weekday}, {month_name} {day}, {year} · {hour_12}:{minute} {ampm} UTC"
+
+
 def _format_time_until(starts_at_str: Optional[str]) -> str:
-    """Returns a concise relative time string (e.g., 'in 2h 15m' or 'in 45m')."""
+    """Returns a clear relative countdown string (e.g., 'in 2 days, 4 hrs' or 'in 45 mins')."""
     if not starts_at_str:
         return "soon"
     try:
@@ -54,19 +74,27 @@ def _format_time_until(starts_at_str: Optional[str]) -> str:
         now = datetime.now(timezone.utc)
         diff = (dt - now).total_seconds()
         if diff <= 0:
-            return "momentarily"
+            return "opening momentarily"
         hours = int(diff // 3600)
         minutes = int((diff % 3600) // 60)
-        if hours >= 24:
-            days = hours // 24
-            rem_hours = hours % 24
-            return f"in {days}d {rem_hours}h" if rem_hours > 0 else f"in {days} days"
-        elif hours > 0:
-            return f"in {hours}h {minutes}m" if minutes > 0 else f"in {hours}h"
-        elif minutes > 0:
-            return f"in {minutes}m"
+        days = hours // 24
+        rem_hours = hours % 24
+        if days >= 1:
+            day_str = f"{days} day" if days == 1 else f"{days} days"
+            if rem_hours > 0:
+                hr_str = f"{rem_hours} hr" if rem_hours == 1 else f"{rem_hours} hrs"
+                return f"in {day_str}, {hr_str}"
+            return f"in {day_str}"
+        elif hours >= 1:
+            hr_str = f"{hours} hr" if hours == 1 else f"{hours} hrs"
+            if minutes > 0:
+                min_str = f"{minutes} min" if minutes == 1 else f"{minutes} mins"
+                return f"in {hr_str}, {min_str}"
+            return f"in {hr_str}"
+        elif minutes >= 1:
+            return f"in {minutes} min" if minutes == 1 else f"in {minutes} mins"
         else:
-            return "in less than 1m"
+            return "in less than a minute"
     except Exception:
         return "soon"
 
@@ -232,8 +260,123 @@ async def _safe_edit_or_reply(query, text: str, reply_markup=None):
 # ---------------------------------------------------------------------------
 # Student Challenge Commands & Callbacks
 # ---------------------------------------------------------------------------
+async def _render_active_challenge_card(
+    sender_func,
+    active_challenges: list,
+    current_index: int,
+    user_id: int,
+    user_name: str,
+    username: str,
+):
+    """Renders an active challenge in questions format with a smart navigation bar."""
+    total = len(active_challenges)
+    if current_index < 0 or current_index >= total:
+        current_index = 0
+
+    challenge = active_challenges[current_index]
+    ch_id = challenge["id"]
+    title = html.escape(challenge["title"])
+    desc = html.escape(challenge["description"] or "Test your AWS cloud skills!")
+    category = html.escape(challenge["category"])
+    dur_secs = challenge.get("duration_seconds") or 600
+    exam_mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
+    duration_str = f"{exam_mins} minutes total"
+    status = challenge["status"]
+
+    questions = await get_challenge_questions(ch_id)
+    total_q = len(questions)
+
+    # Check participant state
+    part = await register_or_get_participant(ch_id, user_id, user_name, username)
+    is_completed = (part.get("status") == "COMPLETED")
+    is_scheduled = (status == "SCHEDULED")
+
+    # Collect status indicator for each challenge in the navigation bar
+    challenge_statuses = []
+    for ch in active_challenges:
+        p = await register_or_get_participant(ch["id"], user_id, user_name, username)
+        if p.get("status") == "COMPLETED":
+            challenge_statuses.append("✔️")
+        elif ch.get("status") == "SCHEDULED":
+            challenge_statuses.append("🕒")
+        else:
+            challenge_statuses.append("🟢")
+
+    acc_w = float(challenge.get("accuracy_weight") or 0.70)
+    spd_w = float(challenge.get("speed_weight") or 0.30)
+    acc_pct = int(round(acc_w * 100))
+    spd_pct = int(round(spd_w * 100))
+
+    header_prefix = f"✦ <b>Active Challenge ({current_index + 1} of {total})</b>" if total > 1 else f"✦ <b>Active Challenge: {title}</b>"
+
+    if is_completed:
+        score = part["score"]
+        correct = part["correct_count"]
+        answered = part["answered_count"]
+        text = (
+            f"{header_prefix}\n\n"
+            f"✔️ <b>Status: Completed</b>\n\n"
+            f"<blockquote><b>{title}</b>\n{desc}</blockquote>\n\n"
+            f"▫️ <b>Category:</b> {category}\n"
+            f"▫️ <b>Your Score:</b> <code>{score} pts</code>\n"
+            f"▫️ <b>Accuracy:</b> {correct} / {answered} correct\n\n"
+            f"➤ <i>You have already submitted this challenge. View standings below!</i>"
+        )
+    elif is_scheduled:
+        countdown = _format_time_until(challenge.get("starts_at"))
+        opening_time = _format_scheduled_datetime(challenge.get("starts_at"))
+        text = (
+            f"{header_prefix}\n\n"
+            f"🕒 <b>Status: Upcoming Challenge</b>\n\n"
+            f"<blockquote><b>{title}</b>\n{desc}</blockquote>\n\n"
+            f"▫️ <b>Category:</b> {category}\n"
+            f"▫️ <b>Scheduled Opening:</b> {opening_time}\n"
+            f"▫️ <b>Countdown:</b> Opens {countdown}\n"
+            f"▫️ <b>Questions:</b> {total_q}\n"
+            f"▫️ <b>Exam Time Limit:</b> {duration_str}\n"
+            f"▫️ <b>Scoring Breakdown:</b> {acc_pct}% Accuracy + {spd_pct}% Speed Bonus\n\n"
+            f"➤ <i>This challenge will automatically unlock when the opening time is reached.</i>"
+        )
+    else:
+        # Check deadline
+        remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(challenge, None)
+        capped_notice = ""
+        if is_capped and remaining_sec > 0:
+            capped_mins = max(1, int(math.ceil(remaining_sec / 60)))
+            duration_str = f"<b>{capped_mins} minutes</b> ⚠️ <i>(Capped by Deadline)</i>"
+            capped_notice = (
+                f"\n\n<blockquote>⚠️ <b>Deadline Notice:</b>\n"
+                f"Standard exam is {exam_mins} min, but this challenge closes in "
+                f"<b>{capped_mins} min</b>. Your timer is capped.</blockquote>"
+            )
+
+        text = (
+            f"{header_prefix}\n\n"
+            f"🟢 <b>Status: Live Now</b>\n\n"
+            f"<blockquote><b>{title}</b>\n{desc}</blockquote>\n\n"
+            f"▫️ <b>Category:</b> {category}\n"
+            f"▫️ <b>Questions:</b> {total_q}\n"
+            f"▫️ <b>Exam Time Limit:</b> {duration_str}\n"
+            f"▫️ <b>Scoring Breakdown:</b> {acc_pct}% Accuracy + {spd_pct}% Speed Bonus"
+            f"{capped_notice}\n\n"
+            f"➤ <i>Tap <b>Start Challenge</b> below when ready. The timer begins immediately!</i>"
+        )
+
+    sched_countdown = _format_time_until(challenge.get("starts_at")) if is_scheduled else None
+    kb = get_active_challenges_nav_keyboard(
+        challenge_id=ch_id,
+        current_index=current_index,
+        total_challenges=total,
+        is_completed=is_completed,
+        is_scheduled=is_scheduled,
+        challenge_statuses=challenge_statuses,
+        scheduled_countdown=sched_countdown,
+    )
+    await sender_func(text, parse_mode=ParseMode.HTML, reply_markup=kb)
+
+
 async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Initiates or displays active community challenges."""
+    """Initiates or displays active community challenges in questions format with smart navigation."""
     user = update.effective_user
     if not user:
         return
@@ -245,7 +388,7 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     cb_query = getattr(update, "callback_query", None)
     if cb_query:
         try:
-            await cb_query.answer("⏳ Loading challenge...", show_alert=False)
+            await cb_query.answer("⏳ Loading challenges...", show_alert=False)
         except Exception:
             pass
         sender_func = cb_query.edit_message_text
@@ -259,8 +402,8 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         return
 
-    challenge = await get_active_challenge()
-    if not challenge:
+    active_challenges = await get_active_challenges()
+    if not active_challenges:
         from telegram import InlineKeyboardMarkup, InlineKeyboardButton
         no_ch_kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("📚 Past Challenges", callback_data="ch_past_list")],
@@ -277,96 +420,108 @@ async def challenge_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    ch_id = challenge["id"]
-    title = html.escape(challenge["title"])
-    desc = html.escape(challenge["description"] or "Test your AWS cloud skills!")
-    category = html.escape(challenge["category"])
-    dur_secs = challenge.get("duration_seconds") or 600
-    exam_mins = int(dur_secs // 60) if dur_secs <= 7200 else 10
-    duration_str = f"{exam_mins} minutes total"
-    status = challenge["status"]
+    await _render_active_challenge_card(
+        sender_func,
+        active_challenges,
+        current_index=0,
+        user_id=user_id,
+        user_name=user_name,
+        username=username,
+    )
 
-    questions = await get_challenge_questions(ch_id)
-    total_q = len(questions)
 
-    # Check participant state
-    part = await register_or_get_participant(ch_id, user_id, user_name, username)
+async def handle_challenge_nav_active_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles navigating between active challenges via the smart navigation bar."""
+    query = update.callback_query
+    data = query.data
+    user = query.from_user
+    user_id = user.id
+    user_name = f"{user.first_name} {user.last_name or ''}".strip()
+    username = user.username or ""
 
-    if part["status"] == "COMPLETED":
-        score = part["score"]
-        correct = part["correct_count"]
-        answered = part["answered_count"]
-        await sender_func(
-            f"✓ <b>Challenge Already Completed!</b>\n\n"
-            f"✦ <b>{title}</b>\n"
-            f"▫️ <b>Your Score:</b> <code>{score} pts</code>\n"
-            f"▫️ <b>Accuracy:</b> {correct} / {answered} correct\n\n"
-            f"➤ <i>Check the leaderboard below to see where you rank!</i>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_leaderboard_keyboard(ch_id),
-        )
+    try:
+        target_idx = int(data.split(":")[1])
+    except (IndexError, ValueError):
         return
 
-    acc_w = float(challenge.get("accuracy_weight") or 0.70)
-    spd_w = float(challenge.get("speed_weight") or 0.30)
-    acc_pct = int(round(acc_w * 100))
-    spd_pct = int(round(spd_w * 100))
+    try:
+        await query.answer()
+    except Exception:
+        pass
 
-    if status == "SCHEDULED":
-        time_until = _format_time_until(challenge.get("starts_at"))
-        starts_at = challenge.get("starts_at", "Soon")
-        await sender_func(
-            f"\n"
-            f"✦ <b>Upcoming AWS Builder Challenge</b>\n\n"
-            f"<blockquote><b>{title}</b>\n"
-            f"{desc}</blockquote>\n\n"
-            f"▫️ <b>Category:</b> {category}\n"
-            f"▫️ <b>Starts:</b> {time_until} <i>({starts_at})</i>\n"
-            f"▫️ <b>Questions:</b> {total_q}\n"
-            f"▫️ <b>Exam Time Limit:</b> {duration_str}\n"
-            f"▫️ <b>Scoring Breakdown:</b> {acc_pct}% Accuracy + {spd_pct}% Speed Bonus\n\n"
-            f"➤ <i>The challenge will automatically unlock at the scheduled start time.</i>",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_start_keyboard(ch_id),
-        )
+    active_challenges = await get_active_challenges()
+    if not active_challenges:
         return
 
-    # Check if closing deadline is near or passed
-    remaining_sec, is_capped, ends_at_str = calculate_remaining_exam_seconds(challenge, None)
-    if ends_at_str and remaining_sec <= 0:
-        await sender_func(
-            f"▪️ <b>This challenge has concluded!</b>\n\n"
-            f"✦ <b>{title}</b>\n"
-            f"The challenge closing deadline was reached.\n"
-            f"Check the leaderboard or stay tuned for our next weekly competition!",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_leaderboard_keyboard(ch_id),
-        )
+    await _render_active_challenge_card(
+        query.edit_message_text,
+        active_challenges,
+        current_index=target_idx,
+        user_id=user_id,
+        user_name=user_name,
+        username=username,
+    )
+
+
+async def handle_challenge_select_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles jumping directly to an active challenge by challenge ID."""
+    query = update.callback_query
+    data = query.data
+    user = query.from_user
+    user_id = user.id
+    user_name = f"{user.first_name} {user.last_name or ''}".strip()
+    username = user.username or ""
+
+    try:
+        await query.answer("✦ Loading challenge...", show_alert=False)
+    except Exception:
+        pass
+
+    try:
+        ch_id = int(data.split(":")[1])
+    except (IndexError, ValueError):
         return
 
-    capped_notice = ""
-    if is_capped and remaining_sec > 0:
-        capped_mins = max(1, int(math.ceil(remaining_sec / 60)))
-        duration_str = f"<b>{capped_mins} minutes</b> ⚠️ <i>(Capped by Deadline)</i>"
-        capped_notice = (
-            f"\n\n<blockquote>⚠️ <b>Deadline Notice:</b>\n"
-            f"Standard exam is {exam_mins} min, but this challenge closes in "
-            f"<b>{capped_mins} min</b>. Your timer is capped.</blockquote>"
+    active_challenges = await get_active_challenges()
+    target_idx = 0
+    for idx, ch in enumerate(active_challenges):
+        if ch["id"] == ch_id:
+            target_idx = idx
+            break
+
+    if active_challenges:
+        await _render_active_challenge_card(
+            query.edit_message_text,
+            active_challenges,
+            current_index=target_idx,
+            user_id=user_id,
+            user_name=user_name,
+            username=username,
         )
 
-    # Challenge is LIVE and participant can take it
-    await sender_func(
-        f"\n"
-        f"✦ <b>Active Challenge: {title}</b>\n\n"
-        f"<blockquote>{desc}</blockquote>\n\n"
-        f"▫️ <b>Category:</b> {category}\n"
-        f"▫️ <b>Questions:</b> {total_q}\n"
-        f"▫️ <b>Exam Time Limit:</b> {duration_str}\n"
-        f"▫️ <b>Scoring Breakdown:</b> {acc_pct}% Accuracy + {spd_pct}% Speed Bonus"
-        f"{capped_notice}\n\n"
-        f"➤ <i>Tap <b>Start Challenge</b> below when ready. The timer begins immediately!</i>",
-        parse_mode=ParseMode.HTML,
-        reply_markup=get_challenge_start_keyboard(ch_id),
+
+async def handle_scheduled_challenge_info_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Provides an informative popup indicating the exact opening time and countdown."""
+    query = update.callback_query
+    data = query.data
+    try:
+        ch_id = int(data.split(":")[1])
+    except (IndexError, ValueError):
+        await query.answer("🕒 This challenge has not opened yet.", show_alert=True)
+        return
+
+    challenge = await get_challenge(ch_id)
+    if not challenge:
+        await query.answer("▪️ Challenge not found.", show_alert=True)
+        return
+
+    countdown = _format_time_until(challenge.get("starts_at"))
+    opening_time = _format_scheduled_datetime(challenge.get("starts_at"))
+    await query.answer(
+        f"🕒 Scheduled Challenge\n\n"
+        f"Opening: {opening_time}\n"
+        f"Countdown: Opens {countdown}",
+        show_alert=True,
     )
 
 

@@ -701,6 +701,101 @@ def test_flexible_csv_import_formats():
     assert questions[3]["correct_option"] == "A"
 
 
+def test_multi_active_challenges_sorting_and_selection():
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import challenge_command, handle_challenge_select_callback
+
+    asyncio.run(db.reset_db())
+
+    # Create 3 challenges with different live/start times
+    ch1_id = asyncio.run(
+        service.create_challenge(
+            title="Challenge Alpha",
+            category="Compute",
+            starts_at="2026-09-01T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch1_id, "LIVE"))
+
+    ch2_id = asyncio.run(
+        service.create_challenge(
+            title="Challenge Beta",
+            category="Database",
+            starts_at="2026-09-02T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch2_id, "LIVE"))
+
+    ch3_id = asyncio.run(
+        service.create_challenge(
+            title="Challenge Gamma",
+            category="Security",
+            starts_at="2099-01-01T10:00:00+00:00",
+        )
+    )
+    asyncio.run(service.update_challenge_status(ch3_id, "SCHEDULED"))
+
+    # Verify service sorting: Live first, newest starts_at first, then scheduled
+    active = asyncio.run(service.get_active_challenges())
+    assert len(active) == 3
+    assert active[0]["id"] == ch2_id  # Newest LIVE
+    assert active[1]["id"] == ch1_id  # Older LIVE
+    assert active[2]["id"] == ch3_id  # SCHEDULED
+
+    # Verify challenge_command presents challenge in question format with smart nav bar
+    update = FakeUpdate(user_id=101)
+    context = FakeContext()
+    asyncio.run(challenge_command(update, context))
+
+    assert len(update.message.reply_text_calls) == 1
+    call = update.message.reply_text_calls[0]
+    assert "Active Challenge" in call["text"]
+    assert "Challenge Beta" in call["text"]  # Newest live is index 0
+    assert "(1 of 3)" in call["text"]
+    assert "🟢 <b>Status: Live Now</b>" in call["text"]
+
+    kb = call["reply_markup"]
+    callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert f"ch_start:{ch2_id}" in callbacks
+    assert "ch_nav_act:1" in callbacks
+    assert "ch_nav_act:2" in callbacks
+
+    # Verify navigating to challenge 2 (Alpha) via smart nav bar
+    from app.challenge.handlers import handle_challenge_nav_active_callback
+    cb = FakeCallbackQuery(data="ch_nav_act:1", user_id=101)
+    cb_update = FakeUpdate(callback_query=cb)
+    asyncio.run(handle_challenge_nav_active_callback(cb_update, context))
+
+    assert cb.edited_text is not None
+    assert "Challenge Alpha" in cb.edited_text
+    assert "(2 of 3)" in cb.edited_text
+    alpha_callbacks = [btn.callback_data for row in cb.reply_markup.inline_keyboard for btn in row]
+    assert f"ch_start:{ch1_id}" in alpha_callbacks
+
+    # Verify navigating to challenge 3 (Gamma - Scheduled) via smart nav bar
+    cb3 = FakeCallbackQuery(data="ch_nav_act:2", user_id=101)
+    cb3_update = FakeUpdate(callback_query=cb3)
+    asyncio.run(handle_challenge_nav_active_callback(cb3_update, context))
+
+    assert cb3.edited_text is not None
+    assert "Challenge Gamma" in cb3.edited_text
+    assert "(3 of 3)" in cb3.edited_text
+    assert "🕒 <b>Status: Upcoming Challenge</b>" in cb3.edited_text
+    assert "Scheduled Opening:" in cb3.edited_text
+    assert "2099" in cb3.edited_text
+    assert "Countdown:" in cb3.edited_text
+
+    gamma_callbacks = [btn.callback_data for row in cb3.reply_markup.inline_keyboard for btn in row]
+    assert f"ch_sched_info:{ch3_id}" in gamma_callbacks
+
+    # Verify tapping scheduled button provides informational popup
+    from app.challenge.handlers import handle_scheduled_challenge_info_callback
+    cb_info = FakeCallbackQuery(data=f"ch_sched_info:{ch3_id}", user_id=101)
+    cb_info_update = FakeUpdate(callback_query=cb_info)
+    asyncio.run(handle_scheduled_challenge_info_callback(cb_info_update, context))
+
+
+
 
 
 

@@ -3,13 +3,119 @@ from typing import Dict, Optional, List, Any
 from telegram import InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardMarkup
 
 
-def get_challenge_start_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
-    """Button to initiate an active challenge."""
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Start Challenge", callback_data=f"ch_start:{challenge_id}")],
-        ]
-    )
+def get_challenge_start_keyboard(challenge_id: int, has_multiple: bool = False) -> InlineKeyboardMarkup:
+    """Button to initiate an active challenge, with optional back button if multiple challenges active."""
+    buttons = [
+        [InlineKeyboardButton("Start Challenge", callback_data=f"ch_start:{challenge_id}")],
+    ]
+    if has_multiple:
+        buttons.append([InlineKeyboardButton("« All Active Challenges", callback_data="ch_active_view")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_active_challenges_nav_keyboard(
+    challenge_id: int,
+    current_index: int,
+    total_challenges: int,
+    is_completed: bool = False,
+    is_scheduled: bool = False,
+    challenge_statuses: Optional[List[str]] = None,
+    scheduled_countdown: Optional[str] = None,
+) -> InlineKeyboardMarkup:
+    """
+    Renders the active challenge keyboard in questions format:
+    - Primary action button(s) for the current challenge
+    - Smart navigation bar (Prev / Next & jump numbers) if total_challenges > 1
+    - No repeated footer buttons
+    """
+    buttons = []
+
+    # 1. Action Buttons for the current challenge
+    if is_completed:
+        buttons.append([InlineKeyboardButton("🏆 View Leaderboard", callback_data=f"lb_weekly:{challenge_id}:1")])
+        buttons.append([InlineKeyboardButton("📖 Review Answers", callback_data=f"ch_review:{challenge_id}:0")])
+    elif is_scheduled:
+        btn_label = f"🕒 Opens {scheduled_countdown}" if scheduled_countdown else "🕒 Scheduled Challenge"
+        if len(btn_label) > 38:
+            btn_label = btn_label[:35] + "..."
+        buttons.append([InlineKeyboardButton(btn_label, callback_data=f"ch_sched_info:{challenge_id}")])
+    else:
+        buttons.append([InlineKeyboardButton("🚀 Start Challenge", callback_data=f"ch_start:{challenge_id}")])
+
+    # 2. Smart Navigation Bar (if there are multiple challenges)
+    if total_challenges > 1:
+        # Prev / Next Row
+        nav_row = []
+        if current_index > 0:
+            nav_row.append(InlineKeyboardButton("⬅️ Prev", callback_data=f"ch_nav_act:{current_index - 1}"))
+        nav_row.append(InlineKeyboardButton(f"{current_index + 1}/{total_challenges}", callback_data="noop"))
+        if current_index < total_challenges - 1:
+            nav_row.append(InlineKeyboardButton("Next ➡️", callback_data=f"ch_nav_act:{current_index + 1}"))
+        buttons.append(nav_row)
+
+        # Direct number jump row (chunks of 5, matching questions navigation!)
+        chunk_size = 5
+        chunk_page = current_index // chunk_size
+        start_num = chunk_page * chunk_size
+        end_num = min(total_challenges, start_num + chunk_size)
+
+        num_row = []
+        for i in range(start_num, end_num):
+            q_num = i + 1
+            status_tag = challenge_statuses[i] if challenge_statuses and i < len(challenge_statuses) else ""
+            if i == current_index:
+                label = f"• {q_num}{status_tag} •"
+            else:
+                label = f"{q_num}{status_tag}"
+            num_row.append(InlineKeyboardButton(label, callback_data=f"ch_nav_act:{i}"))
+        buttons.append(num_row)
+
+        # Chunk pagination if > 5 challenges
+        if total_challenges > chunk_size:
+            chunk_nav = []
+            if start_num > 0:
+                prev_start = start_num - chunk_size
+                chunk_nav.append(InlineKeyboardButton(f"◀️ C{prev_start + 1}-{start_num}", callback_data=f"ch_nav_act:{prev_start}"))
+            if end_num < total_challenges:
+                next_start = end_num
+                next_end = min(total_challenges, next_start + chunk_size)
+                chunk_nav.append(InlineKeyboardButton(f"C{next_start + 1}-{next_end} ▶️", callback_data=f"ch_nav_act:{next_start}"))
+            if chunk_nav:
+                buttons.append(chunk_nav)
+
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_active_challenges_keyboard(
+    challenges: List[Dict[str, Any]],
+    user_participations: Optional[Dict[int, Dict[str, Any]]] = None,
+) -> InlineKeyboardMarkup:
+    """Renders a single-column list of active challenges with status badges."""
+    user_participations = user_participations or {}
+    buttons = []
+
+    for ch in challenges:
+        ch_id = ch["id"]
+        title = ch.get("title", f"Challenge #{ch_id}")
+        part = user_participations.get(ch_id)
+
+        # Determine badge & status
+        if part and part.get("status") == "COMPLETED":
+            badge = "✔️"
+            label = f"{badge} {title} (Completed)"
+        elif ch.get("status") == "SCHEDULED":
+            badge = "🕒"
+            label = f"{badge} {title} (Upcoming)"
+        else:
+            badge = "🟢"
+            label = f"{badge} {title}"
+
+        if len(label) > 38:
+            label = label[:35] + "..."
+
+        buttons.append([InlineKeyboardButton(label, callback_data=f"ch_select:{ch_id}")])
+
+    return InlineKeyboardMarkup(buttons)
 
 
 def get_question_options_keyboard(

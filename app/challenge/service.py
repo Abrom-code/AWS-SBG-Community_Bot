@@ -330,8 +330,8 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
     }
 
 
-async def get_active_challenge() -> Optional[Dict[str, Any]]:
-    """Retrieves the latest LIVE challenge, or next SCHEDULED challenge, with time-based transitions."""
+async def get_active_challenges(limit: int = 20) -> List[Dict[str, Any]]:
+    """Retrieves all LIVE and SCHEDULED challenges, sorted by live time (starts_at) and status priority."""
     now_dt = datetime.now(timezone.utc)
 
     # 1. Batch transition SCHEDULED→LIVE and LIVE→ENDED using server-side timestamps
@@ -345,34 +345,46 @@ async def get_active_challenge() -> Optional[Dict[str, Any]]:
         (now_iso,),
     )
 
-    row = await _execute(
+    rows = await _execute(
         """
         SELECT id, season_id, title, description, category, starts_at, ends_at,
                duration_seconds, question_time_limit_seconds, accuracy_weight, speed_weight,
                status, created_by, created_at
         FROM challenges WHERE status IN ('LIVE', 'SCHEDULED')
-        ORDER BY CASE WHEN status = 'LIVE' THEN 1 ELSE 2 END, id DESC LIMIT 1
+        ORDER BY 
+            CASE WHEN status = 'LIVE' THEN 1 ELSE 2 END,
+            COALESCE(starts_at, created_at) DESC,
+            id DESC
+        LIMIT ?
         """,
-        fetch="one",
+        (limit,),
+        fetch="all",
     )
-    if not row:
-        return None
-    return {
-        "id": row[0],
-        "season_id": row[1],
-        "title": row[2],
-        "description": row[3],
-        "category": row[4],
-        "starts_at": str(row[5]) if row[5] is not None else None,
-        "ends_at": str(row[6]) if row[6] is not None else None,
-        "duration_seconds": row[7],
-        "question_time_limit_seconds": row[8],
-        "accuracy_weight": float(row[9]),
-        "speed_weight": float(row[10]),
-        "status": row[11],
-        "created_by": row[12],
-        "created_at": str(row[13]) if row[13] is not None else None,
-    }
+    return [
+        {
+            "id": row[0],
+            "season_id": row[1],
+            "title": row[2],
+            "description": row[3],
+            "category": row[4],
+            "starts_at": str(row[5]) if row[5] is not None else None,
+            "ends_at": str(row[6]) if row[6] is not None else None,
+            "duration_seconds": row[7],
+            "question_time_limit_seconds": row[8],
+            "accuracy_weight": float(row[9]),
+            "speed_weight": float(row[10]),
+            "status": row[11],
+            "created_by": row[12],
+            "created_at": str(row[13]) if row[13] is not None else None,
+        }
+        for row in rows
+    ]
+
+
+async def get_active_challenge() -> Optional[Dict[str, Any]]:
+    """Retrieves the top active challenge (for single-challenge operations)."""
+    challenges = await get_active_challenges(limit=1)
+    return challenges[0] if challenges else None
 
 
 async def list_past_challenges(limit: int = 20) -> List[Dict[str, Any]]:
