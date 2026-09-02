@@ -1056,6 +1056,52 @@ def test_pg_pool_prepared_statement_disabled_for_pooler(monkeypatch):
     monkeypatch.setattr(db, "_pg_pool", None)
 
 
+def test_quiz_navigation_latency_optimization_and_prefetched_state():
+    """Verifies that record_answer_and_advance returns prefetched state and
+
+    get_next_question_for_participant uses prefetched state to minimize roundtrips.
+    """
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(service.create_challenge(title="Fast Navigation Quiz", duration_seconds=600))
+    q1 = asyncio.run(service.create_question("Q1 Text", "A", "B", "C", "D", "A"))
+    q2 = asyncio.run(service.create_question("Q2 Text", "A", "B", "C", "D", "B"))
+    asyncio.run(service.link_questions_to_challenge(ch_id, [q1, q2]))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    user_id = 998877
+    asyncio.run(service.register_or_get_participant(ch_id, user_id))
+    asyncio.run(service.start_participant_quiz(ch_id, user_id))
+
+    q1_data = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, 0))
+    assert q1_data is not None
+    assert q1_data["question_number"] == 1
+
+    # Record answer for Q1
+    res = asyncio.run(service.record_answer_and_advance(ch_id, user_id, "A", 0))
+    assert res["is_completed"] is False
+    assert "_participant" in res
+    assert "_challenge" in res
+    assert "_answered_indices" in res
+    assert res["_answered_indices"] == [0]
+    assert res["_participant"]["current_question_index"] == 1
+
+    # Load Q2 with prefetched arguments
+    q2_data = asyncio.run(
+        service.get_next_question_for_participant(
+            ch_id,
+            user_id,
+            question_index=res["next_question_index"],
+            prefetched_part=res["_participant"],
+            prefetched_challenge=res["_challenge"],
+            prefetched_answered_indices=res["_answered_indices"],
+        )
+    )
+    assert q2_data is not None
+    assert q2_data["question_number"] == 2
+    assert q2_data["answered_indices"] == [0]
+
+
+
 
 
 

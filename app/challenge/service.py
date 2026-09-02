@@ -1,18 +1,43 @@
+import asyncio
 import csv
 import io
 import json
 import logging
 import math
 import random
+import re
+import time
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
 
 import app.db as db
 from app.challenge.scoring import calculate_score, calculate_exam_score
 
-import re
-
 logger = logging.getLogger(__name__)
+
+# In-memory caching for challenge metadata and questions during active quizzes
+_challenge_cache: Dict[int, Tuple[float, Dict[str, Any]]] = {}
+_challenge_questions_cache: Dict[int, Tuple[float, List[Dict[str, Any]]]] = {}
+CACHE_TTL_SECONDS = 30.0
+
+# In-memory concurrency locks per (challenge_id, user_id) to eliminate remote DB lock roundtrips
+_user_quiz_locks: Dict[Tuple[int, int], asyncio.Lock] = {}
+
+
+def _get_user_quiz_lock(challenge_id: int, user_id: int) -> asyncio.Lock:
+    key = (challenge_id, user_id)
+    lock = _user_quiz_locks.get(key)
+    if lock is None:
+        lock = asyncio.Lock()
+        _user_quiz_locks[key] = lock
+    return lock
+
+
+def invalidate_challenge_cache(challenge_id: int) -> None:
+    """Invalidates the in-memory cache for a challenge and its questions."""
+    _challenge_cache.pop(challenge_id, None)
+    _challenge_questions_cache.pop(challenge_id, None)
+
 
 
 def parse_single_question_text(raw_text: str) -> Optional[Dict[str, Any]]:
@@ -286,7 +311,12 @@ def to_utc_datetime(val: Any) -> Optional[datetime]:
 
 
 async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
-    """Retrieves a single challenge by ID with automatic time-based status transitions."""
+    """Retrieves a single challenge by ID with automatic time-based status transitions and caching."""
+    now_time = time.time()
+    cached = _challenge_cache.get(challenge_id)
+    if cached and (now_time - cached[0] < CACHE_TTL_SECONDS):
+        return dict(cached[1])
+
     row = await _execute(
         """
         SELECT id, season_id, title, description, category, starts_at, ends_at,
@@ -312,7 +342,7 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
             await _execute("UPDATE challenges SET status = 'LIVE' WHERE id = ?", (challenge_id,))
             status = "LIVE"
 
-    return {
+    data = {
         "id": row[0],
         "season_id": row[1],
         "title": row[2],
@@ -328,6 +358,8 @@ async def get_challenge(challenge_id: int) -> Optional[Dict[str, Any]]:
         "created_by": row[12],
         "created_at": str(row[13]) if row[13] is not None else None,
     }
+    _challenge_cache[challenge_id] = (now_time, data)
+    return dict(data)
 
 
 async def get_active_challenges(limit: int = 20) -> List[Dict[str, Any]]:
@@ -454,11 +486,13 @@ async def list_challenges(status: Optional[str] = None, limit: int = 10) -> List
 
 async def update_challenge_status(challenge_id: int, new_status: str) -> None:
     """Updates challenge lifecycle state."""
+    invalidate_challenge_cache(challenge_id)
     await _execute("UPDATE challenges SET status = ? WHERE id = ?", (new_status, challenge_id))
 
 
 async def delete_challenge(challenge_id: int) -> bool:
     """Permanently deletes a challenge and its associated answers, participants, and linked questions."""
+    invalidate_challenge_cache(challenge_id)
     await _execute("DELETE FROM challenge_answers WHERE challenge_id = ?", (challenge_id,))
     await _execute("DELETE FROM challenge_participants WHERE challenge_id = ?", (challenge_id,))
     await _execute("DELETE FROM challenge_questions WHERE challenge_id = ?", (challenge_id,))
@@ -477,6 +511,7 @@ async def update_challenge_details(
     ends_at: Optional[str] = None,
 ) -> bool:
     """Updates editable fields of a challenge."""
+    invalidate_challenge_cache(challenge_id)
     fields = []
     values = []
     if title is not None:
@@ -936,11 +971,17 @@ async def link_questions_to_challenge(
             )
             linked += 1
 
+    invalidate_challenge_cache(challenge_id)
     return linked
 
 
 async def get_challenge_questions(challenge_id: int) -> List[Dict[str, Any]]:
-    """Retrieves all snapshot questions for a challenge."""
+    """Retrieves all snapshot questions for a challenge with caching."""
+    now_time = time.time()
+    cached = _challenge_questions_cache.get(challenge_id)
+    if cached and (now_time - cached[0] < CACHE_TTL_SECONDS):
+        return [dict(q) for q in cached[1]]
+
     rows = await _execute(
         "SELECT question_id, snapshot_json FROM challenge_questions WHERE challenge_id = ? ORDER BY question_order ASC",
         (challenge_id,),
@@ -959,7 +1000,8 @@ async def get_challenge_questions(challenge_id: int) -> List[Dict[str, Any]]:
                     "option_a": q[4], "option_b": q[5], "option_c": q[6], "option_d": q[7],
                     "correct_option": q[8], "base_points": float(q[9]), "explanation": q[10]
                 })
-    return questions
+    _challenge_questions_cache[challenge_id] = (now_time, questions)
+    return [dict(q) for q in questions]
 
 
 async def add_question_to_challenge(challenge_id: int, question_data: Dict[str, Any]) -> int:
@@ -1081,6 +1123,7 @@ async def import_questions_for_challenge(challenge_id: int, csv_text: str) -> Di
 
 async def remove_question_from_challenge(challenge_id: int, question_id: int) -> bool:
     """Removes a question link from a challenge."""
+    invalidate_challenge_cache(challenge_id)
     await _execute(
         "DELETE FROM challenge_questions WHERE challenge_id = ? AND question_id = ?",
         (challenge_id, question_id),
@@ -1270,10 +1313,15 @@ async def get_answered_positions_for_participant(participant_id: int) -> List[in
 
 
 async def get_next_question_for_participant(
-    challenge_id: int, telegram_user_id: int, question_index: Optional[int] = None
+    challenge_id: int,
+    telegram_user_id: int,
+    question_index: Optional[int] = None,
+    prefetched_part: Optional[Dict[str, Any]] = None,
+    prefetched_challenge: Optional[Dict[str, Any]] = None,
+    prefetched_answered_indices: Optional[List[int]] = None,
 ) -> Optional[Dict[str, Any]]:
     """Prepares a question for a participant with randomized option mapping, bottom navigation state, and timer."""
-    part = await register_or_get_participant(challenge_id, telegram_user_id)
+    part = prefetched_part or await register_or_get_participant(challenge_id, telegram_user_id)
     if part["status"] not in ("REGISTERED", "IN_PROGRESS"):
         return None
 
@@ -1284,19 +1332,23 @@ async def get_next_question_for_participant(
 
     if question_index is not None and 0 <= question_index < total_q:
         idx = question_index
-        # Update current index in DB if different
-        if part["current_question_index"] != idx:
+        # Update current index in DB if different and not prefetched
+        if part.get("current_question_index") != idx and not prefetched_part:
             await _execute(
                 "UPDATE challenge_participants SET current_question_index = ? WHERE id = ?",
                 (idx, part["id"]),
             )
     else:
-        idx = part["current_question_index"]
+        idx = part.get("current_question_index", 0)
 
     if idx < 0:
         idx = 0
     if idx >= total_q:
-        answered_pos = await get_answered_positions_for_participant(part["id"])
+        answered_pos = (
+            prefetched_answered_indices
+            if prefetched_answered_indices is not None
+            else await get_answered_positions_for_participant(part["id"])
+        )
         unanswered = [i for i in range(total_q) if i not in answered_pos]
         if unanswered:
             idx = unanswered[0]
@@ -1307,7 +1359,7 @@ async def get_next_question_for_participant(
         else:
             return None
 
-    challenge = await get_challenge(challenge_id)
+    challenge = prefetched_challenge or await get_challenge(challenge_id)
     if not challenge:
         return None
 
@@ -1373,7 +1425,11 @@ async def get_next_question_for_participant(
         (json.dumps(mapping), now, part["id"]),
     )
 
-    answered_indices = await get_answered_positions_for_participant(part["id"])
+    answered_indices = (
+        prefetched_answered_indices
+        if prefetched_answered_indices is not None
+        else await get_answered_positions_for_participant(part["id"])
+    )
 
     return {
         "question_number": idx + 1,
@@ -1400,41 +1456,12 @@ async def record_answer_and_advance(
     question_index: int,
 ) -> Dict[str, Any]:
     """Validates and scores an answer, preventing double-clicks and recording detailed audit logs."""
-    part = await register_or_get_participant(challenge_id, telegram_user_id)
-    if part["status"] == "COMPLETED":
-        return {
-            "is_completed": True,
-            "already_completed": True,
-            "current_score": part["score"],
-            "correct_count": part["correct_count"],
-            "answered_count": part["answered_count"],
-            "total_questions": len(part["question_order"]),
-        }
-    if part["status"] != "IN_PROGRESS":
-        return {"error": "Challenge is not active or already completed."}
-
-    answered_positions = await get_answered_positions_for_participant(part["id"])
-    total_q = len(part["question_order"])
-
-    # If this specific question has already been answered, gracefully advance to next question
-    if question_index in answered_positions:
-        is_completed = (len(answered_positions) >= total_q)
-        next_idx = question_index + 1
-        if next_idx >= total_q and not is_completed:
-            unanswered = [i for i in range(total_q) if i not in answered_positions]
-            next_idx = unanswered[0] if unanswered else total_q
-        return {
-            "already_answered": True,
-            "is_completed": is_completed,
-            "current_score": part["score"],
-            "correct_count": part["correct_count"],
-            "answered_count": part["answered_count"],
-            "total_questions": total_q,
-            "next_question_index": next_idx,
-        }
-
-    # Double-click lock check: if locked in-flight, gracefully return current progression
-    if part.get("is_locked"):
+    lock = _get_user_quiz_lock(challenge_id, telegram_user_id)
+    if lock.locked():
+        # Fast in-memory guard against double-clicks while previous query is in flight
+        part = await register_or_get_participant(challenge_id, telegram_user_id)
+        answered_positions = await get_answered_positions_for_participant(part["id"])
+        total_q = len(part["question_order"])
         is_completed = (len(answered_positions) >= total_q)
         next_idx = question_index + 1 if question_index + 1 < total_q else 0
         return {
@@ -1447,10 +1474,40 @@ async def record_answer_and_advance(
             "next_question_index": next_idx,
         }
 
-    # Immediately engage atomic lock
-    await _execute("UPDATE challenge_participants SET is_locked = 1 WHERE id = ?", (part["id"],))
+    async with lock:
+        part = await register_or_get_participant(challenge_id, telegram_user_id)
+        if part["status"] == "COMPLETED":
+            return {
+                "is_completed": True,
+                "already_completed": True,
+                "current_score": part["score"],
+                "correct_count": part["correct_count"],
+                "answered_count": part["answered_count"],
+                "total_questions": len(part["question_order"]),
+            }
+        if part["status"] != "IN_PROGRESS":
+            return {"error": "Challenge is not active or already completed."}
 
-    try:
+        answered_positions = await get_answered_positions_for_participant(part["id"])
+        total_q = len(part["question_order"])
+
+        # If this specific question has already been answered, gracefully advance to next question
+        if question_index in answered_positions:
+            is_completed = (len(answered_positions) >= total_q)
+            next_idx = question_index + 1
+            if next_idx >= total_q and not is_completed:
+                unanswered = [i for i in range(total_q) if i not in answered_positions]
+                next_idx = unanswered[0] if unanswered else total_q
+            return {
+                "already_answered": True,
+                "is_completed": is_completed,
+                "current_score": part["score"],
+                "correct_count": part["correct_count"],
+                "answered_count": part["answered_count"],
+                "total_questions": total_q,
+                "next_question_index": next_idx,
+            }
+
         now = datetime.now(timezone.utc)
         now_iso = now.isoformat()
 
@@ -1601,6 +1658,14 @@ async def record_answer_and_advance(
             ),
         )
 
+        # Build updated participant dict for instant in-memory handoff
+        updated_part = dict(part)
+        updated_part["current_question_index"] = new_index
+        updated_part["score"] = raw_accumulated_score
+        updated_part["correct_count"] = new_correct
+        updated_part["answered_count"] = new_answered
+        updated_part["status"] = "COMPLETED" if is_completed else "IN_PROGRESS"
+
         return {
             "is_completed": is_completed,
             "current_score": raw_accumulated_score,
@@ -1609,10 +1674,10 @@ async def record_answer_and_advance(
             "next_question_index": new_index,
             "points_awarded": points_awarded,
             "is_correct": is_correct,
+            "_participant": updated_part,
+            "_challenge": challenge,
+            "_answered_indices": sorted(new_answered_set),
         }
-    finally:
-        # Guarantee unlock so participant is never stuck
-        await _execute("UPDATE challenge_participants SET is_locked = 0 WHERE id = ?", (part["id"],))
 
 
 # ---------------------------------------------------------------------------

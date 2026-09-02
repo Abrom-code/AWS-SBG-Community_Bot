@@ -762,9 +762,9 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
     selected_key = parts[3]
     user_id = query.from_user.id
 
-    # Instant feedback toast to stop button loading spinner immediately
+    # Stop Telegram button loading spinner immediately with zero toast delay
     try:
-        await query.answer(f"⏳ Option {selected_key} recorded...", show_alert=False)
+        await query.answer()
     except Exception:
         pass
 
@@ -812,9 +812,16 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
         return
 
-    # Fetch and render next question immediately (e.g. Q1 -> Q2, Q2 -> Q3)
+    # Fetch and render next question immediately using prefetched state
     next_target_idx = result.get("next_question_index")
-    next_q = await get_next_question_for_participant(ch_id, user_id, question_index=next_target_idx)
+    next_q = await get_next_question_for_participant(
+        ch_id,
+        user_id,
+        question_index=next_target_idx,
+        prefetched_part=result.get("_participant"),
+        prefetched_challenge=result.get("_challenge"),
+        prefetched_answered_indices=result.get("_answered_indices"),
+    )
     if not next_q:
         part = await register_or_get_participant(ch_id, user_id)
         score = part["score"]
@@ -859,7 +866,7 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
     user_id = query.from_user.id
 
     try:
-        await query.answer(f"✦ Loading Question {target_idx + 1}...", show_alert=False)
+        await query.answer()
     except Exception:
         pass
 
