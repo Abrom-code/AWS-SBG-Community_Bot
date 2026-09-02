@@ -37,6 +37,7 @@ from app.challenge.keyboards import (
     get_challenge_hub_inline_keyboard,
     get_guidelines_keyboard,
     get_review_navigation_keyboard,
+    get_challenge_completion_keyboard,
 )
 from app.db import register_or_update_bot_user
 
@@ -745,6 +746,49 @@ async def handle_past_challenges_callback(update: Update, context: ContextTypes.
         )
 
 
+def _format_completion_card(
+    total: int,
+    correct: int,
+    score: float,
+    time_taken_seconds: Optional[float] = None,
+    time_limit_seconds: Optional[float] = None,
+    accuracy_weight: float = 0.70,
+    speed_weight: float = 0.30,
+) -> str:
+    acc_pct = int(round((correct / total) * 100)) if total > 0 else 0
+    acc_weight_pct = int(round(accuracy_weight * 100))
+    speed_weight_pct = int(round(speed_weight * 100))
+
+    quote_lines = [
+        "<blockquote>💡 <b>Score Calculation:</b>",
+        f"• <b>Base Accuracy:</b> {correct}/{total} correct ({acc_pct}%) · {acc_weight_pct}% weight",
+    ]
+
+    if time_taken_seconds is not None and time_taken_seconds > 0:
+        mins_taken = int(time_taken_seconds // 60)
+        secs_taken = int(time_taken_seconds % 60)
+        time_str = f"{mins_taken}m {secs_taken:02d}s" if mins_taken > 0 else f"{secs_taken}s"
+
+        if time_limit_seconds and time_limit_seconds > 0:
+            limit_mins = int(time_limit_seconds // 60)
+            quote_lines.append(f"• <b>Time Taken:</b> {time_str} of {limit_mins}m limit · {speed_weight_pct}% speed bonus")
+        else:
+            quote_lines.append(f"• <b>Time Taken:</b> {time_str}")
+
+    quote_lines.append(f"• <b>Final Points:</b> <code>{score} pts</code></blockquote>")
+    quote_text = "\n".join(quote_lines)
+
+    return (
+        f"✓ <b>Challenge Completed!</b>\n\n"
+        f"✦ <b>Results</b>\n"
+        f"▫️ <b>Total Questions:</b> {total}\n"
+        f"▫️ <b>Correct Answers:</b> {correct} / {total} ({acc_pct}%)\n"
+        f"▫️ <b>Final Score:</b> <code>{score} pts</code>\n\n"
+        f"{quote_text}\n\n"
+        f"➤ <i>Your score has been submitted to the leaderboard. Select a view below:</i>"
+    )
+
+
 async def handle_challenge_answer_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Validates and scores an answer, advancing immediately to the next question screen or finishing."""
     query = update.callback_query
@@ -782,12 +826,28 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         # Check if participant is already completed
         part = await register_or_get_participant(ch_id, user_id)
         if part.get("status") == "COMPLETED":
-            result = {
-                "is_completed": True,
-                "current_score": part["score"],
-                "correct_count": part["correct_count"],
-                "total_questions": len(part["question_order"]),
-            }
+            challenge = await get_challenge(ch_id)
+            score = part["score"]
+            correct = part["correct_count"]
+            total = len(part["question_order"])
+            s_dt = to_utc_datetime(part.get("started_at"))
+            c_dt = to_utc_datetime(part.get("completed_at"))
+            time_taken = max(0.0, (c_dt - s_dt).total_seconds()) if (s_dt and c_dt) else None
+            time_limit = float(challenge.get("duration_seconds") or 600) if challenge else 600
+            acc_w = float(challenge.get("accuracy_weight", 0.70)) if challenge else 0.70
+            spd_w = float(challenge.get("speed_weight", 0.30)) if challenge else 0.30
+
+            completion_text = _format_completion_card(
+                total=total,
+                correct=correct,
+                score=score,
+                time_taken_seconds=time_taken,
+                time_limit_seconds=time_limit,
+                accuracy_weight=acc_w,
+                speed_weight=spd_w,
+            )
+            await _safe_edit_or_reply(query, completion_text, reply_markup=get_challenge_completion_keyboard(ch_id))
+            return
         else:
             try:
                 await query.answer(result["error"], show_alert=True)
@@ -800,16 +860,21 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
         score = result["current_score"]
         correct = result["correct_count"]
         total = result["total_questions"]
+        time_taken = result.get("time_taken_seconds")
+        time_limit = result.get("time_limit_seconds")
+        acc_w = result.get("accuracy_weight", 0.70)
+        spd_w = result.get("speed_weight", 0.30)
 
-        completion_text = (
-            f"✓ <b>Challenge Completed!</b>\n\n"
-            f"✦ <b>Results</b>\n"
-            f"▫️ <b>Total Questions:</b> {total}\n"
-            f"▫️ <b>Correct Answers:</b> {correct} / {total}\n"
-            f"▫️ <b>Final Score:</b> <code>{score} pts</code> <i>(Accuracy + Speed)</i>\n\n"
-            f"➤ <i>Your score has been submitted to the leaderboard.</i>"
+        completion_text = _format_completion_card(
+            total=total,
+            correct=correct,
+            score=score,
+            time_taken_seconds=time_taken,
+            time_limit_seconds=time_limit,
+            accuracy_weight=acc_w,
+            speed_weight=spd_w,
         )
-        await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
+        await _safe_edit_or_reply(query, completion_text, reply_markup=get_challenge_completion_keyboard(ch_id))
         return
 
     # Fetch and render next question immediately using prefetched state
@@ -824,18 +889,27 @@ async def handle_challenge_answer_callback(update: Update, context: ContextTypes
     )
     if not next_q:
         part = await register_or_get_participant(ch_id, user_id)
+        challenge = await get_challenge(ch_id)
         score = part["score"]
         correct = part["correct_count"]
         total = len(part["question_order"])
-        completion_text = (
-            f"✓ <b>Challenge Completed!</b>\n\n"
-            f"✦ <b>Results</b>\n"
-            f"▫️ <b>Total Questions:</b> {total}\n"
-            f"▫️ <b>Correct Answers:</b> {correct} / {total}\n"
-            f"▫️ <b>Final Score:</b> <code>{score} pts</code>\n\n"
-            f"➤ <i>Your score has been submitted to the leaderboard.</i>"
+        s_dt = to_utc_datetime(part.get("started_at"))
+        c_dt = to_utc_datetime(part.get("completed_at"))
+        time_taken = max(0.0, (c_dt - s_dt).total_seconds()) if (s_dt and c_dt) else None
+        time_limit = float(challenge.get("duration_seconds") or 600) if challenge else 600
+        acc_w = float(challenge.get("accuracy_weight", 0.70)) if challenge else 0.70
+        spd_w = float(challenge.get("speed_weight", 0.30)) if challenge else 0.30
+
+        completion_text = _format_completion_card(
+            total=total,
+            correct=correct,
+            score=score,
+            time_taken_seconds=time_taken,
+            time_limit_seconds=time_limit,
+            accuracy_weight=acc_w,
+            speed_weight=spd_w,
         )
-        await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
+        await _safe_edit_or_reply(query, completion_text, reply_markup=get_challenge_completion_keyboard(ch_id))
         return
 
     text = _format_question_card(next_q)
@@ -883,18 +957,27 @@ async def handle_challenge_nav_callback(update: Update, context: ContextTypes.DE
     if not q_data:
         part = await register_or_get_participant(ch_id, user_id)
         if part.get("status") == "COMPLETED":
+            challenge = await get_challenge(ch_id)
             score = part["score"]
             correct = part["correct_count"]
             total = len(part["question_order"])
-            completion_text = (
-                f"✓ <b>Challenge Completed!</b>\n\n"
-                f"✦ <b>Results</b>\n"
-                f"▫️ <b>Total Questions:</b> {total}\n"
-                f"▫️ <b>Correct Answers:</b> {correct} / {total}\n"
-                f"▫️ <b>Final Score:</b> <code>{score} pts</code>\n\n"
-                f"➤ <i>Your score has been submitted to the leaderboard.</i>"
+            s_dt = to_utc_datetime(part.get("started_at"))
+            c_dt = to_utc_datetime(part.get("completed_at"))
+            time_taken = max(0.0, (c_dt - s_dt).total_seconds()) if (s_dt and c_dt) else None
+            time_limit = float(challenge.get("duration_seconds") or 600) if challenge else 600
+            acc_w = float(challenge.get("accuracy_weight", 0.70)) if challenge else 0.70
+            spd_w = float(challenge.get("speed_weight", 0.30)) if challenge else 0.30
+
+            completion_text = _format_completion_card(
+                total=total,
+                correct=correct,
+                score=score,
+                time_taken_seconds=time_taken,
+                time_limit_seconds=time_limit,
+                accuracy_weight=acc_w,
+                speed_weight=spd_w,
             )
-            await _safe_edit_or_reply(query, completion_text, reply_markup=get_leaderboard_keyboard(ch_id))
+            await _safe_edit_or_reply(query, completion_text, reply_markup=get_challenge_completion_keyboard(ch_id))
         else:
             try:
                 await query.answer("▪️ Could not load question. Time may have expired.", show_alert=True)

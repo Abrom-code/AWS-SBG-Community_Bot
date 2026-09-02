@@ -224,6 +224,24 @@ def get_leaderboard_keyboard(
     return InlineKeyboardMarkup(buttons)
 
 
+def get_challenge_completion_keyboard(challenge_id: int) -> InlineKeyboardMarkup:
+    """Action buttons displayed on the challenge completion screen."""
+    ch_id = challenge_id or 0
+    return InlineKeyboardMarkup([
+        [
+            InlineKeyboardButton("🏆 Weekly Leaderboard", callback_data=f"lb_weekly:{ch_id}:1"),
+            InlineKeyboardButton("📅 Monthly Leaderboard", callback_data=f"lb_monthly:{ch_id}:1"),
+        ],
+        [
+            InlineKeyboardButton("📖 Review Questions & Answers", callback_data=f"ch_review:{ch_id}:0"),
+        ],
+        [
+            InlineKeyboardButton("« Back to Challenges", callback_data="ch_active_view"),
+        ],
+    ])
+
+
+
 def get_review_navigation_keyboard(
     challenge_id: int,
     question_index: int,

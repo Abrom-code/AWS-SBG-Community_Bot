@@ -1101,6 +1101,57 @@ def test_quiz_navigation_latency_optimization_and_prefetched_state():
     assert q2_data["answered_indices"] == [0]
 
 
+def test_challenge_completion_screen_quote_calculation_and_keyboard():
+    """Verifies that the challenge completion screen shows score calculation
+
+    in a blockquote and provides clickable action buttons for Weekly and Monthly leaderboards.
+    """
+    from tests.test_bot import FakeUpdate, FakeContext, FakeCallbackQuery
+    from app.challenge.handlers import handle_challenge_answer_callback, handle_leaderboard_callback
+    from app.challenge.keyboards import get_challenge_completion_keyboard
+
+    asyncio.run(db.reset_db())
+    ch_id = asyncio.run(service.create_challenge(title="Completion Test Quiz", duration_seconds=600))
+    q1 = asyncio.run(service.create_question("Q1 text", "A", "B", "C", "D", "A"))
+    asyncio.run(service.link_questions_to_challenge(ch_id, [q1]))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    user_id = 776655
+    asyncio.run(service.register_or_get_participant(ch_id, user_id))
+    asyncio.run(service.start_participant_quiz(ch_id, user_id))
+    q1_data = asyncio.run(service.get_next_question_for_participant(ch_id, user_id, 0))
+
+    disp_key = q1_data["display_keys"][0]
+    cb = FakeCallbackQuery(data=f"ch_ans:{ch_id}:0:{disp_key}", user_id=user_id)
+    up = FakeUpdate(callback_query=cb)
+    ctx = FakeContext()
+
+    asyncio.run(handle_challenge_answer_callback(up, ctx))
+    assert "Challenge Completed!" in cb.edited_text
+    assert "<blockquote>💡 <b>Score Calculation:</b>" in cb.edited_text
+    assert "Accuracy:" in cb.edited_text
+    assert "Final Score:" in cb.edited_text or "Final Points:" in cb.edited_text
+
+    # Verify buttons: Weekly & Monthly are clickable action buttons, NOT noop
+    kb = cb.reply_markup
+    flattened_callbacks = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert f"lb_weekly:{ch_id}:1" in flattened_callbacks
+    assert f"lb_monthly:{ch_id}:1" in flattened_callbacks
+    assert f"ch_review:{ch_id}:0" in flattened_callbacks
+    assert "noop" not in flattened_callbacks
+
+    # Verify clicking Weekly Leaderboard from completion card opens the actual leaderboard
+    cb_lb = FakeCallbackQuery(data=f"lb_weekly:{ch_id}:1", user_id=user_id)
+    up_lb = FakeUpdate(callback_query=cb_lb)
+    asyncio.run(handle_leaderboard_callback(up_lb, ctx))
+    assert "Leaderboard" in cb_lb.edited_text
+    # On the actual leaderboard, the tab switcher shows Weekly as active
+    lb_kb_callbacks = [btn.callback_data for row in cb_lb.reply_markup.inline_keyboard for btn in row]
+    assert "noop" in lb_kb_callbacks
+    assert f"lb_monthly:{ch_id}:1" in lb_kb_callbacks
+
+
+
 
 
 

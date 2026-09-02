@@ -1477,6 +1477,9 @@ async def record_answer_and_advance(
     async with lock:
         part = await register_or_get_participant(challenge_id, telegram_user_id)
         if part["status"] == "COMPLETED":
+            s_dt = to_utc_datetime(part.get("started_at"))
+            c_dt = to_utc_datetime(part.get("completed_at"))
+            dur = max(0.0, (c_dt - s_dt).total_seconds()) if (s_dt and c_dt) else None
             return {
                 "is_completed": True,
                 "already_completed": True,
@@ -1484,6 +1487,7 @@ async def record_answer_and_advance(
                 "correct_count": part["correct_count"],
                 "answered_count": part["answered_count"],
                 "total_questions": len(part["question_order"]),
+                "time_taken_seconds": round(dur, 1) if dur is not None else None,
             }
         if part["status"] != "IN_PROGRESS":
             return {"error": "Challenge is not active or already completed."}
@@ -1674,6 +1678,10 @@ async def record_answer_and_advance(
             "next_question_index": new_index,
             "points_awarded": points_awarded,
             "is_correct": is_correct,
+            "time_taken_seconds": round(total_time_taken, 1) if is_completed else None,
+            "time_limit_seconds": test_limit if is_completed else None,
+            "accuracy_weight": float(challenge.get("accuracy_weight", 0.70)),
+            "speed_weight": float(challenge.get("speed_weight", 0.30)),
             "_participant": updated_part,
             "_challenge": challenge,
             "_answered_indices": sorted(new_answered_set),
