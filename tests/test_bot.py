@@ -1249,6 +1249,7 @@ def test_setup_bot_commands_and_notifications_command():
     assert any(c.command == "challenge" for c in ctx.bot.commands)
     assert any(c.command == "notifications" for c in ctx.bot.commands)
     assert any(c.command == "leaderboard" for c in ctx.bot.commands)
+    assert any(c.command == "admin" for c in ctx.bot.commands)
     assert ctx.bot.menu_button is not None
 
     up = FakeUpdate(user_id=12345, text="/notifications")

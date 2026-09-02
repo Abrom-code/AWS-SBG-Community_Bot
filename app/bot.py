@@ -291,6 +291,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "▫️ /guidelines › Rules & code of conduct\n"
         "▫️ /feedback › Contact the core team\n"
         "▫️ /about › About AWS SBG AASTU\n"
+        "▫️ /admin › Administrator console (restricted)\n"
         "▫️ /cancel › Return to main menu\n\n"
         "➤ <i>Tap any command above or use the menu buttons below.</i>"
     )
@@ -1415,6 +1416,7 @@ async def setup_bot_commands(bot) -> None:
         BotCommand("feedback", "Send feedback to the core team"),
         BotCommand("about", "About AWS Student Builder Group"),
         BotCommand("help", "Help & guide"),
+        BotCommand("admin", "Admin console & challenge management"),
     ]
     await bot.set_my_commands(commands)
     await bot.set_chat_menu_button(menu_button=MenuButtonCommands())
