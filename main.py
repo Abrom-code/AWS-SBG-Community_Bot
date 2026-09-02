@@ -1,6 +1,14 @@
 import asyncio
 import logging
 import os
+import sys
+
+# On Windows, psycopg async requires SelectorEventLoop instead of ProactorEventLoop
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
 
 from app.bot import (
     clear_proxy_environment,

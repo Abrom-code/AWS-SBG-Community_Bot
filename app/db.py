@@ -1,7 +1,15 @@
 import asyncio
 import logging
 import os
+import sys
 from typing import Any, Dict, Optional
+
+# On Windows, psycopg async requires SelectorEventLoop instead of ProactorEventLoop
+if sys.platform == "win32":
+    try:
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    except Exception:
+        pass
 
 logger = logging.getLogger(__name__)
 
