@@ -59,8 +59,13 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(b'{"status": "error_handled"}')
 
     def do_GET(self):
+        from app.challenge.admin import get_configured_admin_ids
+        from app.db import is_postgres
+        admin_count = len(get_configured_admin_ids())
+        pg = is_postgres()
+        info = f"AWS SBG Community Bot Webhook is active and running! (Postgres: {pg}, Configured Admins: {admin_count})"
         self.send_response(200)
         self.send_header("Content-Type", "text/plain")
         self.end_headers()
-        self.wfile.write(b"AWS SBG Community Bot Webhook is active and running!")
+        self.wfile.write(info.encode("utf-8"))
 
