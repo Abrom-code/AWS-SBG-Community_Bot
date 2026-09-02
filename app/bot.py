@@ -121,9 +121,9 @@ def get_challenge_menu_keyboard() -> ReplyKeyboardMarkup:
     """Returns persistent sub-menu keyboard for the Challenge Center."""
     return ReplyKeyboardMarkup(
         [
-            ["Take Challenge", "Leaderboards"],
-            ["Past Challenges", "Scoring Rules"],
-            ["Guidelines", "Main Menu"],
+            ["Leaderboards", "Past Challenges"],
+            ["Scoring Rules", "Guidelines"],
+            ["Main Menu"],
         ],
         resize_keyboard=True,
     )
@@ -226,38 +226,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Displays the Challenge Center hub with dedicated sub-menu."""
-    if context.bot and update.effective_chat:
-        try:
-            await context.bot.send_chat_action(chat_id=update.effective_chat.id, action=ChatAction.TYPING)
-        except Exception:
-            pass
-    hub_text = (
-        "✦ <b>AWS Builder Challenge Center</b>\n\n"
-        "Compete in weekly cloud quizzes and sharpen your AWS knowledge.\n\n"
-        "🔹 <b>Take Challenge</b> › Start or resume the current quiz\n"
-        "🔹 <b>Leaderboards</b> › Weekly & monthly standings\n"
-        "🔹 <b>Past Challenges</b> › Browse archive & practice\n"
-        "🔹 <b>Scoring Rules</b> › Accuracy & speed formula\n\n"
-        "➤ <i>Choose an option below:</i>"
-    )
-    cb_query = getattr(update, "callback_query", None)
-    if cb_query:
-        try:
-            await cb_query.answer("✦ Loading Challenge Center...", show_alert=False)
-        except Exception:
-            pass
-        await cb_query.message.reply_text(
-            hub_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_menu_keyboard(),
-        )
-    elif update.message:
-        await update.message.reply_text(
-            hub_text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_menu_keyboard(),
-        )
+    """Directly displays active community challenge without redundant intermediate menus."""
+    return await challenge_command(update, context)
 
 
 async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -406,8 +376,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await register_or_update_bot_user(user.id, user.first_name, user.username)
 
     # Handle Top-Level Navigation
-    if text in ("Challenges", "⚡ Challenges", "⚡ Challenge Center", "Challenge Center", "Challenge"):
-        return await challenge_hub_command(update, context)
+    if text in ("Challenges", "⚡ Challenges", "⚡ Challenge Center", "Challenge Center", "Challenge", "Take Challenge", "Active Challenge", "🚀 Take Active Challenge", "🚀 Start Challenge", "Start Challenge", "Take Active Challenge"):
+        return await challenge_command(update, context)
     elif text in ("Feedback", "💬 Feedback", "💬 Feedback & Support", "Feedback & Support", "Submit Feedback", "📝 Submit Feedback", "📝 Submit New Feedback"):
         return await feedback_command(update, context)
     elif text in ("About", "About Us", "ℹ️ About Us", "ℹ️ About Support", "ℹ️ About", "About Support"):
@@ -418,8 +388,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await cancel_command(update, context)
 
     # Handle Challenge Sub-Menu
-    elif text in ("Take Challenge", "Active Challenge", "🚀 Take Active Challenge", "🚀 Start Challenge", "Start Challenge", "Take Active Challenge"):
-        return await challenge_command(update, context)
     elif text in ("Leaderboards", "Leaderboard", "🏆 Leaderboards", "🏆 Leaderboard"):
         return await leaderboard_command(update, context)
     elif text in ("Past Challenges", "Archive", "📚 Past Challenges", "📚 Archive", "📚 Past Quizzes", "Past Quizzes"):

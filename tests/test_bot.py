@@ -182,9 +182,9 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     ch_keyboard = bot.get_challenge_menu_keyboard()
     ch_labels = [[button.text for button in row] for row in ch_keyboard.keyboard]
     assert ch_labels == [
-        ["Take Challenge", "Leaderboards"],
-        ["Past Challenges", "Scoring Rules"],
-        ["Guidelines", "Main Menu"],
+        ["Leaderboards", "Past Challenges"],
+        ["Scoring Rules", "Guidelines"],
+        ["Main Menu"],
     ]
 
     fb_keyboard = bot.get_feedback_menu_keyboard()
@@ -419,18 +419,38 @@ def test_handle_user_edited_feedback_updates_admin_group_card():
     assert "<blockquote>Updated feedback description.</blockquote>" in text
 
 def test_challenge_hub_and_feedback_hub_commands():
+    asyncio.run(db.reset_db())
     update = FakeUpdate(user_id=123)
     context = FakeContext()
 
     asyncio.run(bot.challenge_hub_command(update, context))
     assert len(update.message.reply_text_calls) == 1
-    assert "AWS Builder Challenge Center" in update.message.reply_text_calls[0]["text"]
-    assert "Take Challenge" in [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
+    assert "AWS Builder Challenges" in update.message.reply_text_calls[0]["text"]
 
     asyncio.run(bot.feedback_hub_command(update, context))
     assert len(update.message.reply_text_calls) == 2
     assert "Feedback & Community Support Hub" in update.message.reply_text_calls[1]["text"]
     assert "Submit Feedback" in [b.text for row in update.message.reply_text_calls[1]["reply_markup"].keyboard for b in row]
+
+
+def test_main_menu_challenges_click_displays_active_challenges_directly():
+    """Verifies that clicking 'Challenges' in the main menu directly displays the challenge card."""
+    asyncio.run(db.reset_db())
+    from app.challenge import service
+    ch_id = asyncio.run(service.create_challenge(title="Direct Challenge Sprint", category="DevOps"))
+    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
+
+    update = FakeUpdate(user_id=123, text="Challenges")
+    context = FakeContext()
+
+    asyncio.run(bot.handle_message(update, context))
+    assert len(update.message.reply_text_calls) == 1
+    resp = update.message.reply_text_calls[0]["text"]
+    assert "Direct Challenge Sprint" in resp
+    assert "Status: Live Now" in resp
+    btn_labels = [b.text for row in update.message.reply_text_calls[0]["reply_markup"].inline_keyboard for b in row]
+    assert any("Start Challenge" in b for b in btn_labels)
+    assert "Refresh Status" in btn_labels
 
 
 def test_direct_feedback_and_support_navigation():
