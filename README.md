@@ -1,5 +1,9 @@
 # ⚡ AWS SBG Community & Challenge Bot
 
+[![CI](https://github.com/Abrom-code/AWS-SBG-Community_Bot/actions/workflows/bot_app.yml/badge.svg)](https://github.com/Abrom-code/AWS-SBG-Community_Bot/actions/workflows/bot_app.yml)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 An advanced, production-grade Telegram bot built for the **AWS Student Builder Group (AASTU)**. Features an interactive **Cloud Challenge & Exam Engine**, **Competitive Leaderboards**, **Community Guidelines & Anti-Cheat System**, **2-Way Support Ticket Routing**, **East Africa Time (EAT) Native Scheduling**, and a **Modern Emoji-Free Admin Operations Command Center**.
 
 ---
@@ -86,32 +90,64 @@ An advanced, production-grade Telegram bot built for the **AWS Student Builder G
 
 ---
 
+## 🛠️ Tech Stack
+
+| Layer | Technology |
+| :--- | :--- |
+| Language | Python 3.11+ |
+| Bot Framework | [python-telegram-bot](https://github.com/python-telegram-bot/python-telegram-bot) ≥ 21.0 |
+| Database (Dev) | SQLite via [aiosqlite](https://github.com/omnilib/aiosqlite) |
+| Database (Prod) | PostgreSQL via [psycopg 3](https://www.psycopg.org/psycopg3/) + async connection pool |
+| Hosting | [Vercel](https://vercel.com) serverless functions + [Supabase](https://supabase.com) PostgreSQL |
+| CI/CD | GitHub Actions (lint + test on every push/PR) |
+
+---
+
 ## 📂 Project Architecture
 
 ```
 AWS-SBG-Community_Bot/
-├── main.py                     # Local development polling launcher
-├── requirements.txt            # Python dependencies (psycopg, telegram, etc.)
-├── vercel.json                 # Vercel serverless routing configuration
-├── .env.example                # Environment variables template
+├── main.py                         # Local development: polling & self-hosted webhook launcher
+├── requirements.txt                # Python dependencies (psycopg, telegram, etc.)
+├── vercel.json                     # Vercel serverless routing configuration
+├── .env.example                    # Environment variables template
+├── .github/
+│   └── workflows/
+│       └── bot_app.yml             # GitHub Actions CI: lint (flake8) + test (pytest)
 ├── api/
-│   └── webhook.py              # Vercel serverless Telegram webhook handler
+│   └── webhook.py                  # Vercel serverless Telegram webhook handler & health endpoint
 ├── app/
-│   ├── bot.py                  # Bot factory, menu buttons, command router & text handlers
-│   ├── db.py                   # SQLite (dev) & Supabase PostgreSQL (prod) layer
+│   ├── bot.py                      # Bot factory, menu buttons, command router & text handlers
+│   ├── db.py                       # SQLite (dev) & Supabase PostgreSQL (prod) async database layer
 │   └── challenge/
-│       ├── models.py           # Enums & challenge data structures
-│       ├── scoring.py          # Decoupled accuracy & speed scoring math
-│       ├── keyboards.py        # Inline keyboards (quiz options, menus, admin)
-│       ├── service.py          # Business logic, timer capping, EAT timezone, leaderboards & CSV parser
-│       ├── handlers.py         # Quiz lifecycle, Refresh button, guidelines & student views
-│       └── admin.py            # Emoji-free admin operations, wizard, report cards & broadcast
+│       ├── __init__.py             # Package marker
+│       ├── models.py              # Enums & challenge data structures
+│       ├── scoring.py             # Decoupled accuracy & speed scoring math
+│       ├── keyboards.py           # Inline keyboards (quiz options, menus, admin)
+│       ├── service.py             # Business logic, timer capping, EAT timezone, leaderboards & CSV parser
+│       ├── handlers.py            # Quiz lifecycle, Refresh button, guidelines & student views
+│       └── admin.py               # Emoji-free admin operations, wizard, report cards & broadcast
+├── scripts/
+│   ├── init_db.py                  # Create all PostgreSQL tables on Supabase (one-time setup)
+│   └── reset_db.py                 # Drop & reset all database tables (dev/staging utility)
+├── assets/
+│   └── logo.jpg                    # Bot welcome card logo displayed on /start
 └── tests/
-    ├── conftest.py             # Isolated SQLite sandbox database fixture
-    ├── test_bot.py             # Feedback routing, menus, shortcuts, schedule parser & admin security
-    ├── test_challenge.py       # Challenge lifecycle, questions CRUD, Refresh button & archive
-    └── test_scoring.py         # Mathematical scoring formulas & speed multipliers
+    ├── conftest.py                 # Isolated SQLite sandbox database fixture
+    ├── test_bot.py                 # Feedback routing, menus, shortcuts, schedule parser & admin security
+    ├── test_challenge.py           # Challenge lifecycle, questions CRUD, Refresh button & archive
+    └── test_scoring.py             # Mathematical scoring formulas & speed multipliers
 ```
+
+---
+
+## ⚡ Performance & Architecture
+
+* **Async Connection Pooling**: Production PostgreSQL queries go through a shared `psycopg_pool.AsyncConnectionPool` (min 2 / max 10 connections) with `prepare_threshold=None` for full compatibility with Supabase Transaction Pooler (PgBouncer).
+* **In-Memory Challenge Caching**: Active challenge metadata and question snapshots are cached in-memory with a 30-second TTL, eliminating redundant database round-trips during high-throughput quiz sessions.
+* **Per-User Concurrency Locks**: Each `(challenge_id, user_id)` pair gets an in-memory `asyncio.Lock`, preventing race conditions and double-scoring without any remote database lock overhead.
+* **Zero-Downtime Schema Migration**: All tables, constraints, and indexes are created automatically via `CREATE TABLE IF NOT EXISTS` on first boot — no manual migration scripts required.
+* **Serverless Cold-Start Optimization**: The Vercel webhook handler reuses a persistent event loop and pre-initialized Telegram application instance across invocations.
 
 ---
 
@@ -144,6 +180,11 @@ BOT_TIMEZONE_NAME=EAT
 
 # Optional: Supabase PostgreSQL (if omitted, automatically defaults to local SQLite bot.db)
 # DATABASE_URL=postgresql://postgres.xxx:password@aws-0-region.pooler.supabase.com:6543/postgres
+
+# Optional: Self-hosted webhook mode (if omitted, defaults to long-polling)
+# WEBHOOK_URL=https://your-domain.com/api/webhook
+# WEBHOOK_SECRET=your_secret_token
+# PORT=8443
 ```
 
 ### 3. Run Locally (Long-Polling Mode)
@@ -155,7 +196,23 @@ python main.py
 ```bash
 python -m pytest tests/ -v
 ```
-*(All 70 automated tests run against an isolated sandbox database, preserving development data.)*
+*(All 71 automated tests run against an isolated sandbox database, preserving development data.)*
+
+---
+
+## 🗄️ Database Utility Scripts
+
+### Initialize Supabase Tables
+Create all 10 tables, constraints, and indexes on a fresh Supabase project:
+```bash
+python scripts/init_db.py
+```
+
+### Reset Database
+Drop all tables and start clean (works for both PostgreSQL and local SQLite):
+```bash
+python scripts/reset_db.py
+```
 
 ---
 
@@ -191,6 +248,24 @@ To verify your webhook status anytime:
 ```bash
 curl https://api.telegram.org/bot<YOUR_BOT_TOKEN>/getWebhookInfo
 ```
+
+### Webhook Health & Diagnostics
+
+Once deployed, the following GET endpoints are available:
+
+| Endpoint | Description |
+| :--- | :--- |
+| `GET /api/webhook` | Health check — confirms the bot is active, shows DB type and admin count |
+| `GET /api/webhook?logs` | Live ring-buffer log viewer — displays the last 100 log entries for debugging |
+
+---
+
+## 🧪 Continuous Integration
+
+Every push to `main` or `feature/**` branches and every pull request automatically triggers the GitHub Actions CI pipeline:
+
+1. **Lint** — `flake8` checks for syntax errors and undefined names
+2. **Test** — `pytest tests/ -v` runs the full 71-test suite against an isolated SQLite sandbox
 
 ---
 
