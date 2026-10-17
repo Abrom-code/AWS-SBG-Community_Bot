@@ -1,73 +1,62 @@
-# ⚡ AWS SBG Community & Challenge Bot
+# ☁️ AWS SBG Community Bot
 
 [![CI](https://github.com/Abrom-code/AWS-SBG-Community_Bot/actions/workflows/bot_app.yml/badge.svg)](https://github.com/Abrom-code/AWS-SBG-Community_Bot/actions/workflows/bot_app.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
-An advanced, production-grade Telegram bot built for the **AWS Student Builder Group (AASTU)**. Features an interactive **Cloud Challenge & Exam Engine**, **Competitive Leaderboards**, **Community Guidelines & Anti-Cheat System**, **2-Way Support Ticket Routing**, **East Africa Time (EAT) Native Scheduling**, and a **Modern Emoji-Free Admin Operations Command Center**.
+An advanced, production-grade Telegram bot built for the **AWS Student Builder Group (AASTU)**. Features a dedicated **Education Track Portal & Curriculum Guide**, **Upcoming Event & Programs Hub**, **In-Depth Team & Community About Page**, **2-Way Support Ticket Routing with Real-Time Edit Sync**, and a **Streamlined Community Announcement Broadcast Engine**.
 
 ---
 
 ## 🌟 Key Features
 
-### 1. ⚡ AWS Builder Challenge & Exam Engine
-* **Unified Exam Timer & Self-Pacing**: Configurable overall test duration (e.g. 10 minutes total). Live countdown display on each question card.
-* **Intelligent Deadline Capping**: If a challenge closes before the standard exam duration finishes, the timer dynamically caps to the closing deadline with real-time warnings.
-* **Real-Time "Refresh Status" Button**: Emoji-free on-demand refresh button on challenge cards. Immediately re-checks the live clock against the database, seamlessly unlocking scheduled challenges to `Live Now` without Telegram API rate limits or screen flickering.
-* **East Africa Time (EAT, UTC+3) Native**: All challenge schedules and user-facing timecards are displayed in a clean 12-hour format with timezone identification (e.g. `Sep 2, 2026 · 3:40 PM EAT`).
-* **Continuous Decay Scoring Formula**:
-  $$\text{Final Score} = \text{Raw Points} \times \left(0.70 + 0.30 \times \left(1 - \frac{\text{Total Time Taken}}{\text{Allotted Exam Time}}\right)\right)$$
-  * $70\%$ baseline awarded for correct answers (accuracy).
-  * Up to $30\%$ efficiency bonus awarded for rapid completion speed.
-  * Overtime or incorrect submissions yield $0$ points.
-* **Anti-Cheat & Shuffling**:
-  * Randomized 4-option keyboard layout ($A, B, C, D$) per participant.
-  * Anti-double-click atomic locking prevents duplicate score submissions.
-  * Content protection / anti-forwarding enabled on questions.
-  * Strict single-attempt policy per participant.
-* **Post-Exam Explanation**: Detailed explanations and correct answers revealed immediately after submission with question-by-question review navigation.
+### 1. 📚 AWS SBG Education Track
+* **Structured Cloud Learning**: Complete curriculum taking student builders from zero cloud knowledge to production-ready AWS architectures.
+* **Curriculum Coverage**:
+  * **Foundations**: Cloud computing principles, virtualization, AWS Global Infrastructure.
+  * **Core Services**: IAM security, EC2 compute, S3 storage, VPC networking, RDS & DynamoDB databases.
+  * **Serverless Architecture**: Event-driven computing with AWS Lambda, API Gateway, and EventBridge.
+  * **DevOps & CI/CD**: CloudWatch monitoring, Infrastructure as Code, automated deployments.
+  * **Certification Roadmaps**: Preparation for AWS Certified Cloud Practitioner & Solutions Architect Associate.
+  * **Capstone Projects**: Deploying practical, portfolio-ready cloud applications.
+* **Schedules & Logistics**:
+  * **Day**: Every Saturday
+  * **Time**: 2:00 PM – 4:30 PM East Africa Time (EAT) / 8:00 – 10:30 Local Time
+  * **Location**: AASTU Campus + Hybrid Virtual Stream & recordings shared in [@AWSAASTU](https://t.me/AWSAASTU).
 
-### 2. 📱 Telegram Menu Button & Quick Commands
-* **Interactive Menu Button**: Native Telegram `MenuButtonCommands` popup listing all available actions right in the chat bar.
-* **Dual Interface**: Full Telegram command menu alongside the intuitive, persistent custom reply keyboard (`ReplyKeyboardMarkup`).
+### 2. 📅 Next Event & Upcoming Programs
+* **Featured Sessions**: Real-time display of the next scheduled session, date, time, venue, and required prerequisites.
+* **Upcoming Community Programs**:
+  * AWS Certification Study Circles
+  * Hands-On Serverless & Cloud Labs
+  * Campus Cloud Architecture Hackathons
+  * Industry Guest Speaker series with practicing cloud architects.
+* **Smooth Inline Navigation**: Instant interactive buttons allowing members to jump between Education Track details, Event schedules, Support, and the official Telegram channel.
 
-### 3. 🛡️ Universal Community Guidelines & Code of Conduct
-* Accessible anytime via `/guidelines` or the dedicated button on any challenge start card.
-* **Rules Enforced**: Strictly 1 account per builder, no AI/automation assistance, continuous exam timer, anti-leak integrity, and screenshot restriction.
+### 3. ℹ️ In-Depth Community & Team About Page
+* **Mission & Vision**: Empowering students through hands-on cloud computing, certifications, and industry mentorship.
+* **The Leadership Team**: Student cloud ambassadors, technical leads, and certified mentors.
+* **What Membership Provides**: Practical labs, peer study circles, hackathons, and career networking.
 
-### 4. 🏆 Championship Leaderboards
-* ⚡ **Weekly Challenge Leaderboard**: Real-time rank, points, and accuracy for active challenges with next/prev pagination.
-* 📅 **Monthly Season Championship**: Aggregated monthly scores across all weekly challenges.
-* **Tie-Breaker Logic**: Fastest total exam completion time ranks higher.
+### 4. 💬 Divided Feedback & Member Question Support System
+* **Separated Channels**: Dedicated workflows distinguishing community suggestions from technical/event inquiries:
+  * **Feedback & Suggestions (`/feedback`)**: Community ideas, workshop topic suggestions, and general feedback. Forwarded to the admin group with distinct header `✦ Feedback`.
+  * **Member Questions & Support (`/ask` or `/support`)**: Inquiries regarding the Education Track, hands-on lab roadblocks, certification, or logistics. Forwarded with header `✦ Question`.
+* **Multi-Reply & Staff Routing**: Admin replies sent directly to either ticket type in the staff group automatically route back to the member's private chat with tailored confirmation headers.
+* **Real-Time Edit Sync**: Editing an admin reply or user submission dynamically updates the corresponding message in real time with preserved ticket categorization.
 
-### 5. 📚 Past Challenges & Practice Archive
-* Accessible via `/archive` or `/past`.
-* Browse past competitions to review final leaderboards or practice all questions indefinitely in self-paced archive mode.
+### 5. 📢 Streamlined Community Message Broadcasting
+* **One-Click Input**: No unnecessary category menus or presets. Clicking **Broadcast** or typing `/broadcast` immediately opens the text composition prompt with audience reach count.
+* **Rich Text Support**: Supports full HTML formatting (bold, italics, code blocks, links).
+* **Interactive Broadcast Preview**: Admins see a live preview of the announcement and audience count before confirming delivery.
+* **Error Boundary & Summary Report**: Instant reporting of delivered count and delivery issues (e.g. blocked/deleted users) upon completion.
 
-### 6. 💬 2-Way Feedback & Support Routing
-* Direct forwarding of feedback tickets to the configured admin group formatted in clean blockquotes.
-* **Multi-Reply & Staff Routing**: Admin replies sent to feedback messages automatically route directly to the original member's private chat.
-* **Real-Time Edit Sync**: Editing an admin reply or user feedback dynamically updates the corresponding message in real time.
-
-### 7. 👑 Admin Operations Command Center (`/admin`)
-* **Modern, Emoji-Free Interface**: Clean, professional management dashboard designed for effortless community moderation.
-* **4-Step Interactive Creation Wizard**:
-  * **Step 1: Title & Category**: Choose from modern tech categories (`AI`, `DevOps`, `Web3`, `Cloud`, `Architecture`, `Serverless`, `Security`, `Database`, `Networking`), enter a **Custom Category** on demand, or use the single-line shortcut (`Title | Category` or `Title | Category | Description | Duration`).
-  * **Step 2: Description**: Enter custom challenge description or use the community default.
-  * **Step 3: Exam Time Limit**: Set exam duration (5, 10, 15, 20, 30, 45, 60 minutes or custom).
-  * **Step 4: Schedule & Launch**: Choose presets (*Go Live Now*, *1 Week*, *This Weekend*, *Draft*) or enter custom dates in East Africa Time.
-* **Robust Schedule Date Input**:
-  * Paste dates directly onto the **Edit Schedule** screen without needing extra button taps.
-  * Resilient regex parsing extracts start and end times even from copy-pasted chat messages (e.g. `[9/2/2026 3:23 PM] User: 2026-09-02 15:25 to 2026-09-02 15:50`).
-* **Full Question Inspector**: View complete question cards (options, answer, difficulty, points, explanation) with 4-card pagination and individual remove buttons.
-* **Bulk CSV Importer**: Upload `.csv` files or paste CSV text directly in chat.
-  ```csv
-  question,option_a,option_b,option_c,option_d,correct,difficulty,category,points,explanation
-  What is Amazon S3?,Object Storage,Block Storage,Compute,Database,A,EASY,Storage,10,S3 is scalable object storage
-  ```
-* **Flexible Single-Question Parser**: Supports natural multiline format with `A:`, `1.`, `Ans:`, `Difficulty:`, `Explanation:`.
-* **Monthly Analytics Report**: Summary of registered members, challenge attempts, average score, accuracy %, and Top 3 builders of the month.
-* **Community Broadcast Announcements**: Deliver formatted announcements to all registered bot members with 1 click.
+### 6. ⚙️ Dynamic Education Tracks & Event Management
+* **Multi-Track Cloud Curriculum**: Supports multiple simultaneous tracks (defaults to two tracks: *Cloud Foundations & Core Services* and *Solutions Architect & Serverless*, each with 60 students across 3 classes and 1 dedicated mentor per class).
+* **Effortless Admin Track Creation & Editing**: Admins can tap `[➕ Add New Track]` or `[🔹 Edit Track]` anytime from `/admin` or the admin menu.
+* **Complete Field Flexibility (Skip Anything)**: Every single detail (duration, cohort size, mentors, schedule, location, focus) is optional. Any omitted or skipped fields are seamlessly excluded from the card without placeholder clutter.
+* **Interactive Member Track Switcher**: Members browsing the Education Track can seamlessly toggle between tracks using clean inline buttons (`● Track 1` vs `🔹 Track 2`).
+* **Live Database Persistence**: Tracks and event details persist in the `education_tracks` and `community_settings` tables across both PostgreSQL and SQLite, instantly reflecting live updates for all members.
 
 ---
 
@@ -76,17 +65,16 @@ An advanced, production-grade Telegram bot built for the **AWS Student Builder G
 | Command | Description |
 | :--- | :--- |
 | `/start` | Open the main welcome menu & persistent keyboard |
-| `/challenge` | Open Challenge Center or start the live weekly challenge |
-| `/leaderboard` | View weekly & monthly championship standings |
-| `/notifications` | Check broadcast notification subscriptions & alerts |
-| `/archive` / `/past` | Browse archived challenges to practice questions |
-| `/rules` | View how the two-factor scoring formula works |
-| `/guidelines` | Read universal community rules & code of conduct |
-| `/feedback` / `/support` | Submit a ticket/suggestion to the core admin team |
-| `/about` | Learn about AWS Student Builder Group AASTU |
-| `/help` | Display shortcuts and full command reference |
-| `/cancel` | Cancel current text input state and return to main menu |
+| `/education` / `/track` | Explore the AWS Education Track curriculum & schedule |
+| `/events` / `/nextevent` | Check the next scheduled workshop & upcoming programs |
+| `/about` | Learn about AWS Student Builder Group AASTU & the team |
+| `/feedback` | Share ideas, suggestions, or community feedback |
+| `/ask` / `/question` | Ask a question directly to the core team & mentors |
+| `/support` | Helpdesk desk information & support guidelines |
+| `/help` | Full shortcuts list & command reference |
+| `/broadcast` | Direct broadcast announcement prompt *(authorized admins)* |
 | `/admin` | Open Admin Operations Command Center *(restricted)* |
+| `/cancel` | Cancel active text input and return to the main dashboard |
 
 ---
 
