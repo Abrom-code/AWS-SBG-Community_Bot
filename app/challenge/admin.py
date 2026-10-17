@@ -50,6 +50,9 @@ from app.challenge.keyboards import (
     get_challenge_schedule_edit_keyboard,
     get_challenge_timer_edit_keyboard,
     get_question_bank_actions_keyboard,
+    get_admin_edu_manage_keyboard,
+    get_admin_event_manage_keyboard,
+    get_admin_confirm_update_keyboard,
 )
 
 logger = logging.getLogger(__name__)
@@ -105,8 +108,253 @@ async def is_admin_user(user_id: int, chat_id: Optional[int] = None, bot=None) -
     return False
 
 
+def parse_education_track_input(raw_text: str) -> dict:
+    """Parses admin input for Education Track.
+    Supports either multi-line Key: Value or single-line separated by '|'.
+    Any extra 'Key: Value' pairs are preserved into 'edu_custom_fields'.
+    """
+    lines = [l.strip() for l in raw_text.strip().split("\n") if l.strip()]
+    data = {}
+    custom_lines = []
+
+    # Check if single line with pipe separators
+    if len(lines) == 1 and "|" in lines[0]:
+        parts = [p.strip() for p in lines[0].split("|")]
+        # Format: Day | Time | Location | Students | Leads | Notes
+        if len(parts) >= 1 and parts[0]:
+            data["edu_days"] = parts[0]
+        if len(parts) >= 2 and parts[1]:
+            data["edu_time"] = parts[1]
+        if len(parts) >= 3 and parts[2]:
+            data["edu_location"] = parts[2]
+        if len(parts) >= 4 and parts[3]:
+            data["edu_students"] = parts[3]
+        if len(parts) >= 5 and parts[4]:
+            data["edu_leads"] = parts[4]
+        if len(parts) >= 6 and parts[5]:
+            data["edu_notes"] = parts[5]
+        return data
+
+    for line in lines:
+        if ":" in line:
+            key, val = line.split(":", 1)
+            k = key.strip().lower()
+            v = val.strip()
+            if k in ("day", "days", "schedule"):
+                data["edu_days"] = v
+            elif k in ("time", "timing", "hours"):
+                data["edu_time"] = v
+            elif k in ("location", "venue", "place", "room"):
+                data["edu_location"] = v
+            elif k in ("students", "student", "enrolled", "members", "number of students", "students count", "enrolled students", "active builders"):
+                data["edu_students"] = v
+            elif k in ("leads", "lead", "mentors", "mentor", "ambassadors", "team", "track leads"):
+                data["edu_leads"] = v
+            elif k in ("title", "track"):
+                data["edu_title"] = v
+            elif k in ("notes", "description", "curriculum", "focus", "about"):
+                data["edu_notes"] = v
+            else:
+                custom_lines.append(f"{key.strip()}: {v}")
+        else:
+            custom_lines.append(line)
+
+    if custom_lines:
+        data["edu_custom_fields"] = "\n".join(custom_lines)
+
+    return data
+
+
+def parse_track_input(raw_text: str) -> dict:
+    """Parses admin input for an Education Track.
+    Every single field is strictly optional - admins can skip anything they don't want.
+    Supports multi-line 'Key: Value' and single-line pipe '|' format.
+    """
+    lines = [l.strip() for l in raw_text.strip().split("\n") if l.strip()]
+    if not lines:
+        return {}
+
+    data = {}
+    custom_lines = []
+
+    # Check pipe format: Title | Duration | Students | Mentors | Schedule | Location | Notes
+    if len(lines) == 1 and "|" in lines[0]:
+        parts = [p.strip() for p in lines[0].split("|")]
+        if len(parts) >= 1 and parts[0]:
+            data["title"] = parts[0]
+        if len(parts) >= 2 and parts[1]:
+            data["duration"] = parts[1]
+        if len(parts) >= 3 and parts[2]:
+            data["students"] = parts[2]
+        if len(parts) >= 4 and parts[3]:
+            data["mentors"] = parts[3]
+        if len(parts) >= 5 and parts[4]:
+            data["schedule"] = parts[4]
+        if len(parts) >= 6 and parts[5]:
+            data["location"] = parts[5]
+        if len(parts) >= 7 and parts[6]:
+            data["notes"] = parts[6]
+        return data
+
+    for line in lines:
+        if ":" in line:
+            key, val = line.split(":", 1)
+            k = key.strip().lower()
+            v = val.strip()
+            if not v:
+                continue
+            if k in ("title", "track", "name", "track title", "track name"):
+                data["title"] = v
+            elif k in ("duration", "period", "length", "cohort duration", "timeframe"):
+                data["duration"] = v
+            elif k in ("students", "student", "enrolled", "members", "class size", "classes", "number of students", "students count", "enrolled students", "active builders"):
+                data["students"] = v
+            elif k in ("mentors", "mentor", "leads", "lead", "ambassadors", "team", "instructors", "teachers"):
+                data["mentors"] = v
+            elif k in ("schedule", "day", "days", "time", "timing", "hours"):
+                data["schedule"] = v
+            elif k in ("location", "venue", "place", "room", "hall"):
+                data["location"] = v
+            elif k in ("notes", "description", "curriculum", "focus", "about", "details"):
+                data["notes"] = v
+            else:
+                custom_lines.append(f"{key.strip()}: {v}")
+        else:
+            if "title" not in data:
+                data["title"] = line
+            else:
+                custom_lines.append(line)
+
+    if custom_lines:
+        data["custom_fields"] = "\n".join(custom_lines)
+
+    if not data.get("title"):
+        data["title"] = "AWS Education Track"
+
+    return data
+
+
+def parse_next_event_input(raw_text: str) -> dict:
+    """Parses admin input for Next Event.
+    Supports either multi-line Key: Value or single-line separated by '|'.
+    Any extra 'Key: Value' pairs are preserved into 'event_custom_fields'.
+    """
+    lines = [l.strip() for l in raw_text.strip().split("\n") if l.strip()]
+    data = {}
+    custom_lines = []
+
+    # Check if single line with pipe separators
+    if len(lines) == 1 and "|" in lines[0]:
+        parts = [p.strip() for p in lines[0].split("|")]
+        # Format: Title | Date | Time | Venue | Description | Prerequisites
+        if len(parts) >= 1 and parts[0]:
+            data["event_title"] = parts[0]
+        if len(parts) >= 2 and parts[1]:
+            data["event_date"] = parts[1]
+        if len(parts) >= 3 and parts[2]:
+            data["event_time"] = parts[2]
+        if len(parts) >= 4 and parts[3]:
+            data["event_venue"] = parts[3]
+        if len(parts) >= 5 and parts[4]:
+            data["event_description"] = parts[4]
+        if len(parts) >= 6 and parts[5]:
+            data["event_prereqs"] = parts[5]
+        return data
+
+    for line in lines:
+        if ":" in line:
+            key, val = line.split(":", 1)
+            k = key.strip().lower()
+            v = val.strip()
+            if k in ("title", "session", "topic", "event"):
+                data["event_title"] = v
+            elif k in ("date", "day", "date & day"):
+                data["event_date"] = v
+            elif k in ("time", "timing", "hours"):
+                data["event_time"] = v
+            elif k in ("venue", "location", "room", "link"):
+                data["event_venue"] = v
+            elif k in ("prerequisites", "prereq", "prereqs", "requirements"):
+                data["event_prereqs"] = v
+            elif k in ("description", "desc", "overview", "agenda", "about"):
+                data["event_description"] = v
+            else:
+                custom_lines.append(f"{key.strip()}: {v}")
+        else:
+            custom_lines.append(line)
+
+    if custom_lines:
+        data["event_custom_fields"] = "\n".join(custom_lines)
+
+    return data
+
+
+async def render_admin_edu_dashboard_text() -> str:
+    from app.db import list_education_tracks, seed_default_education_tracks_if_empty
+    await seed_default_education_tracks_if_empty()
+    tracks = await list_education_tracks(active_only=False)
+
+    lines = [
+        "✦ <b>Manage Education Tracks</b>\n",
+        f"Active community tracks ({len(tracks)}):\n",
+    ]
+    for idx, t in enumerate(tracks, start=1):
+        title = t.get("title") or f"Track #{t.get('id')}"
+        duration = t.get("duration") or "Continues to the end of the year"
+        students = t.get("students") or "60 students (3 classes)"
+        mentors = t.get("mentors") or "1 mentor per class"
+        lines.append(f"🔹 <b>{idx}. {html.escape(title)}</b>")
+        lines.append(f"• <b>Duration:</b> {html.escape(duration)}")
+        lines.append(f"• <b>Cohort:</b> {html.escape(students)} | {html.escape(mentors)}")
+        if t.get("schedule"):
+            lines.append(f"• <b>Schedule:</b> {html.escape(t['schedule'])}")
+        if t.get("location"):
+            lines.append(f"• <b>Location:</b> {html.escape(t['location'])}")
+        lines.append("")
+
+    lines.append("➤ <i>Tap '✦ Add New Track' to add another track, or select an existing track below to edit or delete:</i>")
+    return "\n".join(lines)
+
+
+async def render_admin_event_dashboard_text() -> str:
+    from app.db import get_all_community_settings
+    from app.community import (
+        NEXT_EVENT_TITLE,
+        NEXT_EVENT_DATE,
+        NEXT_EVENT_TIME,
+        NEXT_EVENT_VENUE,
+    )
+    s = await get_all_community_settings()
+    title = s.get("event_title") or NEXT_EVENT_TITLE
+    date_str = s.get("event_date") or NEXT_EVENT_DATE
+    time_str = s.get("event_time") or NEXT_EVENT_TIME
+    venue = s.get("event_venue") or NEXT_EVENT_VENUE
+    prereqs = s.get("event_prereqs") or "Laptop & a free AWS Builder ID"
+    desc = s.get("event_description") or "Hands-on exploration of AWS core services."
+    custom_rows = s.get("event_custom_fields") or ""
+
+    custom_text = ""
+    if custom_rows:
+        lines = [f"• {html.escape(l)}" for l in custom_rows.split("\n") if l.strip()]
+        if lines:
+            custom_text = "\n• <b>Extra Columns/Fields:</b>\n  " + "\n  ".join(lines)
+
+    return (
+        "✦ <b>Manage Next Event & Programs</b>\n\n"
+        "Configure the upcoming session, date, venue, and agenda:\n\n"
+        f"• <b>Session Title:</b> {html.escape(title)}\n"
+        f"• <b>Date & Day:</b> {html.escape(date_str)}\n"
+        f"• <b>Time:</b> {html.escape(time_str)}\n"
+        f"• <b>Venue:</b> {html.escape(venue)}\n"
+        f"• <b>Prerequisites:</b> {html.escape(prereqs)}\n"
+        f"• <b>Overview:</b> {html.escape(desc[:100])}...\n"
+        f"{custom_text}\n"
+        "➤ <i>Select an action below to update or preview:</i>"
+    )
+
+
 async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Entrypoint for the Challenge Administration Panel (restricted to administrators)."""
+    """Entrypoint for the Community Administration Panel (restricted to administrators)."""
     user = update.effective_user
     chat = update.effective_chat
     if not user or not await is_admin_user(user.id, chat.id if chat else None, context.bot):
@@ -116,11 +364,15 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
 
+    users = await get_all_broadcast_user_ids()
+    count = len(users)
+
     # Switch bottom buttons to admin menu (includes Main Menu)
     await update.message.reply_text(
-        "<b>AWS SBG Challenge Admin Panel</b>\n\n"
-        "Welcome to the challenge operations center. Manage competitions, questions, "
-        "leaderboards, and broadcasts using the admin menu below.",
+        f"✦ <b>AWS SBG Admin Operations Center</b>\n\n"
+        f"Welcome to the community management panel.\n\n"
+        f"• <b>Audience Reach:</b> <code>{count}</code> registered members\n\n"
+        f"Use the buttons below to manage Education Track, Next Event, send broadcasts, or view statistics:",
         parse_mode=ParseMode.HTML,
         reply_markup=get_admin_menu_keyboard(),
     )
@@ -175,9 +427,302 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             pass
         await query.edit_message_text(
             "<b>Admin Console</b>\n\n"
-            "Select an action below to manage challenges and questions:",
+            "Select an action below to manage community programs, send broadcasts, or view stats:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_admin_panel_keyboard(),
+        )
+
+    elif data == "adm_manage_edu":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        from app.db import list_education_tracks, seed_default_education_tracks_if_empty
+        await seed_default_education_tracks_if_empty()
+        tracks = await list_education_tracks(active_only=False)
+        await query.edit_message_text(
+            await render_admin_edu_dashboard_text(),
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_edu_manage_keyboard(tracks),
+        )
+
+    elif data == "adm_add_track":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        await set_user_state(user.id, "WAITING_FOR_ADMIN_NEW_TRACK")
+        await query.edit_message_text(
+            "✦ <b>Add New Education Track</b>\n\n"
+            "Every detail is flexible and completely optional — you can skip any details you don't like when adding!\n\n"
+            "<b>Option A — Multi-line Key: Value format:</b>\n"
+            "<code>Title: Solutions Architect & Serverless\n"
+            "Duration: Continues to the end of the year\n"
+            "Students: 60 students (3 classes)\n"
+            "Mentors: 1 mentor per class (3 mentors)\n"
+            "Schedule: Saturdays, 2:00 PM – 4:30 PM EAT\n"
+            "Location: AASTU Campus + Hybrid Stream\n"
+            "Notes: Architecture design patterns and AWS Lambda labs</code>\n\n"
+            "<b>Option B — Quick pipe format:</b>\n"
+            "<code>Title | Duration | Students | Mentors | Schedule | Location | Notes</code>\n\n"
+            "➤ <i>Skip any fields you don't want. You can also add extra lines like <code>Prerequisites: Python Basics</code>.</i>\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Cancel", callback_data="adm_manage_edu")]]),
+        )
+
+    elif data.startswith("adm_edit_track:"):
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        try:
+            track_id = int(data.split(":")[1])
+        except (IndexError, ValueError):
+            return
+        from app.db import get_education_track
+        track = await get_education_track(track_id)
+        if not track:
+            await query.answer("Track not found", show_alert=True)
+            return
+        await set_user_state(user.id, f"WAITING_FOR_ADMIN_EDIT_TRACK:{track_id}")
+        await query.edit_message_text(
+            f"✦ <b>Edit Track: {html.escape(track.get('title') or '')}</b>\n\n"
+            "Send the updated fields below. Every detail is optional — skip any lines you don't want to change or omit!\n\n"
+            "<b>Current Values:</b>\n"
+            f"• <b>Title:</b> {html.escape(track.get('title') or '')}\n"
+            f"• <b>Duration:</b> {html.escape(track.get('duration') or 'None')}\n"
+            f"• <b>Students:</b> {html.escape(track.get('students') or 'None')}\n"
+            f"• <b>Mentors:</b> {html.escape(track.get('mentors') or 'None')}\n"
+            f"• <b>Schedule:</b> {html.escape(track.get('schedule') or 'None')}\n"
+            f"• <b>Location:</b> {html.escape(track.get('location') or 'None')}\n"
+            f"• <b>Notes:</b> {html.escape(track.get('notes') or 'None')}\n\n"
+            "➤ <i>Send updated fields using <code>Key: Value</code> format or quick pipe format:</i>\n"
+            "<code>Title | Duration | Students | Mentors | Schedule | Location | Notes</code>\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Cancel", callback_data="adm_manage_edu")]]),
+        )
+
+    elif data == "adm_save_new_track":
+        try:
+            await query.answer("✓ Track created!", show_alert=True)
+        except Exception:
+            pass
+        staged = context.user_data.pop("staged_new_track", None)
+        if staged:
+            from app.db import create_education_track
+            await create_education_track(
+                title=staged.get("title") or "AWS Education Track",
+                duration=staged.get("duration"),
+                students=staged.get("students"),
+                mentors=staged.get("mentors"),
+                schedule=staged.get("schedule"),
+                location=staged.get("location"),
+                notes=staged.get("notes"),
+                custom_fields=staged.get("custom_fields"),
+            )
+        await set_user_state(user.id, None)
+        await query.edit_message_text(
+            "✓ <b>New Education Track Added!</b>\n\n"
+            "Community members can now view and switch to this track from the Education Track menu.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back to Education Admin", callback_data="adm_manage_edu")]]),
+        )
+
+    elif data.startswith("adm_save_edit_track:"):
+        try:
+            await query.answer("✓ Track updated!", show_alert=True)
+        except Exception:
+            pass
+        try:
+            track_id = int(data.split(":")[1])
+        except (IndexError, ValueError):
+            return
+        staged = context.user_data.pop(f"staged_edit_track:{track_id}", None)
+        if staged:
+            from app.db import update_education_track
+            await update_education_track(track_id, **staged)
+        await set_user_state(user.id, None)
+        await query.edit_message_text(
+            "✓ <b>Education Track Updated!</b>\n\n"
+            "Changes are now live for all community members.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back to Education Admin", callback_data="adm_manage_edu")]]),
+        )
+
+    elif data == "adm_del_track_menu":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        from app.db import list_education_tracks
+        tracks = await list_education_tracks(active_only=False)
+        from app.challenge.keyboards import get_admin_delete_track_keyboard
+        await query.edit_message_text(
+            "✦ <b>Delete Education Track</b>\n\n"
+            "Select a track to remove from the community bot:",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_delete_track_keyboard(tracks),
+        )
+
+    elif data.startswith("adm_del_track:"):
+        try:
+            track_id = int(data.split(":")[1])
+        except (IndexError, ValueError):
+            return
+        from app.db import delete_education_track, list_education_tracks
+        await delete_education_track(track_id)
+        try:
+            await query.answer("✓ Track deleted!", show_alert=True)
+        except Exception:
+            pass
+        tracks = await list_education_tracks(active_only=False)
+        await query.edit_message_text(
+            await render_admin_edu_dashboard_text(),
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_edu_manage_keyboard(tracks),
+        )
+
+    elif data == "adm_update_edu":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        await set_user_state(user.id, "WAITING_FOR_ADMIN_UPDATE_EDU")
+        await query.edit_message_text(
+            "✦ <b>Update Education Track</b>\n\n"
+            "Please type or paste the updated track details below.\n\n"
+            "<b>Option A — Multi-line Key: Value format:</b>\n"
+            "<code>Day: Every Saturday\n"
+            "Time: 2:00 PM - 4:30 PM EAT\n"
+            "Location: AASTU Block 54 Hall 2\n"
+            "Students: 180+ Enrolled Builders\n"
+            "Leads: Student Cloud Ambassadors & Peer Mentors\n"
+            "Notes: Module 2: Serverless & DynamoDB</code>\n\n"
+            "<b>Option B — Quick single-line format:</b>\n"
+            "<code>Day | Time | Location | Students | Leads | Notes</code>\n\n"
+            "➤ <b>Extra Columns/Fields:</b> You can add any extra rows you need (e.g. <code>Prerequisites: Python</code> or <code>Room: Lab 3</code>) and they will automatically be included in the track page!\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Cancel", callback_data="adm_manage_edu")]]),
+        )
+
+    elif data == "adm_preview_edu":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        from app.community import get_education_track_text_async
+        preview = await get_education_track_text_async()
+        await query.edit_message_text(
+            f"{preview}\n\n"
+            "➤ <i>Above is how members see the Education Track page.</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back to Education Admin", callback_data="adm_manage_edu")]]),
+        )
+
+    elif data == "adm_save_edu":
+        try:
+            await query.answer("✓ Education Track updated!", show_alert=True)
+        except Exception:
+            pass
+        staged = context.user_data.pop("staged_edu", None)
+        if staged:
+            from app.db import update_multiple_community_settings, list_education_tracks, update_education_track
+            await update_multiple_community_settings(staged)
+            tracks = await list_education_tracks(active_only=False)
+            if tracks:
+                first_id = tracks[0]["id"]
+                track_updates = {}
+                if "edu_days" in staged:
+                    track_updates["schedule"] = staged["edu_days"] + (f", {staged['edu_time']}" if staged.get("edu_time") else "")
+                elif "edu_time" in staged:
+                    track_updates["schedule"] = staged["edu_time"]
+                if "edu_location" in staged:
+                    track_updates["location"] = staged["edu_location"]
+                if "edu_students" in staged:
+                    track_updates["students"] = staged["edu_students"]
+                if "edu_leads" in staged:
+                    track_updates["mentors"] = staged["edu_leads"]
+                if "edu_notes" in staged:
+                    track_updates["notes"] = staged["edu_notes"]
+                if "edu_custom_fields" in staged:
+                    track_updates["custom_fields"] = staged["edu_custom_fields"]
+                if track_updates:
+                    await update_education_track(first_id, **track_updates)
+        await set_user_state(user.id, None)
+        await query.edit_message_text(
+            "✓ <b>Education Track Published Successfully!</b>\n\n"
+            "All community members will now see the updated curriculum, leads, and schedule details when visiting Education Track.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back to Education Admin", callback_data="adm_manage_edu")]]),
+        )
+
+    elif data == "adm_manage_event":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        await query.edit_message_text(
+            await render_admin_event_dashboard_text(),
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_event_manage_keyboard(),
+        )
+
+    elif data == "adm_update_event":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        await set_user_state(user.id, "WAITING_FOR_ADMIN_UPDATE_EVENT")
+        await query.edit_message_text(
+            "✦ <b>Update Next Event & Workshop</b>\n\n"
+            "Please type or paste the updated event details below.\n\n"
+            "<b>Option A — Multi-line Key: Value format:</b>\n"
+            "<code>Title: Hands-On AWS Lambda & Serverless Workshop\n"
+            "Date: Saturday, Oct 24\n"
+            "Time: 2:00 PM - 4:30 PM EAT\n"
+            "Venue: AASTU Central Lab & Google Meet\n"
+            "Prereqs: Laptop + AWS Free Tier\n"
+            "Description: Build and deploy your first serverless microservice using AWS Lambda and API Gateway.</code>\n\n"
+            "<b>Option B — Quick single-line format:</b>\n"
+            "<code>Title | Date | Time | Venue | Description | Prereqs</code>\n\n"
+            "➤ <b>Extra Columns/Fields:</b> You can add any extra rows you need (e.g. <code>Speaker: Cloud Architect</code> or <code>Registration: Link</code>) and they will automatically be included in the event page!\n\n"
+            "<i>(Type /cancel to abort)</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Cancel", callback_data="adm_manage_event")]]),
+        )
+
+    elif data == "adm_preview_event":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        from app.community import get_next_event_text_async
+        preview = await get_next_event_text_async()
+        await query.edit_message_text(
+            f"{preview}\n\n"
+            "➤ <i>Above is how members see the Next Event page.</i>",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back to Event Admin", callback_data="adm_manage_event")]]),
+        )
+
+    elif data == "adm_save_event":
+        try:
+            await query.answer("✓ Next Event updated!", show_alert=True)
+        except Exception:
+            pass
+        staged = context.user_data.pop("staged_event", None)
+        if staged:
+            from app.db import update_multiple_community_settings
+            await update_multiple_community_settings(staged)
+        await set_user_state(user.id, None)
+        await query.edit_message_text(
+            "✓ <b>Next Event Published Successfully!</b>\n\n"
+            "All community members will now see the updated event, date, venue, and prerequisites when visiting Next Event.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("« Back to Event Admin", callback_data="adm_manage_event")]]),
         )
 
     elif data == "adm_list_ch":
@@ -185,7 +730,6 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             await query.answer()
         except Exception:
             pass
-        from telegram import InlineKeyboardMarkup
         challenges = await list_challenges(limit=10)
         if not challenges:
             await query.edit_message_text(
@@ -1161,42 +1705,68 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
                     lines.append(f"{rank_str} <b>{name}</b>{uname} [<code>{uid}</code>] — <b>{total_pts} pts</b> ({completed} quizzes)")
                 text = "\n".join(lines)
 
-        from telegram import InlineKeyboardMarkup
         back_kb = InlineKeyboardMarkup([
             [InlineKeyboardButton("« Back to Leaderboards", callback_data="adm_leaderboards")],
             [InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")],
         ])
         await query.edit_message_text(text, parse_mode=ParseMode.HTML, reply_markup=back_kb)
 
-    elif data == "adm_broadcast":
-        try:
-            await query.answer()
-        except Exception:
-            pass
-        users = await get_all_broadcast_user_ids()
-        count = len(users)
-        await query.edit_message_text(
-            f"<b>Community Broadcast System</b>\n\n"
-            f"Deliver an announcement notification to all registered bot participants.\n\n"
-            f"• <b>Active Members in Reach:</b> <code>{count}</code>\n\n"
-            f"Select a preset below or compose a custom message:",
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_admin_broadcast_presets_keyboard(),
-        )
-
-    elif data == "adm_bcast_custom":
+    elif data in ("adm_broadcast", "adm_bcast_custom"):
         try:
             await query.answer()
         except Exception:
             pass
         await set_user_state(user.id, "WAITING_FOR_ADMIN_BROADCAST")
+        users = await get_all_broadcast_user_ids()
+        count = len(users)
         await query.edit_message_text(
-            "<b>Custom Announcement Broadcast</b>\n\n"
-            "Please type and send the announcement text now.\n\n"
-            "• Supports HTML formatting (<b>bold</b>, <i>italic</i>, <code>code</code>)\n"
-            "• Supports URLs and links\n\n"
-            "<i>(Type /cancel to abort)</i>",
+            f"📢 <b>Community Broadcast Center</b>\n\n"
+            f"• <b>Active Reach:</b> <code>{count}</code> registered members\n\n"
+            f"Please type or paste the announcement message you wish to broadcast.\n\n"
+            f"• Supports HTML formatting (<b>bold</b>, <i>italic</i>, <code>code</code>, links)\n"
+            f"• Type or paste your message directly in this chat\n\n"
+            f"<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
+            reply_markup=InlineKeyboardMarkup([
+                [InlineKeyboardButton("« Cancel", callback_data="adm_bcast_cancel")]
+            ]),
+        )
+
+    elif data == "adm_bcast_cancel":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        await set_user_state(user.id, None)
+        context.user_data.pop("bcast_text", None)
+        await query.edit_message_text(
+            "▪️ <b>Broadcast Cancelled</b>\n\nNo announcement was sent to members.",
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_panel_keyboard(),
+        )
+
+    elif data == "adm_stats":
+        try:
+            await query.answer()
+        except Exception:
+            pass
+        from app.db import is_postgres
+        users = await get_all_broadcast_user_ids()
+        count = len(users)
+        admin_count = len(get_configured_admin_ids())
+        db_mode = "PostgreSQL (Supabase Pool)" if is_postgres() else "Local SQLite (bot.db)"
+        stats_card = (
+            "✦ <b>AWS SBG Community Statistics</b>\n\n"
+            f"• <b>Registered Members Reach:</b> <code>{count}</code>\n"
+            f"• <b>Configured Administrators:</b> <code>{admin_count}</code>\n"
+            f"• <b>Database Mode:</b> <code>{db_mode}</code>\n"
+            f"• <b>Bot Status:</b> <code>Active & Live</code>\n\n"
+            f"All registered members are reachable via broadcast announcements."
+        )
+        await query.edit_message_text(
+            stats_card,
+            parse_mode=ParseMode.HTML,
+            reply_markup=get_admin_panel_keyboard(),
         )
 
     elif data == "adm_bcast_preset:challenge":
@@ -1335,13 +1905,38 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         failed = 0
         fail_reasons = []
 
+        # Safely chunk message if length exceeds Telegram's 4096 character limit
+        chunks = [bcast_text]
+        if len(bcast_text) > 4000:
+            chunks = []
+            rem = bcast_text
+            while rem:
+                if len(rem) <= 4000:
+                    chunks.append(rem)
+                    break
+                split_at = rem.rfind("\n", 0, 4000)
+                if split_at == -1:
+                    split_at = rem.rfind(" ", 0, 4000)
+                if split_at == -1:
+                    split_at = 4000
+                chunks.append(rem[:split_at])
+                rem = rem[split_at:].lstrip()
+
         for uid in users:
             try:
-                await context.bot.send_message(
-                    chat_id=uid,
-                    text=bcast_text,
-                    parse_mode=ParseMode.HTML,
-                )
+                for chunk in chunks:
+                    try:
+                        await context.bot.send_message(
+                            chat_id=uid,
+                            text=chunk,
+                            parse_mode=ParseMode.HTML,
+                        )
+                    except Exception:
+                        # Fallback without HTML parse mode if message contains invalid or broken markup
+                        await context.bot.send_message(
+                            chat_id=uid,
+                            text=chunk,
+                        )
                 sent += 1
                 logger.info(f"Broadcast delivered to user_id={uid}")
             except Exception as e:
@@ -1357,7 +1952,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             err_block = f"\n\n<b>Delivery Issues ({failed}):</b>\n{preview_errs}"
 
         await query.edit_message_text(
-            f"<b>Broadcast Complete</b>\n\n"
+            f"✓ <b>Broadcast Complete</b>\n\n"
             f"• <b>Delivered Successfully:</b> <code>{sent}</code> members\n"
             f"• <b>Failed / Blocked:</b> <code>{failed}</code>{err_block}\n\n"
             f"The announcement has been broadcast to all reachable community members.",
