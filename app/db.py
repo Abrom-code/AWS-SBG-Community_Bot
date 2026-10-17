@@ -1,8 +1,10 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import os
 import sys
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 # On Windows, psycopg async requires SelectorEventLoop instead of ProactorEventLoop
 if sys.platform == "win32":
@@ -445,7 +447,6 @@ async def init_db(db_path: str = None) -> None:
 
 async def ensure_db(db_path: str = None) -> None:
     """Ensures database tables are initialized before executing operations."""
-    global _is_initialized
     if not _is_initialized:
         async with _db_lock:
             if not _is_initialized:

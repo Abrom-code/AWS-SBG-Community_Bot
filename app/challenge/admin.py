@@ -6,10 +6,10 @@ import os
 from typing import Optional
 
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
-from telegram.constants import ParseMode
+from telegram.constants import ParseMode, ChatAction
 from telegram.ext import ContextTypes
 
-from app.db import get_all_broadcast_user_ids, set_user_state
+from app.db import get_all_broadcast_user_ids, set_user_state, get_user_state
 from app.challenge.service import (
     create_challenge,
     get_challenge,
