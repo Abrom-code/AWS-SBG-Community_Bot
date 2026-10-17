@@ -1,5 +1,11 @@
 import os
+import sys
 import pytest
+
+# Ensure repository root is on sys.path regardless of how pytest is invoked
+REPO_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 
 # Ensure all tests run in an isolated test database, preserving the live bot database
 TEST_DB_PATH = "test_bot_sandbox.db"
