@@ -391,10 +391,10 @@ def get_admin_menu_keyboard() -> ReplyKeyboardMarkup:
     """Returns persistent bottom keyboard buttons for Admin operations."""
     return ReplyKeyboardMarkup(
         [
-            ["Create Challenge", "Manage Challenges"],
-            ["Leaderboards", "Monthly Report"],
-            ["Broadcast", "Exit Admin"],
-            ["Main Menu"],
+            ["🔹 Broadcast Announcement"],
+            ["🔹 Manage Education Track", "🔹 Manage Next Event"],
+            ["▫️ Community Stats", "▫️ Support Info"],
+            ["▪️ Exit Admin", "▫️ Main Menu"],
         ],
         resize_keyboard=True,
     )
@@ -404,8 +404,66 @@ def get_admin_panel_keyboard() -> InlineKeyboardMarkup:
     """Admin dashboard inline shortcut."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Create Challenge", callback_data="adm_create_ch")],
-            [InlineKeyboardButton("Manage Challenges", callback_data="adm_list_ch")],
+            [InlineKeyboardButton("🔹 Send Community Broadcast", callback_data="adm_broadcast")],
+            [
+                InlineKeyboardButton("🔹 Manage Education", callback_data="adm_manage_edu"),
+                InlineKeyboardButton("🔹 Manage Next Event", callback_data="adm_manage_event"),
+            ],
+            [InlineKeyboardButton("▫️ Community Stats", callback_data="adm_stats")],
+        ]
+    )
+
+
+def get_admin_edu_manage_keyboard(tracks: Optional[List[Dict[str, Any]]] = None) -> InlineKeyboardMarkup:
+    """Inline keyboard for Education Track management dashboard.
+    Enables adding tracks, editing specific tracks, deleting tracks, and previewing.
+    """
+    buttons = [
+        [InlineKeyboardButton("✦ Add New Track", callback_data="adm_add_track")]
+    ]
+    if tracks:
+        for t in tracks:
+            tid = t.get("id")
+            title = t.get("title") or f"Track #{tid}"
+            short_title = title if len(title) <= 22 else title[:20] + ".."
+            buttons.append([InlineKeyboardButton(f"🔹 Edit: {short_title}", callback_data=f"adm_edit_track:{tid}")])
+        buttons.append([InlineKeyboardButton("▪️ Delete a Track", callback_data="adm_del_track_menu")])
+
+    buttons.append([InlineKeyboardButton("› Preview Member View", callback_data="adm_preview_edu")])
+    buttons.append([InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_admin_delete_track_keyboard(tracks: List[Dict[str, Any]]) -> InlineKeyboardMarkup:
+    """Inline keyboard for choosing a track to remove."""
+    buttons = []
+    for t in tracks:
+        tid = t.get("id")
+        title = t.get("title") or f"Track #{tid}"
+        short_title = title if len(title) <= 22 else title[:20] + ".."
+        buttons.append([InlineKeyboardButton(f"▪️ Delete: {short_title}", callback_data=f"adm_del_track:{tid}")])
+    buttons.append([InlineKeyboardButton("« Cancel", callback_data="adm_manage_edu")])
+    return InlineKeyboardMarkup(buttons)
+
+
+def get_admin_event_manage_keyboard() -> InlineKeyboardMarkup:
+    """Inline keyboard for Next Event management dashboard."""
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("🔹 Update Next Event", callback_data="adm_update_event")],
+            [InlineKeyboardButton("› Preview Member View", callback_data="adm_preview_event")],
+            [InlineKeyboardButton("« Back to Admin", callback_data="adm_panel")],
+        ]
+    )
+
+
+def get_admin_confirm_update_keyboard(action_type: str) -> InlineKeyboardMarkup:
+    """Confirmation keyboard before saving Education Track or Event updates."""
+    cancel_target = "adm_manage_edu" if ("track" in action_type or "edu" in action_type) else f"adm_manage_{action_type}"
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton("✓ Confirm & Save", callback_data=f"adm_save_{action_type}")],
+            [InlineKeyboardButton("▪️ Cancel", callback_data=cancel_target)],
         ]
     )
 
@@ -432,10 +490,8 @@ def get_admin_broadcast_presets_keyboard() -> InlineKeyboardMarkup:
     """Options for broadcasting to community members."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Announce Live Challenge", callback_data="adm_bcast_preset:challenge")],
-            [InlineKeyboardButton("Announce Leaderboard", callback_data="adm_bcast_preset:leaderboard")],
-            [InlineKeyboardButton("Announce Monthly Wrap-Up", callback_data="adm_bcast_preset:report")],
-            [InlineKeyboardButton("Custom Broadcast", callback_data="adm_bcast_custom")],
+            [InlineKeyboardButton("Custom Broadcast", callback_data="adm_broadcast")],
+            [InlineKeyboardButton("Cancel", callback_data="adm_panel")],
         ]
     )
 
@@ -444,8 +500,8 @@ def get_admin_broadcast_confirm_keyboard(target_action: str = "custom") -> Inlin
     """Confirmation button before sending broadcast."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton("Send Broadcast", callback_data=f"adm_bcast_send:{target_action}")],
-            [InlineKeyboardButton("Cancel", callback_data="adm_panel")],
+            [InlineKeyboardButton("✓ Send Broadcast Now", callback_data=f"adm_bcast_send:{target_action}")],
+            [InlineKeyboardButton("▪️ Cancel", callback_data="adm_bcast_cancel")],
         ]
     )
 

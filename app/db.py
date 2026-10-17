@@ -105,11 +105,16 @@ async def init_db(db_path: str = None) -> None:
                             sender_chat_id BIGINT NOT NULL,
                             sender_name TEXT,
                             user_message_id BIGINT,
+                            ticket_type TEXT DEFAULT 'feedback',
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         );
                     """)
                     try:
                         await cur.execute("ALTER TABLE feedback_submissions ADD COLUMN IF NOT EXISTS user_message_id BIGINT;")
+                    except Exception:
+                        pass
+                    try:
+                        await cur.execute("ALTER TABLE feedback_submissions ADD COLUMN IF NOT EXISTS ticket_type TEXT DEFAULT 'feedback';")
                     except Exception:
                         pass
 
@@ -119,6 +124,29 @@ async def init_db(db_path: str = None) -> None:
                             user_chat_id BIGINT NOT NULL,
                             delivered_message_id BIGINT NOT NULL,
                             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS community_settings (
+                            setting_key TEXT PRIMARY KEY,
+                            setting_value TEXT,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                        );
+                    """)
+                    await cur.execute("""
+                        CREATE TABLE IF NOT EXISTS education_tracks (
+                            id BIGSERIAL PRIMARY KEY,
+                            title TEXT NOT NULL,
+                            duration TEXT,
+                            students TEXT,
+                            schedule TEXT,
+                            location TEXT,
+                            mentors TEXT,
+                            notes TEXT,
+                            custom_fields TEXT,
+                            status TEXT DEFAULT 'ACTIVE',
+                            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                         );
                     """)
                     await cur.execute("""
@@ -229,6 +257,10 @@ async def init_db(db_path: str = None) -> None:
                     await conn.commit()
             _is_initialized = True
             logger.info("Initialized PostgreSQL database tables with indexes.")
+            try:
+                await seed_default_education_tracks_if_empty()
+            except Exception as se:
+                logger.warning(f"Error seeding default education tracks (Postgres): {se}")
         except Exception as e:
             logger.error(f"Failed to initialize PostgreSQL database: {e}")
     else:
@@ -258,11 +290,16 @@ async def init_db(db_path: str = None) -> None:
                         sender_chat_id INTEGER NOT NULL,
                         sender_name TEXT,
                         user_message_id INTEGER,
+                        ticket_type TEXT DEFAULT 'feedback',
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
                 try:
                     await db.execute("ALTER TABLE feedback_submissions ADD COLUMN user_message_id INTEGER;")
+                except Exception:
+                    pass
+                try:
+                    await db.execute("ALTER TABLE feedback_submissions ADD COLUMN ticket_type TEXT DEFAULT 'feedback';")
                 except Exception:
                     pass
 
@@ -272,6 +309,29 @@ async def init_db(db_path: str = None) -> None:
                         user_chat_id INTEGER NOT NULL,
                         delivered_message_id INTEGER NOT NULL,
                         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS community_settings (
+                        setting_key TEXT PRIMARY KEY,
+                        setting_value TEXT,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    );
+                """)
+                await db.execute("""
+                    CREATE TABLE IF NOT EXISTS education_tracks (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        title TEXT NOT NULL,
+                        duration TEXT,
+                        students TEXT,
+                        schedule TEXT,
+                        location TEXT,
+                        mentors TEXT,
+                        notes TEXT,
+                        custom_fields TEXT,
+                        status TEXT DEFAULT 'ACTIVE',
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                     );
                 """)
                 await db.execute("""
@@ -375,6 +435,10 @@ async def init_db(db_path: str = None) -> None:
                 await db.commit()
             _is_initialized = True
             logger.info(f"Initialized SQLite database tables at {path}.")
+            try:
+                await seed_default_education_tracks_if_empty(path)
+            except Exception as se:
+                logger.warning(f"Error seeding default education tracks (SQLite): {se}")
         except Exception as e:
             logger.error(f"Failed to initialize SQLite database: {e}")
 
@@ -477,11 +541,13 @@ async def save_feedback_submission(
     sender_chat_id: int,
     sender_name: str,
     user_message_id: int = None,
+    ticket_type: str = "feedback",
     db_path: str = None,
 ) -> None:
     """Saves a forwarded admin-group message mapping to the original user."""
     await ensure_db(db_path)
     path = db_path or SQLITE_DB_PATH
+    t_type = ticket_type or "feedback"
 
     if is_postgres():
         try:
@@ -490,14 +556,15 @@ async def save_feedback_submission(
                 async with conn.cursor() as cur:
                     await cur.execute(
                         """
-                        INSERT INTO feedback_submissions (message_id, sender_chat_id, sender_name, user_message_id)
-                        VALUES (%s, %s, %s, %s)
+                        INSERT INTO feedback_submissions (message_id, sender_chat_id, sender_name, user_message_id, ticket_type)
+                        VALUES (%s, %s, %s, %s, %s)
                         ON CONFLICT (message_id) DO UPDATE SET
                             sender_chat_id = EXCLUDED.sender_chat_id,
                             sender_name = EXCLUDED.sender_name,
-                            user_message_id = EXCLUDED.user_message_id
+                            user_message_id = EXCLUDED.user_message_id,
+                            ticket_type = EXCLUDED.ticket_type;
                     """,
-                        (message_id, sender_chat_id, sender_name, user_message_id),
+                        (message_id, sender_chat_id, sender_name, user_message_id, t_type),
                     )
                     await conn.commit()
         except Exception as e:
@@ -509,14 +576,15 @@ async def save_feedback_submission(
             async with aiosqlite.connect(path) as db:
                 await db.execute(
                     """
-                    INSERT INTO feedback_submissions (message_id, sender_chat_id, sender_name, user_message_id)
-                    VALUES (?, ?, ?, ?)
+                    INSERT INTO feedback_submissions (message_id, sender_chat_id, sender_name, user_message_id, ticket_type)
+                    VALUES (?, ?, ?, ?, ?)
                     ON CONFLICT(message_id) DO UPDATE SET
                         sender_chat_id = excluded.sender_chat_id,
                         sender_name = excluded.sender_name,
-                        user_message_id = excluded.user_message_id
+                        user_message_id = excluded.user_message_id,
+                        ticket_type = excluded.ticket_type
                 """,
-                    (message_id, sender_chat_id, sender_name, user_message_id),
+                    (message_id, sender_chat_id, sender_name, user_message_id, t_type),
                 )
                 await db.commit()
         except Exception as e:
@@ -536,7 +604,7 @@ async def get_feedback_submission(
             async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        "SELECT sender_chat_id, sender_name, user_message_id FROM feedback_submissions WHERE message_id = %s",
+                        "SELECT sender_chat_id, sender_name, user_message_id, ticket_type FROM feedback_submissions WHERE message_id = %s",
                         (message_id,),
                     )
                     row = await cur.fetchone()
@@ -545,6 +613,7 @@ async def get_feedback_submission(
                             "sender_chat_id": row[0],
                             "sender_name": row[1],
                             "user_message_id": row[2],
+                            "ticket_type": row[3] if len(row) > 3 and row[3] else "feedback",
                         }
         except Exception as e:
             logger.error(f"Error in get_feedback_submission (Postgres): {e}")
@@ -555,7 +624,7 @@ async def get_feedback_submission(
         try:
             async with aiosqlite.connect(path) as db:
                 async with db.execute(
-                    "SELECT sender_chat_id, sender_name, user_message_id FROM feedback_submissions WHERE message_id = ?",
+                    "SELECT sender_chat_id, sender_name, user_message_id, ticket_type FROM feedback_submissions WHERE message_id = ?",
                     (message_id,),
                 ) as cursor:
                     row = await cursor.fetchone()
@@ -564,6 +633,7 @@ async def get_feedback_submission(
                             "sender_chat_id": row[0],
                             "sender_name": row[1],
                             "user_message_id": row[2],
+                            "ticket_type": row[3] if len(row) > 3 and row[3] else "feedback",
                         }
         except Exception as e:
             logger.error(f"Error in get_feedback_submission (SQLite): {e}")
@@ -585,7 +655,7 @@ async def get_feedback_submission_by_user_message(
             async with pool.connection() as conn:
                 async with conn.cursor() as cur:
                     await cur.execute(
-                        "SELECT message_id, sender_chat_id, sender_name FROM feedback_submissions WHERE user_message_id = %s",
+                        "SELECT message_id, sender_chat_id, sender_name, ticket_type FROM feedback_submissions WHERE user_message_id = %s",
                         (user_message_id,),
                     )
                     row = await cur.fetchone()
@@ -594,6 +664,7 @@ async def get_feedback_submission_by_user_message(
                             "message_id": row[0],
                             "sender_chat_id": row[1],
                             "sender_name": row[2],
+                            "ticket_type": row[3] if len(row) > 3 and row[3] else "feedback",
                         }
         except Exception as e:
             logger.error(f"Error in get_feedback_submission_by_user_message (Postgres): {e}")
@@ -604,7 +675,7 @@ async def get_feedback_submission_by_user_message(
         try:
             async with aiosqlite.connect(path) as db:
                 async with db.execute(
-                    "SELECT message_id, sender_chat_id, sender_name FROM feedback_submissions WHERE user_message_id = ?",
+                    "SELECT message_id, sender_chat_id, sender_name, ticket_type FROM feedback_submissions WHERE user_message_id = ?",
                     (user_message_id,),
                 ) as cursor:
                     row = await cursor.fetchone()
@@ -613,6 +684,7 @@ async def get_feedback_submission_by_user_message(
                             "message_id": row[0],
                             "sender_chat_id": row[1],
                             "sender_name": row[2],
+                            "ticket_type": row[3] if len(row) > 3 and row[3] else "feedback",
                         }
         except Exception as e:
             logger.error(f"Error in get_feedback_submission_by_user_message (SQLite): {e}")
@@ -854,6 +926,8 @@ async def reset_db(db_path: str = None) -> None:
                     await cur.execute("DELETE FROM challenges;")
                     await cur.execute("DELETE FROM questions;")
                     await cur.execute("DELETE FROM challenge_seasons;")
+                    await cur.execute("DELETE FROM community_settings;")
+                    await cur.execute("DELETE FROM education_tracks;")
                     await conn.commit()
         except Exception as e:
             logger.error(f"Error resetting Postgres: {e}")
@@ -872,6 +946,396 @@ async def reset_db(db_path: str = None) -> None:
                 await db.execute("DELETE FROM challenges;")
                 await db.execute("DELETE FROM questions;")
                 await db.execute("DELETE FROM challenge_seasons;")
+                await db.execute("DELETE FROM community_settings;")
+                await db.execute("DELETE FROM education_tracks;")
                 await db.commit()
         except Exception as e:
             logger.error(f"Error resetting SQLite: {e}")
+
+
+async def get_community_setting(key: str, default: Optional[str] = None, db_path: str = None) -> Optional[str]:
+    """Retrieves a single setting value from community_settings table."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    if is_postgres():
+        try:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT setting_value FROM community_settings WHERE setting_key = %s;", (key,))
+                    row = await cur.fetchone()
+                    return row[0] if row else default
+        except Exception as e:
+            logger.error(f"Error fetching community setting '{key}' (Postgres): {e}")
+            return default
+    else:
+        import aiosqlite
+        try:
+            async with aiosqlite.connect(path) as db:
+                async with db.execute("SELECT setting_value FROM community_settings WHERE setting_key = ?;", (key,)) as cursor:
+                    row = await cursor.fetchone()
+                    return row[0] if row else default
+        except Exception as e:
+            logger.error(f"Error fetching community setting '{key}' (SQLite): {e}")
+            return default
+
+
+async def set_community_setting(key: str, value: str, db_path: str = None) -> None:
+    """Sets or updates a single setting in community_settings table."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    if is_postgres():
+        try:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        INSERT INTO community_settings (setting_key, setting_value, updated_at)
+                        VALUES (%s, %s, CURRENT_TIMESTAMP)
+                        ON CONFLICT (setting_key) DO UPDATE
+                        SET setting_value = EXCLUDED.setting_value, updated_at = CURRENT_TIMESTAMP;
+                    """, (key, value))
+                    await conn.commit()
+        except Exception as e:
+            logger.error(f"Error saving community setting '{key}' (Postgres): {e}")
+    else:
+        import aiosqlite
+        try:
+            async with aiosqlite.connect(path) as db:
+                await db.execute("""
+                    INSERT INTO community_settings (setting_key, setting_value, updated_at)
+                    VALUES (?, ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT (setting_key) DO UPDATE
+                    SET setting_value = excluded.setting_value, updated_at = CURRENT_TIMESTAMP;
+                """, (key, value))
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error saving community setting '{key}' (SQLite): {e}")
+
+
+async def get_all_community_settings(db_path: str = None) -> Dict[str, str]:
+    """Retrieves all community settings as a key-value dictionary."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    results: Dict[str, str] = {}
+    if is_postgres():
+        try:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("SELECT setting_key, setting_value FROM community_settings;")
+                    rows = await cur.fetchall()
+                    for r in rows:
+                        results[r[0]] = r[1]
+        except Exception as e:
+            logger.error(f"Error fetching all community settings (Postgres): {e}")
+    else:
+        import aiosqlite
+        try:
+            async with aiosqlite.connect(path) as db:
+                async with db.execute("SELECT setting_key, setting_value FROM community_settings;") as cursor:
+                    rows = await cursor.fetchall()
+                    for r in rows:
+                        results[r[0]] = r[1]
+        except Exception as e:
+            logger.error(f"Error fetching all community settings (SQLite): {e}")
+
+    return results
+
+
+async def update_multiple_community_settings(settings: Dict[str, str], db_path: str = None) -> None:
+    """Updates multiple community settings in one operation."""
+    for k, v in settings.items():
+        await set_community_setting(k, v, db_path=db_path)
+
+
+# ---------------------------------------------------------------------------
+# Dynamic Education Tracks Management (Supports Multiple Flexible Tracks)
+# ---------------------------------------------------------------------------
+
+DEFAULT_EDUCATION_TRACKS = [
+    {
+        "title": "AWS SBG Education Track: Cloud Foundations & Core Services",
+        "duration": "Continues to the end of the year",
+        "students": "60 students (3 classes)",
+        "mentors": "1 mentor per class (3 mentors total)",
+        "schedule": "Every Saturday, 2:00 PM – 4:30 PM EAT",
+        "location": "AASTU Campus + Hybrid Virtual Stream",
+        "notes": "Comprehensive cloud foundations, IAM security, EC2 compute, S3 storage, and certification prep.",
+        "custom_fields": "",
+    },
+    {
+        "title": "AWS SBG Education Track: Solutions Architect & Serverless",
+        "duration": "Continues to the end of the year",
+        "students": "60 students (3 classes)",
+        "mentors": "1 mentor per class (3 mentors total)",
+        "schedule": "Every Saturday, 2:00 PM – 4:30 PM EAT",
+        "location": "AASTU Campus + Hybrid Virtual Stream",
+        "notes": "Architecture design patterns, VPC networking, Lambda serverless, and DynamoDB databases.",
+        "custom_fields": "",
+    },
+]
+
+
+async def seed_default_education_tracks_if_empty(db_path: str = None) -> None:
+    """Seeds the initial two community tracks if the table is currently empty."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    existing = await list_education_tracks(active_only=False, db_path=path)
+    if not existing:
+        for t in DEFAULT_EDUCATION_TRACKS:
+            await create_education_track(
+                title=t["title"],
+                duration=t.get("duration"),
+                students=t.get("students"),
+                schedule=t.get("schedule"),
+                location=t.get("location"),
+                mentors=t.get("mentors"),
+                notes=t.get("notes"),
+                custom_fields=t.get("custom_fields"),
+                db_path=path,
+            )
+
+
+async def list_education_tracks(active_only: bool = True, db_path: str = None) -> List[Dict[str, Any]]:
+    """Returns list of all education tracks."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    query = (
+        "SELECT id, title, duration, students, schedule, location, mentors, notes, custom_fields, status "
+        "FROM education_tracks "
+        + ("WHERE status = 'ACTIVE' " if active_only else "")
+        + "ORDER BY id ASC;"
+    )
+
+    results = []
+    if is_postgres():
+        try:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(query)
+                    rows = await cur.fetchall()
+                    for r in rows:
+                        results.append({
+                            "id": r[0],
+                            "title": r[1],
+                            "duration": r[2],
+                            "students": r[3],
+                            "schedule": r[4],
+                            "location": r[5],
+                            "mentors": r[6],
+                            "notes": r[7],
+                            "custom_fields": r[8],
+                            "status": r[9],
+                        })
+        except Exception as e:
+            logger.error(f"Error listing education tracks (Postgres): {e}")
+    else:
+        import aiosqlite
+        try:
+            async with aiosqlite.connect(path) as db:
+                async with db.execute(query) as cursor:
+                    rows = await cursor.fetchall()
+                    for r in rows:
+                        results.append({
+                            "id": r[0],
+                            "title": r[1],
+                            "duration": r[2],
+                            "students": r[3],
+                            "schedule": r[4],
+                            "location": r[5],
+                            "mentors": r[6],
+                            "notes": r[7],
+                            "custom_fields": r[8],
+                            "status": r[9],
+                        })
+        except Exception as e:
+            logger.error(f"Error listing education tracks (SQLite): {e}")
+
+    return results
+
+
+async def get_education_track(track_id: int, db_path: str = None) -> Optional[Dict[str, Any]]:
+    """Retrieves a single education track by ID."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    query = (
+        "SELECT id, title, duration, students, schedule, location, mentors, notes, custom_fields, status "
+        "FROM education_tracks WHERE id = %s;" if is_postgres() else
+        "SELECT id, title, duration, students, schedule, location, mentors, notes, custom_fields, status "
+        "FROM education_tracks WHERE id = ?;"
+    )
+
+    if is_postgres():
+        try:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(query, (track_id,))
+                    r = await cur.fetchone()
+                    if r:
+                        return {
+                            "id": r[0],
+                            "title": r[1],
+                            "duration": r[2],
+                            "students": r[3],
+                            "schedule": r[4],
+                            "location": r[5],
+                            "mentors": r[6],
+                            "notes": r[7],
+                            "custom_fields": r[8],
+                            "status": r[9],
+                        }
+        except Exception as e:
+            logger.error(f"Error getting education track {track_id} (Postgres): {e}")
+            return None
+    else:
+        import aiosqlite
+        try:
+            async with aiosqlite.connect(path) as db:
+                async with db.execute(query, (track_id,)) as cursor:
+                    r = await cursor.fetchone()
+                    if r:
+                        return {
+                            "id": r[0],
+                            "title": r[1],
+                            "duration": r[2],
+                            "students": r[3],
+                            "schedule": r[4],
+                            "location": r[5],
+                            "mentors": r[6],
+                            "notes": r[7],
+                            "custom_fields": r[8],
+                            "status": r[9],
+                        }
+        except Exception as e:
+            logger.error(f"Error getting education track {track_id} (SQLite): {e}")
+            return None
+
+    return None
+
+
+async def create_education_track(
+    title: str,
+    duration: Optional[str] = None,
+    students: Optional[str] = None,
+    schedule: Optional[str] = None,
+    location: Optional[str] = None,
+    mentors: Optional[str] = None,
+    notes: Optional[str] = None,
+    custom_fields: Optional[str] = None,
+    db_path: str = None,
+) -> int:
+    """Creates a new education track with optional fields."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    if is_postgres():
+        try:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute("""
+                        INSERT INTO education_tracks (title, duration, students, schedule, location, mentors, notes, custom_fields, status)
+                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, 'ACTIVE')
+                        RETURNING id;
+                    """, (title, duration, students, schedule, location, mentors, notes, custom_fields))
+                    new_id = (await cur.fetchone())[0]
+                    await conn.commit()
+                    return new_id
+        except Exception as e:
+            logger.error(f"Error creating education track (Postgres): {e}")
+            return 0
+    else:
+        import aiosqlite
+        try:
+            async with aiosqlite.connect(path) as db:
+                cursor = await db.execute("""
+                    INSERT INTO education_tracks (title, duration, students, schedule, location, mentors, notes, custom_fields, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ACTIVE');
+                """, (title, duration, students, schedule, location, mentors, notes, custom_fields))
+                await db.commit()
+                return cursor.lastrowid
+        except Exception as e:
+            logger.error(f"Error creating education track (SQLite): {e}")
+            return 0
+
+
+async def update_education_track(track_id: int, db_path: str = None, **fields) -> None:
+    """Updates specified fields of an education track."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    if not fields:
+        return
+
+    allowed = {"title", "duration", "students", "schedule", "location", "mentors", "notes", "custom_fields", "status"}
+    updates = {k: v for k, v in fields.items() if k in allowed}
+    if not updates:
+        return
+
+    if is_postgres():
+        set_clauses = [f"{k} = %s" for k in updates.keys()]
+        set_clauses.append("updated_at = CURRENT_TIMESTAMP")
+        values = list(updates.values())
+        values.append(track_id)
+        sql = f"UPDATE education_tracks SET {', '.join(set_clauses)} WHERE id = %s;"
+        try:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(sql, tuple(values))
+                    await conn.commit()
+        except Exception as e:
+            logger.error(f"Error updating education track {track_id} (Postgres): {e}")
+    else:
+        import aiosqlite
+        set_clauses = [f"{k} = ?" for k in updates.keys()]
+        set_clauses.append("updated_at = CURRENT_TIMESTAMP")
+        values = list(updates.values())
+        values.append(track_id)
+        sql = f"UPDATE education_tracks SET {', '.join(set_clauses)} WHERE id = ?;"
+        try:
+            async with aiosqlite.connect(path) as db:
+                await db.execute(sql, tuple(values))
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error updating education track {track_id} (SQLite): {e}")
+
+
+async def delete_education_track(track_id: int, db_path: str = None) -> None:
+    """Deletes an education track by ID."""
+    path = db_path or SQLITE_DB_PATH
+    await ensure_db(path)
+
+    query = (
+        "DELETE FROM education_tracks WHERE id = %s;" if is_postgres() else
+        "DELETE FROM education_tracks WHERE id = ?;"
+    )
+
+    if is_postgres():
+        try:
+            pool = await get_pg_pool()
+            async with pool.connection() as conn:
+                async with conn.cursor() as cur:
+                    await cur.execute(query, (track_id,))
+                    await conn.commit()
+        except Exception as e:
+            logger.error(f"Error deleting education track {track_id} (Postgres): {e}")
+    else:
+        import aiosqlite
+        try:
+            async with aiosqlite.connect(path) as db:
+                await db.execute(query, (track_id,))
+                await db.commit()
+        except Exception as e:
+            logger.error(f"Error deleting education track {track_id} (SQLite): {e}")
+
+
