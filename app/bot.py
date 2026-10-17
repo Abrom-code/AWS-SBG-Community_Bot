@@ -122,9 +122,9 @@ def get_main_menu_keyboard() -> ReplyKeyboardMarkup:
     """Returns persistent bottom menu buttons for primary member actions."""
     return ReplyKeyboardMarkup(
         [
-            ["🔹 Feedback", "🔹 Ask Question"],
-            ["🔹 Education Track", "🔹 Next Event"],
-            ["▫️ About Us", "▫️ Help"],
+            ["Education", "Next Event"],
+            ["Ask Question", "Feedback"],
+            ["About Us", "Help"],
         ],
         resize_keyboard=True,
     )
@@ -146,8 +146,8 @@ def get_feedback_menu_keyboard() -> ReplyKeyboardMarkup:
     """Returns persistent sub-menu keyboard for Feedback & Support."""
     return ReplyKeyboardMarkup(
         [
-            ["🔹 Feedback", "🔹 Ask Question"],
-            ["▫️ About Support", "▫️ Main Menu"],
+            ["Ask Question", "Feedback"],
+            ["About Support", "Main Menu"],
         ],
         resize_keyboard=True,
     )
@@ -171,16 +171,15 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await register_or_update_bot_user(user.id, user.first_name, user.username)
 
     welcome_text = (
-        "✦ <b>AWS SBG AASTU Community Bot</b>\n\n"
-        "Welcome! Build cloud skills, join our structured Education Track, discover upcoming events, and connect with fellow builders.\n\n"
-        "◆ <b>Features & Programs</b>\n"
-        "🔹 <b>Education Track</b> › Structured cloud curriculum, schedules & hands-on tracks\n"
-        "🔹 <b>Next Event</b> › Upcoming workshops, bootcamps & community sessions\n"
-        "🔹 <b>About Us</b> › Our mission, community & student leadership team\n"
-        "🔹 <b>Feedback</b> › Share ideas & suggestions with the core team\n"
-        "🔹 <b>Ask Question</b> › Direct support line to our leads and mentors\n\n"
-        "➤ <i>Select an option below to get started:</i>\n\n"
-        "✦ <b>Join our community:</b> @AWSAASTU"
+        "<b>AWS SBG AASTU Community Bot</b>\n\n"
+        "Welcome! Learn cloud computing, follow our structured tracks, and stay up to date with events.\n\n"
+        "• Education — Track schedules, syllabus, and class times\n"
+        "• Next Event — Upcoming workshops, bootcamps, and meetups\n"
+        "• Ask Question — Message our technical leads and mentors\n"
+        "• Feedback — Share suggestions with the team\n"
+        "• About Us — Mission, leads, and community info\n\n"
+        "<b>Join our community:</b> @AWSAASTU\n\n"
+        "<i>Select an option below to get started:</i>"
     )
 
     logo_path = os.path.join(
@@ -252,12 +251,12 @@ async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYP
         except Exception:
             pass
     hub_text = (
-        "✦ <b>Feedback & Community Support Hub</b>\n\n"
-        "How can the AWS Student Builder core team help you today?\n\n"
-        "🔹 <b>Feedback</b> › Share ideas, suggestions, or topics you want covered\n"
-        "🔹 <b>Ask Question</b> › Get help with the Education Track, labs, or cloud roadblocks\n"
-        "▫️ <b>About Support</b> › How our student leadership team responds\n\n"
-        "➤ <i>Select an option below:</i>"
+        "<b>Feedback & Community Support Hub</b>\n\n"
+        "How can the AWS Student Builder team help you?\n\n"
+        "• Ask Question — Get help with the Education Track, labs, or cloud concepts\n"
+        "• Feedback — Share ideas, suggestions, or topics you want covered\n"
+        "• About Support — Learn how our leadership team responds\n\n"
+        "<i>Select an option below:</i>"
     )
     await update.message.reply_text(
         hub_text,
@@ -269,18 +268,15 @@ async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYP
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the available visible commands for members."""
     help_text = (
-        "✦ <b>AWS SBG Community Bot Shortcuts</b>\n\n"
-        "▫️ /start › Welcome menu & main dashboard\n"
-        "▫️ /education › Education Track details & weekly schedule\n"
-        "▫️ /events › Next event & upcoming programs\n"
-        "▫️ /about › About AWS SBG AASTU\n"
-        "▫️ /feedback › Share community feedback & suggestions\n"
-        "▫️ /ask › Ask a question to the core team\n"
-        "▫️ /support › Support information & helpdesk\n"
-        "▫️ /broadcast › Send community announcement (admins)\n"
-        "▫️ /admin › Administrator console (restricted)\n"
-        "▫️ /cancel › Return to main menu\n\n"
-        "➤ <i>Tap any command above or use the menu buttons below.</i>"
+        "✦ <b>Available Commands</b>\n\n"
+        "/start — Main menu & dashboard\n"
+        "/education — Education tracks & schedule\n"
+        "/events — Next event & live sessions\n"
+        "/about — About AWS SBG AASTU\n"
+        "/ask — Ask a question to mentors & leads\n"
+        "/feedback — Share community feedback\n"
+        "/help — This command guide\n\n"
+        "<i>Or use the menu buttons below to navigate.</i>"
     )
     await update.message.reply_text(
         help_text,
@@ -1871,16 +1867,14 @@ async def unknown_command_handler(update: Update, context: ContextTypes.DEFAULT_
 async def setup_bot_commands(bot) -> None:
     """Registers recommended workable bot commands and sets the chat menu button."""
     commands = [
-        BotCommand("start", "Start the bot & main dashboard"),
-        BotCommand("education", "AWS Education Track details & schedule"),
+        BotCommand("start", "Main menu & dashboard"),
+        BotCommand("education", "Education tracks & schedules"),
         BotCommand("events", "Next event & upcoming programs"),
         BotCommand("about", "About AWS Student Builder Group"),
-        BotCommand("feedback", "Submit community feedback & suggestions"),
         BotCommand("ask", "Ask a question to the core team"),
-        BotCommand("support", "Support information & contact"),
+        BotCommand("feedback", "Submit community feedback & suggestions"),
         BotCommand("help", "Help & guide"),
-        BotCommand("admin", "Admin operations console"),
-        BotCommand("broadcast", "Send community announcement (admin)"),
+        BotCommand("admin", "Admin console (Staff)"),
     ]
     await bot.set_my_commands(commands)
     await bot.set_chat_menu_button(menu_button=MenuButtonCommands())

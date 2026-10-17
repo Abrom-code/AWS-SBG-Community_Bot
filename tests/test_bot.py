@@ -175,9 +175,9 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     ]
 
     assert labels == [
-        ["🔹 Feedback", "🔹 Ask Question"],
-        ["🔹 Education Track", "🔹 Next Event"],
-        ["▫️ About Us", "▫️ Help"],
+        ["Education", "Next Event"],
+        ["Ask Question", "Feedback"],
+        ["About Us", "Help"],
     ]
 
     ch_keyboard = bot.get_challenge_menu_keyboard()
@@ -191,8 +191,8 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     fb_keyboard = bot.get_feedback_menu_keyboard()
     fb_labels = [[button.text for button in row] for row in fb_keyboard.keyboard]
     assert fb_labels == [
-        ["🔹 Feedback", "🔹 Ask Question"],
-        ["▫️ About Support", "▫️ Main Menu"],
+        ["Ask Question", "Feedback"],
+        ["About Support", "Main Menu"],
     ]
 
 
@@ -266,9 +266,9 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
         for row in update.message.reply_text_calls[0]["reply_markup"].keyboard
     ]
     assert labels == [
-        ["🔹 Feedback", "🔹 Ask Question"],
-        ["🔹 Education Track", "🔹 Next Event"],
-        ["▫️ About Us", "▫️ Help"],
+        ["Education", "Next Event"],
+        ["Ask Question", "Feedback"],
+        ["About Us", "Help"],
     ]
 
 
@@ -1549,7 +1549,7 @@ def test_events_command_and_menu_button():
     assert len(up1.message.reply_text_calls) == 1
     text1 = up1.message.reply_text_calls[0]["text"]
     assert "Upcoming Event & Community Programs" in text1
-    assert "Featured Session" in text1
+    assert "AWS Community Day 2026" in text1
     assert up1.message.reply_text_calls[0]["reply_markup"] is not None
 
     # Via bottom menu text

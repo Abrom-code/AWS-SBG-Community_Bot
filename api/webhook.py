@@ -43,6 +43,11 @@ def get_loop_and_app():
         _global_app = create_application()
         _global_loop.run_until_complete(init_db())
         _global_loop.run_until_complete(_global_app.initialize())
+        try:
+            from app.bot import setup_bot_commands
+            _global_loop.run_until_complete(setup_bot_commands(_global_app.bot))
+        except Exception as e:
+            logger.warning(f"Failed to setup bot commands in webhook: {e}")
 
     return _global_loop, _global_app
 

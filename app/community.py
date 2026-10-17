@@ -24,30 +24,24 @@ def get_about_text() -> str:
     """Returns descriptive overview of the AWS Student Builder Group at AASTU."""
     return (
         "✦ <b>About AWS Student Builder Group (AASTU)</b>\n\n"
-        "The <b>AWS Student Builder Group at Addis Ababa Science and Technology University (AASTU)</b> "
-        "is an active student cloud community dedicated to empowering future cloud architects, "
-        "software engineers, and technology leaders.\n\n"
-        "◆ <b>Our Mission</b>\n"
-        "To bridge the gap between academic theory and real-world cloud engineering through "
-        "hands-on learning, collaborative projects, peer mentorship, and industry certification.\n\n"
-        "◆ <b>The Team</b>\n"
+        "We are a student-led cloud community at Addis Ababa Science and Technology University (AASTU), "
+        "dedicated to empowering future cloud architects, software engineers, and technology leaders through "
+        "hands-on learning and peer mentorship.\n\n"
+        "<b>The Team</b>\n"
         "Our community is student-led by passionate cloud builders, AWS student ambassadors, "
         "technical leads, and peer mentors committed to fostering cloud literacy on campus.\n\n"
-        "◆ <b>What We Provide to Members:</b>\n"
-        "• <b>Structured Education Track:</b> Hands-on cloud curriculum from zero to advanced.\n"
-        "• <b>Practical Workshops & Labs:</b> Real AWS console labs, serverless architectures, and CI/CD pipelines.\n"
-        "• <b>Certification Roadmaps:</b> Study circles for AWS Certified Cloud Practitioner & Solutions Architect.\n"
-        "• <b>Hackathons & Project Showcases:</b> Building scalable solutions for campus and community needs.\n"
-        "• <b>Mentorship & Career Networking:</b> Connecting students with industry practitioners.\n\n"
-        f"✦ <b>Official Community Channel:</b> {COMMUNITY_CHANNEL}"
+        "<b>What We Offer:</b>\n"
+        "• Structured Education Tracks (AI/ML & Cloud/DevOps)\n"
+        "• Hands-on workshops, bootcamps, and AWS console labs\n"
+        "• Study circles for AWS Cloud certifications\n"
+        "• Community hackathons and project showcases\n"
+        "• Peer mentorship and technical support\n\n"
+        f"Official Community Channel: {COMMUNITY_CHANNEL}"
     )
 
 
 def format_track_card(track: Dict[str, Any], track_index: int = 1, total_tracks: int = 1) -> str:
-    """Formats an individual education track card.
-    Conditionally renders only provided fields. Omitted or skipped fields are completely excluded.
-    Strictly uses approved minimalist emojis.
-    """
+    """Formats an individual education track card with a clean, breathable, modern layout."""
     title = track.get("title") or "AWS SBG Education Track"
     duration = track.get("duration")
     students = track.get("students")
@@ -57,43 +51,33 @@ def format_track_card(track: Dict[str, Any], track_index: int = 1, total_tracks:
     notes = track.get("notes")
     custom_rows = track.get("custom_fields") or ""
 
+    display_title = title.split(":", 1)[1].strip() if ":" in title else title
     if total_tracks > 1:
-        header = f"✦ <b>Track {track_index} of {total_tracks}: {html.escape(title)}</b>"
+        header = f"<b>{html.escape(display_title)}</b>  <i>(Track {track_index} of {total_tracks})</i>"
     else:
-        header = f"✦ <b>{html.escape(title)}</b>"
+        header = f"<b>{html.escape(display_title)}</b>"
 
-    lines = [header]
+    lines = [f"✦ AWS SBG Education Track\n{header}", ""]
 
-    if duration:
-        lines.append(f"• <b>Duration:</b> {html.escape(duration)}")
-
-    # Cohort & Leadership details
-    cohort_details = []
-    if students:
-        cohort_details.append(f"• <b>Active Builders:</b> {html.escape(students)}")
-    if mentors:
-        cohort_details.append(f"• <b>Mentors & Leads:</b> {html.escape(mentors)}")
-    if cohort_details:
-        lines.append("\n◆ <b>Cohort & Leadership:</b>")
-        lines.extend(cohort_details)
-
-    # Schedule & Logistics
-    logistics = []
-    if schedule:
-        logistics.append(f"• <b>Schedule:</b> {html.escape(schedule)}")
-    if location:
-        logistics.append(f"• <b>Location:</b> {html.escape(location)}")
-    if logistics:
-        lines.append("\n◆ <b>Schedule & Logistics:</b>")
-        lines.extend(logistics)
-        lines.append(f"• <b>Materials & Updates:</b> Shared directly in {COMMUNITY_CHANNEL}")
-
-    # Curriculum & Focus
     if notes:
-        lines.append("\n◆ <b>Curriculum & Focus:</b>")
-        lines.append(f"<blockquote>{html.escape(notes)}</blockquote>")
+        lines.append(f"{html.escape(notes)}\n")
 
-    # Extra custom rows
+    details = []
+    if schedule:
+        details.append(f"• Schedule: {html.escape(schedule)}")
+    if location:
+        details.append(f"• Location: {html.escape(location)}")
+    if students:
+        details.append(f"• Cohort: {html.escape(students)}")
+    if mentors:
+        details.append(f"• Mentors: {html.escape(mentors)}")
+    if duration:
+        details.append(f"• Duration: {html.escape(duration)}")
+
+    if details:
+        lines.append("<b>Details:</b>")
+        lines.extend(details)
+
     if custom_rows:
         extra = []
         for line in custom_rows.strip().split("\n"):
@@ -105,10 +89,11 @@ def format_track_card(track: Dict[str, Any], track_index: int = 1, total_tracks:
                 else:
                     extra.append(f"• {html.escape(line)}")
         if extra:
-            lines.append("\n◆ <b>Additional Track Information:</b>")
+            lines.append("\n<b>Additional Info:</b>")
             lines.extend(extra)
 
-    lines.append("\n<i>Open to all university students! No prior cloud experience required.</i>")
+    lines.append(f"\nUpdates & materials: {COMMUNITY_CHANNEL}")
+    lines.append("<i>Open to all university students · Free to join</i>")
     return "\n".join(lines)
 
 
@@ -177,15 +162,35 @@ async def get_education_track_text_async() -> str:
     return get_education_track_text(settings)
 
 
+def get_clean_track_button_name(track_title: str) -> str:
+    """Extracts a short, concise track name for inline buttons."""
+    if not track_title:
+        return "Track"
+    if ":" in track_title:
+        name = track_title.split(":", 1)[1].strip()
+    else:
+        name = track_title.strip()
+
+    if "AI & Machine Learning" in name or "AI/ML" in name:
+        return "AI/ML"
+    if "Cloud & DevOps" in name or "Cloud/DevOps" in name or "DevOps" in name:
+        return "Cloud/DevOps"
+    if "Solutions Architect" in name:
+        return "Solutions Architect"
+    if "Cloud Foundations" in name:
+        return "Cloud Foundations"
+    return name[:18]
+
+
 def get_next_event_text(settings: Optional[dict] = None) -> str:
-    """Returns information about the upcoming event and community programs."""
+    """Returns clean, readable information about upcoming community events."""
     s = settings or {}
     title = s.get("event_title") or NEXT_EVENT_TITLE
     date_str = s.get("event_date") or NEXT_EVENT_DATE
     time_str = s.get("event_time") or NEXT_EVENT_TIME
     venue = s.get("event_venue") or NEXT_EVENT_VENUE
-    prereqs = s.get("event_prereqs") or "Laptop & a free AWS Builder ID / Free-Tier account"
-    description = s.get("event_description") or "Hands-on exploration of AWS compute, storage, networking, and serverless fundamentals."
+    prereqs = s.get("event_prereqs") or "Everyone is invited! Register on Meetup"
+    description = s.get("event_description") or "Full-day celebration featuring hackathons, keynote speeches, panel discussions, networking sessions, and snacks provided!"
     custom_rows = s.get("event_custom_fields") or ""
 
     extra_section = ""
@@ -200,26 +205,19 @@ def get_next_event_text(settings: Optional[dict] = None) -> str:
                 else:
                     lines.append(f"• {html.escape(line)}")
         if lines:
-            extra_section = "\n◆ <b>Additional Session Info:</b>\n" + "\n".join(lines) + "\n"
+            extra_section = "\n" + "\n".join(lines)
 
     return (
-        "✦ <b>Upcoming Event & Community Programs</b>\n\n"
-        "Join fellow student builders in our next live hands-on session:\n\n"
-        "🔹 <b>Featured Session:</b>\n"
+        f"✦ <b>Upcoming Event & Community Programs</b>\n\n"
         f"<b>{html.escape(title)}</b>\n\n"
-        f"• <b>Date & Day:</b> {html.escape(date_str)}\n"
-        f"• <b>Time:</b> {html.escape(time_str)}\n"
-        f"• <b>Venue:</b> {html.escape(venue)}\n"
-        f"• <b>Prerequisites:</b> {html.escape(prereqs)}\n\n"
-        "◆ <b>Session Overview:</b>\n"
-        f"<blockquote>{html.escape(description)}</blockquote>\n"
-        f"{extra_section}\n"
-        "◆ <b>Upcoming Programs in this Cohort:</b>\n"
-        "🔹 <b>AWS Certification Study Circles:</b> Guided group prep for AWS certs.\n"
-        "🔹 <b>Hands-On Cloud Labs:</b> Building serverless web apps from scratch.\n"
-        "🔹 <b>Campus Cloud Hackathon:</b> Team architecture challenge with mentorship.\n"
-        "🔹 <b>Industry Guest Talks:</b> Insights from practicing cloud architects.\n\n"
-        f"<i>Stay tuned to {COMMUNITY_CHANNEL} for room details, meeting links, and slide decks!</i>"
+        f"{html.escape(description)}\n\n"
+        "<b>Event Details:</b>\n"
+        f"• Date: {html.escape(date_str)}\n"
+        f"• Time: {html.escape(time_str)}\n"
+        f"• Venue: {html.escape(venue)}\n"
+        f"• Registration: {html.escape(prereqs)}"
+        f"{extra_section}\n\n"
+        f"<i>Announcements & links are shared in {COMMUNITY_CHANNEL}.</i>"
     )
 
 
@@ -232,31 +230,22 @@ async def get_next_event_text_async() -> str:
 def get_support_info_text() -> str:
     """Returns information about the feedback and support desk."""
     return (
-        "✦ <b>AWS SBG Support & Helpdesk</b>\n\n"
-        "Have questions about the Education Track, workshop schedules, technical roadblocks, "
-        "or ideas for the community? The AWS SBG core team is here to assist you.\n\n"
-        "◆ <b>Two Channels to Connect:</b>\n"
-        "• <b>Ask a Question (/ask):</b> Ask technical questions, get help with labs, or inquire about events.\n"
-        "• <b>Submit Feedback (/feedback):</b> Share ideas, suggestions, and topic requests for our community.\n\n"
-        "◆ <b>How It Works:</b>\n"
-        "1. Tap <b>Ask Question</b> or <b>Submit Feedback</b> in the menu below.\n"
-        "2. Type your message directly into this chat.\n"
-        "3. Your message is forwarded directly to the student leadership team.\n"
-        "4. A team member replies directly back to your Telegram chat!\n\n"
-        "<i>We typically reply within a few hours.</i>"
+        "<b>AWS SBG Support & Helpdesk</b>\n\n"
+        "Need help with Education Track labs, AWS concepts, or event logistics?\n\n"
+        "• Ask Question (/ask) — Send a technical or general question directly to our leads & mentors\n"
+        "• Feedback (/feedback) — Share suggestions, ideas, or topics you want covered\n\n"
+        "How it works: Type your message in the bot, and our leadership team will reply directly to your chat."
     )
 
 
 def get_challenge_paused_text() -> str:
-    """Polite notice informing members that weekly quizzes are paused in favor of the Education Track."""
+    """Polite notice informing members that weekly quizzes are paused."""
     return (
-        "✦ <b>Challenge Center Update</b>\n\n"
-        "Weekly quiz competitions are currently paused while our community focuses on our newly launched "
-        "<b>Education Track</b> and hands-on workshops!\n\n"
-        "◆ <b>Get Involved:</b>\n"
-        "• Check out <b>Education Track</b> for weekly curriculum & schedules.\n"
-        "• View <b>Next Event</b> to see our upcoming live sessions.\n"
-        "• Tap <b>Ask Question</b> or <b>Submit Feedback</b> to connect with the core team."
+        "<b>Challenge Center Update</b>\n\n"
+        "Competitions are currently paused while our community focuses on the Education Track (AI/ML & Cloud/DevOps) and hands-on workshops.\n\n"
+        "• Tap Education to view weekly schedules & curriculum\n"
+        "• Tap Next Event to see our upcoming live sessions\n"
+        "• Tap Ask Question to reach our mentors & leads"
     )
 
 
@@ -265,15 +254,15 @@ def get_about_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("🔹 Education Track", callback_data="comm_education"),
-                InlineKeyboardButton("🔹 Next Event", callback_data="comm_events"),
+                InlineKeyboardButton("Education", callback_data="comm_education"),
+                InlineKeyboardButton("Next Event", callback_data="comm_events"),
             ],
             [
-                InlineKeyboardButton("🔹 Feedback", callback_data="comm_feedback"),
-                InlineKeyboardButton("🔹 Ask Question", callback_data="comm_question"),
+                InlineKeyboardButton("Ask Question", callback_data="comm_question"),
+                InlineKeyboardButton("Feedback", callback_data="comm_feedback"),
             ],
             [
-                InlineKeyboardButton("› Channel @AWSAASTU", url=COMMUNITY_CHANNEL_URL),
+                InlineKeyboardButton("Community Channel", url=COMMUNITY_CHANNEL_URL),
             ],
         ]
     )
@@ -283,18 +272,18 @@ def get_education_inline_keyboard(
     tracks: Optional[List[Dict[str, Any]]] = None,
     current_track_id: Optional[int] = None,
 ) -> InlineKeyboardMarkup:
-    """Interactive navigation buttons for Education Track, with track switcher if multiple tracks exist."""
+    """Interactive navigation buttons for Education Track, with short track names on buttons."""
     rows = []
     if tracks and len(tracks) > 1:
         switcher_row = []
         for t in tracks:
             tid = t.get("id")
             title = t.get("title") or "Track"
-            short_title = title if len(title) <= 20 else title[:18] + ".."
+            short_name = get_clean_track_button_name(title)
             if tid == current_track_id:
-                btn_text = f"● {short_title}"
+                btn_text = f"• {short_name} •"
             else:
-                btn_text = f"🔹 {short_title}"
+                btn_text = short_name
             switcher_row.append(InlineKeyboardButton(btn_text, callback_data=f"comm_track:{tid}"))
             if len(switcher_row) == 2:
                 rows.append(switcher_row)
@@ -303,12 +292,12 @@ def get_education_inline_keyboard(
             rows.append(switcher_row)
 
     rows.append([
-        InlineKeyboardButton("🔹 Next Event", callback_data="comm_events"),
-        InlineKeyboardButton("🔹 Ask Question", callback_data="comm_question"),
+        InlineKeyboardButton("Next Event", callback_data="comm_events"),
+        InlineKeyboardButton("Ask Question", callback_data="comm_question"),
     ])
     rows.append([
-        InlineKeyboardButton("🔹 Feedback", callback_data="comm_feedback"),
-        InlineKeyboardButton("› Channel @AWSAASTU", url=COMMUNITY_CHANNEL_URL),
+        InlineKeyboardButton("Feedback", callback_data="comm_feedback"),
+        InlineKeyboardButton("Community Channel", url=COMMUNITY_CHANNEL_URL),
     ])
     return InlineKeyboardMarkup(rows)
 
@@ -318,12 +307,12 @@ def get_events_inline_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("🔹 Education Track", callback_data="comm_education"),
-                InlineKeyboardButton("🔹 Ask Question", callback_data="comm_question"),
+                InlineKeyboardButton("Education", callback_data="comm_education"),
+                InlineKeyboardButton("Ask Question", callback_data="comm_question"),
             ],
             [
-                InlineKeyboardButton("🔹 Feedback", callback_data="comm_feedback"),
-                InlineKeyboardButton("› Channel @AWSAASTU", url=COMMUNITY_CHANNEL_URL),
+                InlineKeyboardButton("Feedback", callback_data="comm_feedback"),
+                InlineKeyboardButton("Community Channel", url=COMMUNITY_CHANNEL_URL),
             ],
         ]
     )
@@ -334,12 +323,12 @@ def get_challenge_paused_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("🔹 Education Track", callback_data="comm_education"),
-                InlineKeyboardButton("🔹 Next Event", callback_data="comm_events"),
+                InlineKeyboardButton("Education", callback_data="comm_education"),
+                InlineKeyboardButton("Next Event", callback_data="comm_events"),
             ],
             [
-                InlineKeyboardButton("🔹 Feedback", callback_data="comm_feedback"),
-                InlineKeyboardButton("🔹 Ask Question", callback_data="comm_question"),
+                InlineKeyboardButton("Ask Question", callback_data="comm_question"),
+                InlineKeyboardButton("Feedback", callback_data="comm_feedback"),
             ],
         ]
     )
