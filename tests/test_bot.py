@@ -1528,8 +1528,8 @@ def test_education_track_command_and_menu_button():
     assert len(up1.message.reply_text_calls) == 1
     text1 = up1.message.reply_text_calls[0]["text"]
     assert "AWS SBG Education Track" in text1
-    assert "Cloud Foundations" in text1
-    assert "Every Saturday" in text1
+    assert "Machine Learning" in text1
+    assert "Wednesday" in text1
     assert up1.message.reply_text_calls[0]["reply_markup"] is not None
 
     # Via bottom menu text
@@ -1825,10 +1825,10 @@ def test_default_seeded_education_tracks():
     t2 = tracks[1]
     assert "Continues to the end of the year" in t1["duration"]
     assert "60 students (3 classes)" in t1["students"]
-    assert "1 mentor per class" in t1["mentors"]
+    assert "AWS SBG Mentors" in t1["mentors"]
     assert "Continues to the end of the year" in t2["duration"]
     assert "60 students (3 classes)" in t2["students"]
-    assert "1 mentor per class" in t2["mentors"]
+    assert "AWS SBG Mentors" in t2["mentors"]
 
 
 def test_parse_track_input_flexible_omissions():

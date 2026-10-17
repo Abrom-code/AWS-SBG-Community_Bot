@@ -1059,23 +1059,23 @@ async def update_multiple_community_settings(settings: Dict[str, str], db_path: 
 
 DEFAULT_EDUCATION_TRACKS = [
     {
-        "title": "AWS SBG Education Track: Cloud Foundations & Core Services",
+        "title": "AWS SBG Education Track: AI & Machine Learning (AI/ML)",
         "duration": "Continues to the end of the year",
         "students": "60 students (3 classes)",
-        "mentors": "1 mentor per class (3 mentors total)",
-        "schedule": "Every Saturday, 2:00 PM – 4:30 PM EAT",
-        "location": "AASTU Campus + Hybrid Virtual Stream",
-        "notes": "Comprehensive cloud foundations, IAM security, EC2 compute, S3 storage, and certification prep.",
+        "mentors": "AWS SBG Mentors",
+        "schedule": "One in-person class Wednesday afternoon & one online session Saturday night",
+        "location": "AASTU Campus (In-Person) + Online",
+        "notes": "Hands-on AI/ML curriculum, foundational concepts, model training, and practical AWS AI services.",
         "custom_fields": "",
     },
     {
-        "title": "AWS SBG Education Track: Solutions Architect & Serverless",
+        "title": "AWS SBG Education Track: Cloud & DevOps",
         "duration": "Continues to the end of the year",
         "students": "60 students (3 classes)",
-        "mentors": "1 mentor per class (3 mentors total)",
-        "schedule": "Every Saturday, 2:00 PM – 4:30 PM EAT",
-        "location": "AASTU Campus + Hybrid Virtual Stream",
-        "notes": "Architecture design patterns, VPC networking, Lambda serverless, and DynamoDB databases.",
+        "mentors": "AWS SBG Mentors",
+        "schedule": "One in-person class Wednesday afternoon & one online session Saturday night",
+        "location": "AASTU Campus (In-Person) + Online",
+        "notes": "Cloud architecture, CI/CD pipelines, DevOps automation, containerization, and AWS core services.",
         "custom_fields": "",
     },
 ]

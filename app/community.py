@@ -14,10 +14,10 @@ EDUCATION_TRACK_DAYS = os.getenv("EDUCATION_TRACK_DAYS", "Every Saturday")
 EDUCATION_TRACK_TIME = os.getenv("EDUCATION_TRACK_TIME", "2:00 PM – 4:30 PM EAT (8:00 – 10:30 Local Time)")
 EDUCATION_TRACK_LOCATION = os.getenv("EDUCATION_TRACK_LOCATION", "AASTU Campus + Hybrid Virtual Stream")
 
-NEXT_EVENT_TITLE = os.getenv("NEXT_EVENT_TITLE", "AWS Education Track: Cloud Foundations & Core Services")
-NEXT_EVENT_DATE = os.getenv("NEXT_EVENT_DATE", "Saturday (Weekly Track)")
-NEXT_EVENT_TIME = os.getenv("NEXT_EVENT_TIME", "2:00 PM – 4:30 PM EAT")
-NEXT_EVENT_VENUE = os.getenv("NEXT_EVENT_VENUE", "AASTU Campus (Specific hall announced in @AWSAASTU) + Hybrid Stream")
+NEXT_EVENT_TITLE = os.getenv("NEXT_EVENT_TITLE", "AWS Community Day 2026")
+NEXT_EVENT_DATE = os.getenv("NEXT_EVENT_DATE", "Saturday, October 31, 2026")
+NEXT_EVENT_TIME = os.getenv("NEXT_EVENT_TIME", "Full-Day Event")
+NEXT_EVENT_VENUE = os.getenv("NEXT_EVENT_VENUE", "AASTU Campus")
 
 
 def get_about_text() -> str:
