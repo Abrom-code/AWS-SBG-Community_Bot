@@ -175,8 +175,9 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     ]
 
     assert labels == [
-        ["Challenges", "Feedback"],
-        ["About", "Help"],
+        ["🔹 Feedback", "🔹 Ask Question"],
+        ["🔹 Education Track", "🔹 Next Event"],
+        ["▫️ About Us", "▫️ Help"],
     ]
 
     ch_keyboard = bot.get_challenge_menu_keyboard()
@@ -190,8 +191,8 @@ def test_get_main_menu_keyboard_contains_expected_actions():
     fb_keyboard = bot.get_feedback_menu_keyboard()
     fb_labels = [[button.text for button in row] for row in fb_keyboard.keyboard]
     assert fb_labels == [
-        ["Submit Feedback", "About Support"],
-        ["Main Menu"],
+        ["🔹 Feedback", "🔹 Ask Question"],
+        ["▫️ About Support", "▫️ Main Menu"],
     ]
 
 
@@ -218,7 +219,7 @@ def test_help_command_returns_expected_shortcuts():
 
     assert update.message.reply_text_calls[0]["text"].startswith("✦")
     assert "/start" in update.message.reply_text_calls[0]["text"]
-    assert "/challenge" in update.message.reply_text_calls[0]["text"]
+    assert "/education" in update.message.reply_text_calls[0]["text"]
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
 
 
@@ -235,6 +236,19 @@ def test_feedback_command_sets_waiting_state_and_removes_keyboard():
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
 
 
+def test_support_command_sets_waiting_state_and_removes_keyboard():
+    asyncio.run(db.reset_db())
+    update = FakeUpdate(user_id=112)
+    context = FakeContext()
+
+    asyncio.run(bot.support_command(update, context))
+
+    state = asyncio.run(db.get_user_state(112))
+    assert state == bot.WAITING_FOR_QUESTION
+    assert update.message.reply_text_calls[0]["reply_markup"] is not None
+    assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
+
+
 def test_cancel_command_clears_feedback_state_and_restores_keyboard():
     asyncio.run(db.reset_db())
     update = FakeUpdate(user_id=222)
@@ -245,16 +259,30 @@ def test_cancel_command_clears_feedback_state_and_restores_keyboard():
 
     state = asyncio.run(db.get_user_state(222))
     assert state is None
-    assert update.message.reply_text_calls[0]["text"] == "❌ Feedback submission cancelled."
+    assert update.message.reply_text_calls[0]["text"] == "▪️ Feedback submission cancelled."
 
     labels = [
         [button.text for button in row]
         for row in update.message.reply_text_calls[0]["reply_markup"].keyboard
     ]
     assert labels == [
-        ["Challenges", "Feedback"],
-        ["About", "Help"],
+        ["🔹 Feedback", "🔹 Ask Question"],
+        ["🔹 Education Track", "🔹 Next Event"],
+        ["▫️ About Us", "▫️ Help"],
     ]
+
+
+def test_cancel_command_clears_question_state_and_restores_keyboard():
+    asyncio.run(db.reset_db())
+    update = FakeUpdate(user_id=223)
+    context = FakeContext()
+    asyncio.run(db.set_user_state(223, bot.WAITING_FOR_QUESTION))
+
+    asyncio.run(bot.cancel_command(update, context))
+
+    state = asyncio.run(db.get_user_state(223))
+    assert state is None
+    assert update.message.reply_text_calls[0]["text"] == "▪️ Question submission cancelled."
 
 
 def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
@@ -272,16 +300,52 @@ def test_handle_message_forwards_feedback_to_admin_group_and_returns_success():
     chat_id, text, message_id, parse_mode = context.bot.sent_messages[0]
     assert chat_id == 999
     assert parse_mode == ParseMode.HTML
-    assert "👤 <b>From:</b>" in text
-    assert "🆔 <b>User ID:</b> <code>333</code>" in text
+    assert "✦ <b>Feedback</b>" in text
+    assert "• <b>From:</b>" in text
+    assert "• <b>User ID:</b> <code>333</code>" in text
     assert "<blockquote>This is a test feedback message</blockquote>" in text
     
     submission = asyncio.run(db.get_feedback_submission(message_id))
     assert submission["sender_chat_id"] == 333
+    assert submission["ticket_type"] == "feedback"
     assert update.message.reply_text_calls[-1]["text"].startswith("✓ <b>Thank you!")
+    assert "feedback" in update.message.reply_text_calls[-1]["text"].lower()
     assert update.message.reply_text_calls[-1]["parse_mode"] == ParseMode.HTML
     
     state = asyncio.run(db.get_user_state(333))
+    assert state is None
+
+    bot.ADMIN_GROUP_ID = original_admin_group_id
+
+
+def test_handle_message_forwards_question_to_admin_group_and_returns_success():
+    asyncio.run(db.reset_db())
+    original_admin_group_id = bot.ADMIN_GROUP_ID
+    bot.ADMIN_GROUP_ID = 999
+
+    update = FakeUpdate(user_id=334, text="How do I join the Saturday Education Track stream?")
+    context = FakeContext()
+    asyncio.run(db.set_user_state(334, bot.WAITING_FOR_QUESTION))
+
+    asyncio.run(bot.handle_message(update, context))
+
+    assert len(context.bot.sent_messages) == 1
+    chat_id, text, message_id, parse_mode = context.bot.sent_messages[0]
+    assert chat_id == 999
+    assert parse_mode == ParseMode.HTML
+    assert "✦ <b>Question</b>" in text
+    assert "• <b>From:</b>" in text
+    assert "• <b>User ID:</b> <code>334</code>" in text
+    assert "<blockquote>How do I join the Saturday Education Track stream?</blockquote>" in text
+    
+    submission = asyncio.run(db.get_feedback_submission(message_id))
+    assert submission["sender_chat_id"] == 334
+    assert submission["ticket_type"] == "question"
+    assert update.message.reply_text_calls[-1]["text"].startswith("✓ <b>Thank you!")
+    assert "question" in update.message.reply_text_calls[-1]["text"].lower()
+    assert update.message.reply_text_calls[-1]["parse_mode"] == ParseMode.HTML
+    
+    state = asyncio.run(db.get_user_state(334))
     assert state is None
 
     bot.ADMIN_GROUP_ID = original_admin_group_id
@@ -350,7 +414,7 @@ def test_start_command_sends_photo_when_logo_exists(monkeypatch):
     asyncio.run(bot.start_command(update, context))
     
     assert len(update.message.reply_photo_calls) == 1
-    assert "AWS SBG AASTU Community & Challenge Bot!" in update.message.reply_photo_calls[0]["caption"]
+    assert "AWS SBG AASTU Community Bot" in update.message.reply_photo_calls[0]["caption"]
     assert "<b>Join our community:</b> @AWSAASTU" in update.message.reply_photo_calls[0]["caption"]
     assert update.message.reply_photo_calls[0]["parse_mode"] == ParseMode.HTML
 
@@ -365,7 +429,7 @@ def test_start_command_falls_back_to_text_when_logo_missing(monkeypatch):
     
     assert len(update.message.reply_photo_calls) == 0
     assert len(update.message.reply_text_calls) == 1
-    assert "AWS SBG AASTU Community & Challenge Bot!" in update.message.reply_text_calls[0]["text"]
+    assert "AWS SBG AASTU Community Bot" in update.message.reply_text_calls[0]["text"]
     assert "<b>Join our community:</b> @AWSAASTU" in update.message.reply_text_calls[0]["text"]
     assert update.message.reply_text_calls[0]["parse_mode"] == ParseMode.HTML
 
@@ -414,8 +478,8 @@ def test_handle_user_edited_feedback_updates_admin_group_card():
 
     assert len(context.bot.edited_messages) == 1
     chat_id, message_id, text, parse_mode = context.bot.edited_messages[0]
-    assert "<i>(edited)</i>" in text
-    assert "🆔 <b>User ID:</b> <code>555</code>" in text
+    assert "✦ <b>Feedback</b> <i>(edited)</i>" in text
+    assert "• <b>User ID:</b> <code>555</code>" in text
     assert "<blockquote>Updated feedback description.</blockquote>" in text
 
 def test_challenge_hub_and_feedback_hub_commands():
@@ -424,63 +488,100 @@ def test_challenge_hub_and_feedback_hub_commands():
     context = FakeContext()
 
     asyncio.run(bot.challenge_hub_command(update, context))
-    assert len(update.message.reply_text_calls) == 2
-    assert "Challenge Center" in update.message.reply_text_calls[0]["text"]
-    assert "Leaderboards" in [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
-    assert "AWS Builder Challenges" in update.message.reply_text_calls[1]["text"]
+    assert len(update.message.reply_text_calls) == 1
+    assert "Challenge Center Update" in update.message.reply_text_calls[0]["text"]
+    assert "Education Track" in update.message.reply_text_calls[0]["text"]
 
     asyncio.run(bot.feedback_hub_command(update, context))
-    assert len(update.message.reply_text_calls) == 3
-    assert "Feedback & Community Support Hub" in update.message.reply_text_calls[2]["text"]
-    assert "Submit Feedback" in [b.text for row in update.message.reply_text_calls[2]["reply_markup"].keyboard for b in row]
+    assert len(update.message.reply_text_calls) == 2
+    assert "Feedback & Community Support Hub" in update.message.reply_text_calls[1]["text"]
+    assert any("Feedback" in b.text for row in update.message.reply_text_calls[1]["reply_markup"].keyboard for b in row)
 
 
 def test_main_menu_challenges_click_displays_active_challenges_directly():
-    """Verifies that clicking 'Challenges' or typing /challenges updates the bottom keyboard and displays the card."""
+    """Verifies that clicking 'Challenges' informs the user that challenges are paused and directs to education track."""
     asyncio.run(db.reset_db())
-    from app.challenge import service
-    ch_id = asyncio.run(service.create_challenge(title="Direct Challenge Sprint", category="DevOps"))
-    asyncio.run(service.update_challenge_status(ch_id, "LIVE"))
-
     update = FakeUpdate(user_id=123, text="Challenges")
     context = FakeContext()
 
     asyncio.run(bot.handle_message(update, context))
-    assert len(update.message.reply_text_calls) == 2
-    # First call updates the bottom persistent keyboard
-    assert "Challenge Center" in update.message.reply_text_calls[0]["text"]
-    bottom_buttons = [b.text for row in update.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
-    assert "Leaderboards" in bottom_buttons
-    assert "Past Challenges" in bottom_buttons
-    assert "Main Menu" in bottom_buttons
-
-    # Second call displays the challenge card with inline buttons
-    resp = update.message.reply_text_calls[1]["text"]
-    assert "Direct Challenge Sprint" in resp
-    assert "Status: Live Now" in resp
-    btn_labels = [b.text for row in update.message.reply_text_calls[1]["reply_markup"].inline_keyboard for b in row]
-    assert any("Start Challenge" in b for b in btn_labels)
-    assert "Refresh Status" in btn_labels
-
-    # Also verify /challenges command directly
-    update_cmd = FakeUpdate(user_id=123)
-    asyncio.run(bot.challenge_command(update_cmd, context))
-    assert len(update_cmd.message.reply_text_calls) == 2
-    cmd_bottom = [b.text for row in update_cmd.message.reply_text_calls[0]["reply_markup"].keyboard for b in row]
-    assert "Leaderboards" in cmd_bottom
+    assert len(update.message.reply_text_calls) == 1
+    assert "Challenge Center Update" in update.message.reply_text_calls[0]["text"]
+    assert "Education Track" in update.message.reply_text_calls[0]["text"]
 
 
 def test_direct_feedback_and_support_navigation():
     asyncio.run(db.reset_db())
-    update = FakeUpdate(user_id=777, text="💬 Feedback & Support")
-    context = FakeContext()
-
-    asyncio.run(bot.handle_message(update, context))
-    assert len(update.message.reply_text_calls) == 1
-    assert "Please type your feedback, suggestion, or issue below" in update.message.reply_text_calls[0]["text"]
     
-    state = asyncio.run(db.get_user_state(777))
-    assert state == bot.WAITING_FOR_FEEDBACK
+    # Test 1: Clicking "🔹 Feedback" starts feedback flow
+    update1 = FakeUpdate(user_id=777, text="🔹 Feedback")
+    context1 = FakeContext()
+    asyncio.run(bot.handle_message(update1, context1))
+    assert len(update1.message.reply_text_calls) == 1
+    assert "Please type your message below" in update1.message.reply_text_calls[0]["text"]
+    state1 = asyncio.run(db.get_user_state(777))
+    assert state1 == bot.WAITING_FOR_FEEDBACK
+
+    # Test 2: Clicking "🔹 Ask Question" starts question flow
+    update2 = FakeUpdate(user_id=778, text="🔹 Ask Question")
+    context2 = FakeContext()
+    asyncio.run(bot.handle_message(update2, context2))
+    assert len(update2.message.reply_text_calls) == 1
+    assert "Please type your question below" in update2.message.reply_text_calls[0]["text"]
+    state2 = asyncio.run(db.get_user_state(778))
+    assert state2 == bot.WAITING_FOR_QUESTION
+
+    # Test 3: Legacy "💬 Feedback & Support" opens hub menu with options
+    update3 = FakeUpdate(user_id=779, text="💬 Feedback & Support")
+    context3 = FakeContext()
+    asyncio.run(bot.handle_message(update3, context3))
+    assert len(update3.message.reply_text_calls) == 1
+    assert "Feedback & Community Support Hub" in update3.message.reply_text_calls[0]["text"]
+
+
+def test_handle_admin_reply_to_question_ticket():
+    asyncio.run(db.reset_db())
+    context = FakeContext()
+    
+    # Save submission with ticket_type="question"
+    asyncio.run(db.save_feedback_submission(15, 888, "Question Asker", ticket_type="question"))
+
+    update = FakeUpdate(user_id=1, text="The education track begins at 2:00 PM this Saturday.")
+    update.message.message_id = 99
+    update.message.reply_to_message = type("ReplyToMessage", (), {"message_id": 15})()
+
+    asyncio.run(bot.handle_admin_reply(update, context))
+
+    assert len(context.bot.sent_messages) == 1
+    chat_id, text, _, parse_mode = context.bot.sent_messages[0]
+    assert chat_id == 888
+    assert "✦ <b>Answer from the AWS Student Builder Core Team</b>" in text
+    assert "The education track begins at 2:00 PM this Saturday." in text
+
+
+def test_handle_user_edited_question_updates_admin_group_card():
+    asyncio.run(db.reset_db())
+    context = FakeContext()
+    original_admin_group_id = bot.ADMIN_GROUP_ID
+    bot.ADMIN_GROUP_ID = 999
+    
+    # Save question submission with user_message_id
+    asyncio.run(db.save_feedback_submission(message_id=101, sender_chat_id=666, sender_name="John", user_message_id=300, ticket_type="question"))
+    
+    edit_update = FakeUpdate(user_id=666, text="Updated question details.", is_edited=True)
+    edit_update.edited_message.message_id = 300
+    edit_update.effective_user.first_name = "John"
+    edit_update.effective_user.username = "john_dev"
+
+    asyncio.run(bot.handle_user_edited_feedback(edit_update, context))
+
+    assert len(context.bot.edited_messages) == 1
+    chat_id, message_id, text, parse_mode = context.bot.edited_messages[0]
+    assert "✦ <b>Question</b> <i>(edited)</i>" in text
+    assert "<i>(edited)</i>" in text
+    assert "• <b>User ID:</b> <code>666</code>" in text
+    assert "<blockquote>Updated question details.</blockquote>" in text
+    bot.ADMIN_GROUP_ID = original_admin_group_id
 
 
 def test_scoring_rules_command_renders_guide():
@@ -547,7 +648,7 @@ def test_admin_command_security_restrictions(monkeypatch):
     asyncio.run(admin_command(admin_update, admin_context))
 
     assert len(admin_update.message.reply_text_calls) == 1
-    assert "AWS SBG Challenge Admin Panel" in admin_update.message.reply_text_calls[0]["text"]
+    assert "AWS SBG Admin Operations Center" in admin_update.message.reply_text_calls[0]["text"]
     assert admin_update.message.reply_text_calls[0]["reply_markup"] is not None
 
 
@@ -571,7 +672,6 @@ def test_past_challenges_command_and_shortcuts():
 
 def test_admin_broadcast_presets_and_workflow(monkeypatch):
     from app.challenge.admin import handle_admin_callback
-    from app.challenge.service import create_challenge, update_challenge_status
 
     monkeypatch.setenv("ADMIN_USER_IDS", "99999")
 
@@ -579,33 +679,29 @@ def test_admin_broadcast_presets_and_workflow(monkeypatch):
     asyncio.run(db.set_user_state(501, "ACTIVE"))
     asyncio.run(db.set_user_state(502, "ACTIVE"))
 
-    # 2. Open broadcast menu
+    # 2. Click broadcast -> directly prompts to enter announcement text
     q1 = FakeCallbackQuery(user_id=99999, data="adm_broadcast")
     up1 = FakeUpdate(user_id=99999, callback_query=q1)
     ctx1 = FakeContext()
 
     asyncio.run(handle_admin_callback(up1, ctx1))
-    assert "Community Broadcast System" in q1.edited_text
-    assert q1.reply_markup is not None
+    assert "Community Broadcast Center" in q1.edited_text
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == "WAITING_FOR_ADMIN_BROADCAST"
 
-    # 3. Choose leaderboard preset
-    q2 = FakeCallbackQuery(user_id=99999, data="adm_bcast_preset:leaderboard")
-    up2 = FakeUpdate(user_id=99999, callback_query=q2)
-    ctx2 = FakeContext()
-
-    asyncio.run(handle_admin_callback(up2, ctx2))
-    assert "BROADCAST PREVIEW" in q2.edited_text
-    assert "bcast_text" in ctx2.user_data
+    # 3. Admin sends the announcement message text
+    up_msg = FakeUpdate(user_id=99999, text="🏆 Important AWS Education Track Announcement!")
+    asyncio.run(bot.handle_message(up_msg, ctx1))
+    assert "BROADCAST PREVIEW" in up_msg.message.reply_text_calls[0]["text"]
+    assert ctx1.user_data["bcast_text"] == "🏆 Important AWS Education Track Announcement!"
 
     # 4. Confirm & Send to all
-    q3 = FakeCallbackQuery(user_id=99999, data="adm_bcast_send:preset_leaderboard")
+    q3 = FakeCallbackQuery(user_id=99999, data="adm_bcast_send:custom")
     up3 = FakeUpdate(user_id=99999, callback_query=q3)
-    ctx3 = FakeContext()
-    ctx3.user_data["bcast_text"] = "🏆 AWS Builder Standings Updated!"
 
-    asyncio.run(handle_admin_callback(up3, ctx3))
+    asyncio.run(handle_admin_callback(up3, ctx1))
     assert "Broadcast Complete" in q3.edited_text
-    assert len(ctx3.bot.send_message_calls) >= 2
+    assert len(ctx1.bot.send_message_calls) >= 2
 
 
 def test_admin_monthly_report_callback_and_broadcast(monkeypatch):
@@ -682,10 +778,20 @@ def test_admin_panel_keyboard_layout_and_no_question_bank():
     flat_buttons = [btn.text for row in kb.inline_keyboard for btn in row]
 
     # Verify only contextual actions remain inline (rest on bottom menu)
-    assert flat_buttons == [
-        "Create Challenge",
-        "Manage Challenges",
-    ]
+    assert flat_buttons in (
+        [
+            "🔹 Send Community Broadcast",
+            "🔹 Manage Education",
+            "🔹 Manage Next Event",
+            "▫️ Community Stats",
+        ],
+        [
+            "📢 Send Community Broadcast",
+            "🔹 Manage Education",
+            "🔹 Manage Next Event",
+            "📊 Community Stats",
+        ],
+    )
     # Question Bank must NOT be in the admin panel
     assert not any("Question Bank" in b for b in flat_buttons)
 
@@ -1293,10 +1399,9 @@ def test_zero_question_challenge_remains_draft_and_independent_publishing(monkey
 def test_setup_bot_commands_and_notifications_command():
     ctx = FakeContext()
     asyncio.run(bot.setup_bot_commands(ctx.bot))
-    assert hasattr(ctx.bot, "commands")
-    assert any(c.command == "challenge" for c in ctx.bot.commands)
-    assert any(c.command == "notifications" for c in ctx.bot.commands)
-    assert any(c.command == "leaderboard" for c in ctx.bot.commands)
+    assert any(c.command == "education" for c in ctx.bot.commands)
+    assert any(c.command == "events" for c in ctx.bot.commands)
+    assert any(c.command == "about" for c in ctx.bot.commands)
     assert any(c.command == "admin" for c in ctx.bot.commands)
     assert ctx.bot.menu_button is not None
 
@@ -1412,6 +1517,590 @@ def test_edit_schedule_with_copied_chat_prefix_and_direct_input(monkeypatch):
     ch = asyncio.run(get_challenge(ch_id))
     assert "2026-09-02T12:25:00" in ch["starts_at"]
     assert "2026-09-02T12:50:00" in ch["ends_at"]
+
+
+def test_education_track_command_and_menu_button():
+    """Verifies that /education and the '📚 Education Track' button return the curriculum and schedule."""
+    from app.community import education_command
+    up1 = FakeUpdate(user_id=123)
+    ctx1 = FakeContext()
+    asyncio.run(education_command(up1, ctx1))
+    assert len(up1.message.reply_text_calls) == 1
+    text1 = up1.message.reply_text_calls[0]["text"]
+    assert "AWS SBG Education Track" in text1
+    assert "Cloud Foundations" in text1
+    assert "Every Saturday" in text1
+    assert up1.message.reply_text_calls[0]["reply_markup"] is not None
+
+    # Via bottom menu text
+    up2 = FakeUpdate(user_id=123, text="📚 Education Track")
+    ctx2 = FakeContext()
+    asyncio.run(bot.handle_message(up2, ctx2))
+    assert len(up2.message.reply_text_calls) == 1
+    assert "AWS SBG Education Track" in up2.message.reply_text_calls[0]["text"]
+
+
+def test_events_command_and_menu_button():
+    """Verifies that /events and the '📅 Next Event' button return upcoming program info."""
+    from app.community import events_command
+    up1 = FakeUpdate(user_id=123)
+    ctx1 = FakeContext()
+    asyncio.run(events_command(up1, ctx1))
+    assert len(up1.message.reply_text_calls) == 1
+    text1 = up1.message.reply_text_calls[0]["text"]
+    assert "Upcoming Event & Community Programs" in text1
+    assert "Featured Session" in text1
+    assert up1.message.reply_text_calls[0]["reply_markup"] is not None
+
+    # Via bottom menu text
+    up2 = FakeUpdate(user_id=123, text="📅 Next Event")
+    ctx2 = FakeContext()
+    asyncio.run(bot.handle_message(up2, ctx2))
+    assert len(up2.message.reply_text_calls) == 1
+    assert "Upcoming Event & Community Programs" in up2.message.reply_text_calls[0]["text"]
+
+
+def test_about_command_and_menu_button():
+    """Verifies that /about and the 'ℹ️ About Us' button return team & community details."""
+    from app.community import about_command
+    up1 = FakeUpdate(user_id=123)
+    ctx1 = FakeContext()
+    asyncio.run(about_command(up1, ctx1))
+    assert len(up1.message.reply_text_calls) == 1
+    text1 = up1.message.reply_text_calls[0]["text"]
+    assert "About AWS Student Builder Group (AASTU)" in text1
+    assert "The Team" in text1
+    assert "@AWSAASTU" in text1
+    assert up1.message.reply_text_calls[0]["reply_markup"] is not None
+
+    # Via bottom menu text
+    up2 = FakeUpdate(user_id=123, text="ℹ️ About Us")
+    ctx2 = FakeContext()
+    asyncio.run(bot.handle_message(up2, ctx2))
+    assert len(up2.message.reply_text_calls) == 1
+    assert "About AWS Student Builder Group (AASTU)" in up2.message.reply_text_calls[0]["text"]
+
+
+def test_community_inline_callback_navigation():
+    """Verifies inline buttons switch between education, events, and about smoothly."""
+    from app.community import handle_community_callback
+
+    # 1. Click comm_education
+    q_edu = FakeCallbackQuery(user_id=123, data="comm_education")
+    up_edu = FakeUpdate(user_id=123, callback_query=q_edu)
+    ctx = FakeContext()
+    asyncio.run(handle_community_callback(up_edu, ctx))
+    assert "AWS SBG Education Track" in q_edu.edited_text
+
+    # 2. Click comm_events
+    q_ev = FakeCallbackQuery(user_id=123, data="comm_events")
+    up_ev = FakeUpdate(user_id=123, callback_query=q_ev)
+    asyncio.run(handle_community_callback(up_ev, ctx))
+    assert "Upcoming Event & Community Programs" in q_ev.edited_text
+
+    # 3. Click comm_about
+    q_ab = FakeCallbackQuery(user_id=123, data="comm_about")
+    up_ab = FakeUpdate(user_id=123, callback_query=q_ab)
+    asyncio.run(handle_community_callback(up_ab, ctx))
+    assert "About AWS Student Builder Group (AASTU)" in q_ab.edited_text
+
+
+def test_paused_challenge_commands_gracefully_fallback():
+    """Verifies that all paused challenge commands return the friendly pause notice."""
+    from app.community import challenge_paused_command
+    up = FakeUpdate(user_id=123)
+    ctx = FakeContext()
+    asyncio.run(challenge_paused_command(up, ctx))
+    assert len(up.message.reply_text_calls) == 1
+    text = up.message.reply_text_calls[0]["text"]
+    assert "Challenge Center Update" in text
+    assert "Education Track" in text
+    assert up.message.reply_text_calls[0]["reply_markup"] is not None
+
+
+def test_admin_broadcast_command_direct_prompt(monkeypatch):
+    """Verifies that /broadcast sets the WAITING_FOR_ADMIN_BROADCAST state and prompts for text."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "88888")
+    up = FakeUpdate(user_id=88888)
+    ctx = FakeContext()
+
+    asyncio.run(bot.broadcast_command(up, ctx))
+    assert len(up.message.reply_text_calls) == 1
+    assert "Community Broadcast Center" in up.message.reply_text_calls[0]["text"]
+    state = asyncio.run(db.get_user_state(88888))
+    assert state == "WAITING_FOR_ADMIN_BROADCAST"
+
+
+def test_admin_stats_and_support_info_menu_buttons(monkeypatch):
+    """Verifies admin bottom menu buttons for Community Stats and Support Info."""
+    monkeypatch.setenv("ADMIN_USER_IDS", "88888")
+    ctx = FakeContext()
+
+    # Community Stats
+    up_stats = FakeUpdate(user_id=88888, text="📊 Community Stats")
+    asyncio.run(bot.handle_message(up_stats, ctx))
+    assert "AWS SBG Community Statistics" in up_stats.message.reply_text_calls[0]["text"]
+
+    # Support Info
+    up_sup = FakeUpdate(user_id=88888, text="💬 Support Info")
+    asyncio.run(bot.handle_message(up_sup, ctx))
+    assert "AWS SBG Support & Helpdesk" in up_sup.message.reply_text_calls[0]["text"]
+
+
+def test_parse_education_track_input_multiline_and_custom_columns():
+    from app.challenge.admin import parse_education_track_input
+    raw = (
+        "Day: Every Sunday\n"
+        "Time: 3:00 PM - 5:00 PM EAT\n"
+        "Location: Block 54 Hall 3\n"
+        "Students: 200+ Enrolled\n"
+        "Leads: Lead Mentor John\n"
+        "Notes: Advanced Cloud Architecture & DynamoDB\n"
+        "Prerequisites: Linux Basics\n"
+        "Cohort: Cohort 2\n"
+    )
+    parsed = parse_education_track_input(raw)
+    assert parsed["edu_days"] == "Every Sunday"
+    assert parsed["edu_time"] == "3:00 PM - 5:00 PM EAT"
+    assert parsed["edu_location"] == "Block 54 Hall 3"
+    assert parsed["edu_students"] == "200+ Enrolled"
+    assert parsed["edu_leads"] == "Lead Mentor John"
+    assert parsed["edu_notes"] == "Advanced Cloud Architecture & DynamoDB"
+    assert "Prerequisites: Linux Basics" in parsed["edu_custom_fields"]
+    assert "Cohort: Cohort 2" in parsed["edu_custom_fields"]
+
+
+def test_parse_education_track_input_single_line():
+    from app.challenge.admin import parse_education_track_input
+    raw = "Saturday | 2:00 PM | Campus Hall 1 | 180 Students | Ambassador Jane | Serverless API"
+    parsed = parse_education_track_input(raw)
+    assert parsed["edu_days"] == "Saturday"
+    assert parsed["edu_time"] == "2:00 PM"
+    assert parsed["edu_location"] == "Campus Hall 1"
+    assert parsed["edu_students"] == "180 Students"
+    assert parsed["edu_leads"] == "Ambassador Jane"
+    assert parsed["edu_notes"] == "Serverless API"
+
+
+def test_parse_next_event_input_multiline_and_custom_columns():
+    from app.challenge.admin import parse_next_event_input
+    raw = (
+        "Title: Serverless Microservices Workshop\n"
+        "Date: Oct 28, 2026\n"
+        "Time: 2:00 PM - 5:00 PM\n"
+        "Venue: AASTU Central Lab\n"
+        "Prereqs: Laptop + AWS Free Tier\n"
+        "Description: Build and deploy serverless apps.\n"
+        "Guest Speaker: AWS Solution Architect\n"
+    )
+    parsed = parse_next_event_input(raw)
+    assert parsed["event_title"] == "Serverless Microservices Workshop"
+    assert parsed["event_date"] == "Oct 28, 2026"
+    assert parsed["event_time"] == "2:00 PM - 5:00 PM"
+    assert parsed["event_venue"] == "AASTU Central Lab"
+    assert parsed["event_prereqs"] == "Laptop + AWS Free Tier"
+    assert parsed["event_description"] == "Build and deploy serverless apps."
+    assert "Guest Speaker: AWS Solution Architect" in parsed["event_custom_fields"]
+
+
+def test_admin_manage_education_track_flow():
+    import os
+    from app.challenge.admin import _verified_admin_cache
+    from app.community import education_command
+    asyncio.run(db.reset_db())
+    os.environ["ADMIN_USER_IDS"] = "99999"
+    _verified_admin_cache.add(99999)
+
+    ctx = FakeContext()
+
+    # 1. Admin clicks "🔹 Manage Education Track"
+    up_btn = FakeUpdate(user_id=99999, text="🔹 Manage Education Track")
+    asyncio.run(bot.handle_message(up_btn, ctx))
+    assert len(up_btn.message.reply_text_calls) == 1
+    assert "Manage Education Track" in up_btn.message.reply_text_calls[0]["text"]
+
+    # 2. Trigger edit callback
+    cb_up = FakeUpdate(user_id=99999)
+    cb_up.callback_query = FakeCallbackQuery(user_id=99999, data="adm_update_edu")
+    asyncio.run(bot.handle_admin_callback(cb_up, ctx))
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == "WAITING_FOR_ADMIN_UPDATE_EDU"
+
+    # 3. Admin submits update text
+    update_text = (
+        "Day: Every Sunday\n"
+        "Time: 10:00 AM – 1:00 PM EAT\n"
+        "Location: Virtual Stream (Zoom)\n"
+        "Students: 250+ Cohort Members\n"
+        "Leads: Senior Cloud Leads\n"
+        "Notes: Cloud Practitioner & SysOps Sprint\n"
+        "Certifications: CCP & SAA\n"
+    )
+    msg_up = FakeUpdate(user_id=99999, text=update_text)
+    asyncio.run(bot.handle_message(msg_up, ctx))
+    assert "Education Track Update Preview" in msg_up.message.reply_text_calls[0]["text"]
+    assert "Every Sunday" in msg_up.message.reply_text_calls[0]["text"]
+    assert ctx.user_data.get("staged_edu") is not None
+
+    # 4. Admin clicks confirm save
+    save_cb = FakeUpdate(user_id=99999)
+    save_cb.callback_query = FakeCallbackQuery(user_id=99999, data="adm_save_edu")
+    asyncio.run(bot.handle_admin_callback(save_cb, ctx))
+
+    # 5. Verify member view reflects the saved details
+    member_up = FakeUpdate(user_id=12345)
+    asyncio.run(education_command(member_up, ctx))
+    member_text = member_up.message.reply_text_calls[0]["text"]
+    assert "Every Sunday" in member_text
+    assert "10:00 AM – 1:00 PM EAT" in member_text
+    assert "Virtual Stream (Zoom)" in member_text
+    assert "250+ Cohort Members" in member_text
+    assert "Senior Cloud Leads" in member_text
+    assert "<b>Certifications:</b> CCP &amp; SAA" in member_text
+
+
+def test_admin_manage_next_event_flow():
+    import os
+    from app.challenge.admin import _verified_admin_cache
+    from app.community import events_command
+    asyncio.run(db.reset_db())
+    os.environ["ADMIN_USER_IDS"] = "99999"
+    _verified_admin_cache.add(99999)
+
+    ctx = FakeContext()
+
+    # 1. Admin clicks "🔹 Manage Next Event"
+    up_btn = FakeUpdate(user_id=99999, text="🔹 Manage Next Event")
+    asyncio.run(bot.handle_message(up_btn, ctx))
+    assert len(up_btn.message.reply_text_calls) == 1
+    assert "Manage Next Event" in up_btn.message.reply_text_calls[0]["text"]
+
+    # 2. Trigger edit callback
+    cb_up = FakeUpdate(user_id=99999)
+    cb_up.callback_query = FakeCallbackQuery(user_id=99999, data="adm_update_event")
+    asyncio.run(bot.handle_admin_callback(cb_up, ctx))
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == "WAITING_FOR_ADMIN_UPDATE_EVENT"
+
+    # 3. Admin submits update text
+    update_text = (
+        "Title: AWS Hackathon 2026 Kickoff\n"
+        "Date: Nov 15, 2026\n"
+        "Time: 9:00 AM – 5:00 PM\n"
+        "Venue: AASTU Main Auditorium\n"
+        "Prereqs: Team of 3 builders + GitHub account\n"
+        "Description: 24-hour campus cloud hackathon with mentorship and awards.\n"
+        "Prize Pool: $1,000 in AWS Credits\n"
+    )
+    msg_up = FakeUpdate(user_id=99999, text=update_text)
+    asyncio.run(bot.handle_message(msg_up, ctx))
+    assert "Next Event Update Preview" in msg_up.message.reply_text_calls[0]["text"]
+    assert "AWS Hackathon 2026 Kickoff" in msg_up.message.reply_text_calls[0]["text"]
+    assert ctx.user_data.get("staged_event") is not None
+
+    # 4. Admin clicks confirm save
+    save_cb = FakeUpdate(user_id=99999)
+    save_cb.callback_query = FakeCallbackQuery(user_id=99999, data="adm_save_event")
+    asyncio.run(bot.handle_admin_callback(save_cb, ctx))
+
+    # 5. Verify member view reflects the saved details
+    member_up = FakeUpdate(user_id=12345)
+    asyncio.run(events_command(member_up, ctx))
+    member_text = member_up.message.reply_text_calls[0]["text"]
+    assert "AWS Hackathon 2026 Kickoff" in member_text
+    assert "Nov 15, 2026" in member_text
+    assert "AASTU Main Auditorium" in member_text
+    assert "Team of 3 builders + GitHub account" in member_text
+    assert "<b>Prize Pool:</b> $1,000 in AWS Credits" in member_text
+
+
+def test_default_seeded_education_tracks():
+    """Verifies that the bot starts with two flexible tracks with 60 students and 3 classes each."""
+    from app.db import reset_db, list_education_tracks, seed_default_education_tracks_if_empty
+    asyncio.run(reset_db())
+    asyncio.run(seed_default_education_tracks_if_empty())
+    tracks = asyncio.run(list_education_tracks(active_only=True))
+    assert len(tracks) == 2
+    t1 = tracks[0]
+    t2 = tracks[1]
+    assert "Continues to the end of the year" in t1["duration"]
+    assert "60 students (3 classes)" in t1["students"]
+    assert "1 mentor per class" in t1["mentors"]
+    assert "Continues to the end of the year" in t2["duration"]
+    assert "60 students (3 classes)" in t2["students"]
+    assert "1 mentor per class" in t2["mentors"]
+
+
+def test_parse_track_input_flexible_omissions():
+    """Verifies that every detail is optional in parse_track_input and can be skipped without errors."""
+    from app.challenge.admin import parse_track_input
+
+    # 1. Minimal input: only title and notes (duration, students, mentors, schedule, location skipped)
+    raw1 = (
+        "Title: Generative AI & Bedrock\n"
+        "Notes: Hands-on foundation models and prompt engineering on AWS.\n"
+    )
+    p1 = parse_track_input(raw1)
+    assert p1["title"] == "Generative AI & Bedrock"
+    assert p1["notes"] == "Hands-on foundation models and prompt engineering on AWS."
+    assert "duration" not in p1
+    assert "students" not in p1
+    assert "mentors" not in p1
+    assert "schedule" not in p1
+    assert "location" not in p1
+
+    # 2. Pipe format with omitted/empty middle fields
+    raw2 = "DevOps Track | Continues to December | 60 students ||||"
+    p2 = parse_track_input(raw2)
+    assert p2["title"] == "DevOps Track"
+    assert p2["duration"] == "Continues to December"
+    assert p2["students"] == "60 students"
+    assert "mentors" not in p2
+    assert "schedule" not in p2
+
+    # 3. Custom extra columns preserved
+    raw3 = (
+        "Title: Security & IAM Track\n"
+        "Duration: 6 Months\n"
+        "Prerequisites: AWS Builder ID\n"
+        "Lab Cloud: Free Tier Supported\n"
+    )
+    p3 = parse_track_input(raw3)
+    assert p3["title"] == "Security & IAM Track"
+    assert p3["duration"] == "6 Months"
+    assert "Prerequisites: AWS Builder ID" in p3["custom_fields"]
+    assert "Lab Cloud: Free Tier Supported" in p3["custom_fields"]
+
+
+def test_format_track_card_skips_omitted_fields():
+    """Verifies that format_track_card completely excludes omitted fields rather than showing placeholders."""
+    from app.community import format_track_card
+
+    # Track with only title, students, and notes (duration, mentors, schedule, location skipped)
+    partial_track = {
+        "title": "Cloud Networking Deep Dive",
+        "students": "60 students (3 classes)",
+        "notes": "VPC peering, Transit Gateway, and Direct Connect architectures.",
+    }
+    card = format_track_card(partial_track, 1, 1)
+
+    assert "Cloud Networking Deep Dive" in card
+    assert "60 students (3 classes)" in card
+    assert "VPC peering" in card
+    # Omitted fields should NOT appear
+    assert "• <b>Duration:</b>" not in card
+    assert "• <b>Schedule:</b>" not in card
+    assert "• <b>Location:</b>" not in card
+    assert "• <b>Mentors & Leads:</b>" not in card
+
+
+def test_admin_add_third_track_and_student_switcher():
+    """Verifies an admin adding a third track, and students switching between all tracks via inline buttons."""
+    import os
+    from app.challenge.admin import _verified_admin_cache
+    from app.community import education_command, handle_community_callback
+    from app.db import reset_db, list_education_tracks, seed_default_education_tracks_if_empty
+
+    asyncio.run(reset_db())
+    asyncio.run(seed_default_education_tracks_if_empty())
+    os.environ["ADMIN_USER_IDS"] = "99999"
+    _verified_admin_cache.add(99999)
+    ctx = FakeContext()
+
+    # 1. Admin triggers add track
+    cb_add = FakeUpdate(user_id=99999)
+    cb_add.callback_query = FakeCallbackQuery(user_id=99999, data="adm_add_track")
+    asyncio.run(bot.handle_admin_callback(cb_add, ctx))
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == "WAITING_FOR_ADMIN_NEW_TRACK"
+
+    # 2. Admin submits a 3rd track (skipping schedule and location)
+    new_track_text = (
+        "Title: DevOps & CI/CD Pipelines\n"
+        "Duration: Continues to the end of the year\n"
+        "Students: 60 students (3 classes)\n"
+        "Mentors: 1 mentor per class (3 mentors total)\n"
+        "Notes: GitHub Actions, CodePipeline, Docker, and ECS deployments.\n"
+    )
+    msg_up = FakeUpdate(user_id=99999, text=new_track_text)
+    asyncio.run(bot.handle_message(msg_up, ctx))
+    assert len(msg_up.message.reply_text_calls) == 1
+    assert "New Track Preview" in msg_up.message.reply_text_calls[0]["text"]
+    assert "DevOps &amp; CI/CD Pipelines" in msg_up.message.reply_text_calls[0]["text"]
+    assert "• <b>Location:</b>" not in msg_up.message.reply_text_calls[0]["text"]
+
+    # 3. Admin clicks confirm save
+    save_cb = FakeUpdate(user_id=99999)
+    save_cb.callback_query = FakeCallbackQuery(user_id=99999, data="adm_save_new_track")
+    asyncio.run(bot.handle_admin_callback(save_cb, ctx))
+
+    # Verify database now contains 3 active tracks
+    tracks = asyncio.run(list_education_tracks(active_only=True))
+    assert len(tracks) == 3
+    t3 = tracks[2]
+    assert t3["title"] == "DevOps & CI/CD Pipelines"
+
+    # 4. Student views education page
+    student_up = FakeUpdate(user_id=777)
+    asyncio.run(education_command(student_up, ctx))
+    call = student_up.message.reply_text_calls[0]
+    markup = call["reply_markup"]
+
+    # Verify track switcher inline buttons exist for all 3 tracks
+    callback_datas = [btn.callback_data for row in markup.inline_keyboard for btn in row if btn.callback_data]
+    assert f"comm_track:{tracks[0]['id']}" in callback_datas
+    assert f"comm_track:{tracks[1]['id']}" in callback_datas
+    assert f"comm_track:{tracks[2]['id']}" in callback_datas
+
+    # 5. Student clicks on track 3 button
+    toggle_up = FakeUpdate(user_id=777)
+    toggle_up.callback_query = FakeCallbackQuery(user_id=777, data=f"comm_track:{tracks[2]['id']}")
+    asyncio.run(handle_community_callback(toggle_up, ctx))
+    assert "DevOps &amp; CI/CD Pipelines" in toggle_up.callback_query.edited_text
+    assert "GitHub Actions, CodePipeline" in toggle_up.callback_query.edited_text
+
+
+def test_admin_edit_and_delete_track_flow():
+    """Verifies editing specific track fields and deleting a track via admin console."""
+    import os
+    from app.challenge.admin import _verified_admin_cache
+    from app.db import reset_db, list_education_tracks, seed_default_education_tracks_if_empty
+
+    asyncio.run(reset_db())
+    asyncio.run(seed_default_education_tracks_if_empty())
+    os.environ["ADMIN_USER_IDS"] = "99999"
+    _verified_admin_cache.add(99999)
+    ctx = FakeContext()
+
+    tracks_before = asyncio.run(list_education_tracks(active_only=True))
+    target_track_id = tracks_before[0]["id"]
+
+    # 1. Admin triggers edit for track 1
+    cb_edit = FakeUpdate(user_id=99999)
+    cb_edit.callback_query = FakeCallbackQuery(user_id=99999, data=f"adm_edit_track:{target_track_id}")
+    asyncio.run(bot.handle_admin_callback(cb_edit, ctx))
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == f"WAITING_FOR_ADMIN_EDIT_TRACK:{target_track_id}"
+
+    # 2. Admin submits updated student and note fields (skipping unchanged fields)
+    msg_edit = FakeUpdate(user_id=99999, text="Students: 80 students (4 classes)\nNotes: Expanded cohort with advanced serverless.")
+    asyncio.run(bot.handle_message(msg_edit, ctx))
+    assert "Updated Track Preview" in msg_edit.message.reply_text_calls[0]["text"]
+
+    # 3. Admin confirms edit save
+    save_cb = FakeUpdate(user_id=99999)
+    save_cb.callback_query = FakeCallbackQuery(user_id=99999, data=f"adm_save_edit_track:{target_track_id}")
+    asyncio.run(bot.handle_admin_callback(save_cb, ctx))
+
+    # Verify track 1 updated in DB
+    updated_track = asyncio.run(db.get_education_track(target_track_id))
+    assert updated_track["students"] == "80 students (4 classes)"
+    assert "Expanded cohort with advanced serverless" in updated_track["notes"]
+
+    # 4. Admin deletes track 2
+    del_track_id = tracks_before[1]["id"]
+    del_cb = FakeUpdate(user_id=99999)
+    del_cb.callback_query = FakeCallbackQuery(user_id=99999, data=f"adm_del_track:{del_track_id}")
+    asyncio.run(bot.handle_admin_callback(del_cb, ctx))
+
+    # Verify remaining track count is 1
+    tracks_after = asyncio.run(list_education_tracks(active_only=True))
+    assert len(tracks_after) == 1
+    assert tracks_after[0]["id"] == target_track_id
+
+
+def test_broadcast_large_length_with_pipes_does_not_create_challenge():
+    """Verifies that large broadcast messages containing pipe characters '|' do not accidentally trigger challenge creation."""
+    import os
+    from app.challenge.admin import _verified_admin_cache
+    from app.challenge.service import list_challenges
+    from app.db import reset_db, register_or_update_bot_user
+
+    asyncio.run(reset_db())
+    os.environ["ADMIN_USER_IDS"] = "99999"
+    _verified_admin_cache.add(99999)
+    asyncio.run(register_or_update_bot_user(1001, "Alice"))
+    asyncio.run(register_or_update_bot_user(1002, "Bob"))
+
+    ctx = FakeContext()
+
+    # 1. Admin triggers broadcast
+    cb_bcast = FakeUpdate(user_id=99999)
+    cb_bcast.callback_query = FakeCallbackQuery(user_id=99999, data="adm_broadcast")
+    asyncio.run(bot.handle_admin_callback(cb_bcast, ctx))
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == "WAITING_FOR_ADMIN_BROADCAST"
+
+    # 2. Admin submits a large announcement text with pipe characters and multiple sections
+    large_broadcast_text = (
+        "🚀 <b>AWS Student Builder Special Cohort Announcement!</b>\n\n"
+        "We are excited to kick off our multi-track cloud program for this semester!\n\n"
+        "<b>Track Details:</b>\n"
+        "• Track 1: Cloud Practitioner & Core Services | Saturday 2:00 PM | Campus Hall 54\n"
+        "• Track 2: Solutions Architect & Serverless | Saturday 2:00 PM | Campus Hall 55\n"
+        "• Track 3: DevOps & Kubernetes CI/CD | Sunday 10:00 AM | Virtual Lab Stream\n\n"
+        "<b>What To Bring:</b>\n"
+        "Laptop | AWS Free Tier Account | GitHub Profile\n\n"
+        "Please ensure you join our community group and review the prerequisites before attending. "
+        "Mentors will be present in every class to provide 1-on-1 assistance with console setups and labs!\n\n"
+        + ("Additional study resources and documentation will be shared weekly in the official channel. " * 10)
+    )
+    assert len(large_broadcast_text) > 800
+    assert large_broadcast_text.count("|") >= 4
+
+    msg_up = FakeUpdate(user_id=99999, text=large_broadcast_text)
+    asyncio.run(bot.handle_message(msg_up, ctx))
+
+    # CRITICAL: Verify NO challenge was created!
+    challenges = asyncio.run(list_challenges(limit=10))
+    assert len(challenges) == 0, f"Expected 0 challenges, found {len(challenges)}! Challenge was mistakenly created."
+
+    # Verify that the message was treated as a Broadcast Preview
+    assert len(msg_up.message.reply_text_calls) == 1
+    reply_text = msg_up.message.reply_text_calls[0]["text"]
+    assert "BROADCAST PREVIEW" in reply_text
+    assert "Target Audience:" in reply_text
+    assert ctx.user_data.get("bcast_text") == large_broadcast_text
+
+    # 3. Confirm and send broadcast
+    send_cb = FakeUpdate(user_id=99999)
+    send_cb.callback_query = FakeCallbackQuery(user_id=99999, data="adm_bcast_send:custom")
+    asyncio.run(bot.handle_admin_callback(send_cb, ctx))
+    assert "Broadcast Complete" in send_cb.callback_query.edited_text
+    assert "Delivered Successfully:" in send_cb.callback_query.edited_text
+
+
+def test_long_message_without_state_does_not_create_accidental_challenge():
+    """Verifies that an admin sending a multi-line long message with pipes when state is None never triggers challenge creation."""
+    import os
+    from app.challenge.admin import _verified_admin_cache
+    from app.challenge.service import list_challenges
+    from app.db import reset_db
+
+    asyncio.run(reset_db())
+    os.environ["ADMIN_USER_IDS"] = "99999"
+    _verified_admin_cache.add(99999)
+    ctx = FakeContext()
+
+    state = asyncio.run(db.get_user_state(99999))
+    assert state is None
+
+    long_message_with_pipes = (
+        "Hello everyone,\n"
+        "Here is the proposed schedule for this month:\n"
+        "Week 1: IAM | EC2 | S3\n"
+        "Week 2: VPC | Subnets | Route Tables\n"
+        "Week 3: DynamoDB | Lambda | API Gateway\n"
+        "Let me know your thoughts!"
+    )
+    msg_up = FakeUpdate(user_id=99999, text=long_message_with_pipes)
+    asyncio.run(bot.handle_message(msg_up, ctx))
+
+    # Should NOT create a challenge
+    challenges = asyncio.run(list_challenges(limit=10))
+    assert len(challenges) == 0
+
+
 
 
 
