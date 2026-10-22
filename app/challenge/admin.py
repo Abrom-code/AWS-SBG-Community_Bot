@@ -1722,9 +1722,10 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         await query.edit_message_text(
             f"📢 <b>Community Broadcast Center</b>\n\n"
             f"• <b>Active Reach:</b> <code>{count}</code> registered members\n\n"
-            f"Please type or paste the announcement message you wish to broadcast.\n\n"
+            f"Please type, paste, or send the announcement message you wish to broadcast.\n\n"
             f"• Supports HTML formatting (<b>bold</b>, <i>italic</i>, <code>code</code>, links)\n"
-            f"• Type or paste your message directly in this chat\n\n"
+            f"• You can also send a photo with a caption\n"
+            f"• Type or send directly in this chat\n\n"
             f"<i>(Type /cancel to abort)</i>",
             parse_mode=ParseMode.HTML,
             reply_markup=InlineKeyboardMarkup([
@@ -1739,6 +1740,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             pass
         await set_user_state(user.id, None)
         context.user_data.pop("bcast_text", None)
+        context.user_data.pop("bcast_photo", None)
         await query.edit_message_text(
             "▪️ <b>Broadcast Cancelled</b>\n\nNo announcement was sent to members.",
             parse_mode=ParseMode.HTML,
@@ -1794,6 +1796,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             f"@AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
+        context.user_data.pop("bcast_photo", None)
 
         preview_text = (
             f"<b>BROADCAST PREVIEW</b>\n"
@@ -1822,6 +1825,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             "@AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
+        context.user_data.pop("bcast_photo", None)
 
         preview_text = (
             f"<b>BROADCAST PREVIEW</b>\n"
@@ -1865,6 +1869,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             f"@AWSAASTU"
         )
         context.user_data["bcast_text"] = bcast_text
+        context.user_data.pop("bcast_photo", None)
         users = await get_all_broadcast_user_ids()
         preview_text = (
             f"<b>BROADCAST PREVIEW (Monthly Report)</b>\n"
@@ -1883,8 +1888,9 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
             await query.answer()
         except Exception:
             pass
-        bcast_text = context.user_data.get("bcast_text")
-        if not bcast_text:
+        bcast_text = context.user_data.get("bcast_text") or ""
+        bcast_photo = context.user_data.get("bcast_photo")
+        if not bcast_text and not bcast_photo:
             await query.answer("No broadcast message prepared.", show_alert=True)
             return
 
@@ -1905,38 +1911,91 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
         failed = 0
         fail_reasons = []
 
-        # Safely chunk message if length exceeds Telegram's 4096 character limit
-        chunks = [bcast_text]
-        if len(bcast_text) > 4000:
-            chunks = []
-            rem = bcast_text
-            while rem:
-                if len(rem) <= 4000:
-                    chunks.append(rem)
-                    break
-                split_at = rem.rfind("\n", 0, 4000)
+        # If a photo is attached, prepare caption (max 1024 chars) and overflow chunks
+        if bcast_photo:
+            if len(bcast_text) <= 1024:
+                photo_caption = bcast_text if bcast_text else None
+                overflow_chunks = []
+            else:
+                split_at = bcast_text.rfind("\n", 0, 1024)
                 if split_at == -1:
-                    split_at = rem.rfind(" ", 0, 4000)
+                    split_at = bcast_text.rfind(" ", 0, 1024)
                 if split_at == -1:
-                    split_at = 4000
-                chunks.append(rem[:split_at])
-                rem = rem[split_at:].lstrip()
+                    split_at = 1024
+                photo_caption = bcast_text[:split_at]
+                rem = bcast_text[split_at:].lstrip()
+                overflow_chunks = []
+                while rem:
+                    if len(rem) <= 4000:
+                        overflow_chunks.append(rem)
+                        break
+                    s = rem.rfind("\n", 0, 4000)
+                    if s == -1:
+                        s = rem.rfind(" ", 0, 4000)
+                    if s == -1:
+                        s = 4000
+                    overflow_chunks.append(rem[:s])
+                    rem = rem[s:].lstrip()
+        else:
+            # Safely chunk message if length exceeds Telegram's 4096 character limit
+            chunks = [bcast_text]
+            if len(bcast_text) > 4000:
+                chunks = []
+                rem = bcast_text
+                while rem:
+                    if len(rem) <= 4000:
+                        chunks.append(rem)
+                        break
+                    split_at = rem.rfind("\n", 0, 4000)
+                    if split_at == -1:
+                        split_at = rem.rfind(" ", 0, 4000)
+                    if split_at == -1:
+                        split_at = 4000
+                    chunks.append(rem[:split_at])
+                    rem = rem[split_at:].lstrip()
 
         for uid in users:
             try:
-                for chunk in chunks:
+                if bcast_photo:
                     try:
-                        await context.bot.send_message(
+                        await context.bot.send_photo(
                             chat_id=uid,
-                            text=chunk,
-                            parse_mode=ParseMode.HTML,
+                            photo=bcast_photo,
+                            caption=photo_caption,
+                            parse_mode=ParseMode.HTML if photo_caption else None,
                         )
                     except Exception:
-                        # Fallback without HTML parse mode if message contains invalid or broken markup
-                        await context.bot.send_message(
+                        await context.bot.send_photo(
                             chat_id=uid,
-                            text=chunk,
+                            photo=bcast_photo,
+                            caption=photo_caption,
                         )
+                    for chunk in overflow_chunks:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=uid,
+                                text=chunk,
+                                parse_mode=ParseMode.HTML,
+                            )
+                        except Exception:
+                            await context.bot.send_message(
+                                chat_id=uid,
+                                text=chunk,
+                            )
+                else:
+                    for chunk in chunks:
+                        try:
+                            await context.bot.send_message(
+                                chat_id=uid,
+                                text=chunk,
+                                parse_mode=ParseMode.HTML,
+                            )
+                        except Exception:
+                            # Fallback without HTML parse mode if message contains invalid or broken markup
+                            await context.bot.send_message(
+                                chat_id=uid,
+                                text=chunk,
+                            )
                 sent += 1
                 logger.info(f"Broadcast delivered to user_id={uid}")
             except Exception as e:
@@ -1945,6 +2004,7 @@ async def _handle_admin_callback_impl(update: Update, context: ContextTypes.DEFA
                 fail_reasons.append(f"• ID <code>{uid}</code>: {html.escape(str(e))}")
 
         context.user_data.pop("bcast_text", None)
+        context.user_data.pop("bcast_photo", None)
 
         err_block = ""
         if fail_reasons:

@@ -18,16 +18,33 @@ class FakeUser:
         self.username = username
 
 
+class FakePhotoSize:
+    def __init__(self, file_id="fake_photo_123"):
+        self.file_id = file_id
+
+
 class FakeMessage:
-    def __init__(self, text="", chat_id=1, message_id=50, parent=None):
+    def __init__(self, text="", chat_id=1, message_id=50, parent=None, photo=None, caption=None, caption_entities=None, entities=None):
         self.text = text
         self.chat_id = chat_id
         self.message_id = message_id
         self.parent = parent
+        self.photo = photo
+        self.caption = caption
+        self.caption_entities = caption_entities or []
+        self.entities = entities or []
         self.reply_text_calls = []
         self.reply_photo_calls = []
         self.reply_to_message = None
         self.edited_text = None
+
+    @property
+    def caption_html(self):
+        return self.caption
+
+    @property
+    def text_html(self):
+        return self.text
 
     async def reply_text(self, text, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
         msg = FakeMessage(text=text, chat_id=self.chat_id, message_id=self.message_id + len(self.reply_text_calls) + 1, parent=self)
@@ -100,11 +117,11 @@ class FakeCallbackQuery:
 
 
 class FakeUpdate:
-    def __init__(self, user_id=42, text="", chat_id=1, reply_to_message_id=None, is_edited=False, chat_type="private", callback_query=None):
+    def __init__(self, user_id=42, text="", chat_id=1, reply_to_message_id=None, is_edited=False, chat_type="private", callback_query=None, photo=None, caption=None, caption_entities=None, entities=None):
         self.effective_user = FakeUser(user_id=user_id)
         self.effective_chat = FakeChat(chat_id=chat_id, chat_type=chat_type)
         self.callback_query = callback_query
-        msg = FakeMessage(text=text, chat_id=chat_id)
+        msg = FakeMessage(text=text, chat_id=chat_id, photo=photo, caption=caption, caption_entities=caption_entities, entities=entities)
         if reply_to_message_id is not None:
             msg.reply_to_message = type(
                 "ReplyToMessage", (), {"message_id": reply_to_message_id}
@@ -121,6 +138,7 @@ class FakeBot:
     def __init__(self):
         self.sent_messages = []
         self.send_message_calls = []
+        self.send_photo_calls = []
         self.edited_messages = []
         self.deleted_messages = []
 
@@ -136,6 +154,7 @@ class FakeBot:
     async def send_photo(self, chat_id, photo, caption=None, parse_mode=None, reply_markup=None, protect_content=None, **kwargs):
         message_id = len(self.sent_messages) + 1
         self.sent_messages.append((chat_id, caption, message_id, parse_mode))
+        self.send_photo_calls.append({"chat_id": chat_id, "photo": photo, "caption": caption, "parse_mode": parse_mode})
         return type("SentMessage", (), {"message_id": message_id})()
 
     async def edit_message_text(self, chat_id, message_id, text, parse_mode=None, reply_markup=None):
@@ -2099,6 +2118,156 @@ def test_long_message_without_state_does_not_create_accidental_challenge():
     # Should NOT create a challenge
     challenges = asyncio.run(list_challenges(limit=10))
     assert len(challenges) == 0
+
+
+def test_admin_broadcast_with_photo_and_caption(monkeypatch):
+    from app.challenge.admin import handle_admin_callback, _verified_admin_cache
+
+    asyncio.run(db.reset_db())
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    _verified_admin_cache.add(99999)
+
+    # 1. Setup audience
+    asyncio.run(db.set_user_state(601, "ACTIVE"))
+    asyncio.run(db.set_user_state(602, "ACTIVE"))
+
+    # 2. Trigger broadcast
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_broadcast")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    ctx = FakeContext()
+
+    asyncio.run(handle_admin_callback(up1, ctx))
+    state = asyncio.run(db.get_user_state(99999))
+    assert state == "WAITING_FOR_ADMIN_BROADCAST"
+
+    # 3. Admin sends photo with caption (e.g. Zinabu Kelemework panelist poster)
+    photo_obj = [FakePhotoSize(file_id="zinabu_poster_file_id")]
+    caption_text = (
+        "🎙️ <b>MEET OUR FIRST COMMUNITY DAY PANELIST!</b>\n\n"
+        "We're excited to introduce <b>Zinabu Kelemework</b> as our first panelist for AWS Community Day 2026!"
+    )
+    up_photo = FakeUpdate(
+        user_id=99999,
+        text="",
+        photo=photo_obj,
+        caption=caption_text,
+    )
+    asyncio.run(bot.handle_message(up_photo, ctx))
+
+    assert "BROADCAST PREVIEW" in up_photo.message.reply_text_calls[0]["text"]
+    assert "Photo included" in up_photo.message.reply_text_calls[0]["text"]
+    assert "Zinabu Kelemework" in up_photo.message.reply_text_calls[0]["text"]
+    assert ctx.user_data.get("bcast_photo") == "zinabu_poster_file_id"
+    assert ctx.user_data.get("bcast_text") == caption_text
+
+    # 4. Confirm broadcast delivery
+    users = asyncio.run(db.get_all_broadcast_user_ids())
+    q_send = FakeCallbackQuery(user_id=99999, data="adm_bcast_send:custom")
+    up_send = FakeUpdate(user_id=99999, callback_query=q_send)
+
+    asyncio.run(handle_admin_callback(up_send, ctx))
+    assert "Broadcast Complete" in q_send.edited_text
+    assert len(ctx.bot.send_photo_calls) == len(users)
+    assert any(c["photo"] == "zinabu_poster_file_id" for c in ctx.bot.send_photo_calls)
+    assert any("Zinabu Kelemework" in (c["caption"] or "") for c in ctx.bot.send_photo_calls)
+    assert ctx.user_data.get("bcast_photo") is None
+    assert ctx.user_data.get("bcast_text") is None
+
+
+def test_admin_broadcast_with_photo_only(monkeypatch):
+    from app.challenge.admin import handle_admin_callback, _verified_admin_cache
+
+    asyncio.run(db.reset_db())
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    _verified_admin_cache.add(99999)
+
+    asyncio.run(db.set_user_state(701, "ACTIVE"))
+
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_broadcast")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    ctx = FakeContext()
+    asyncio.run(handle_admin_callback(up1, ctx))
+
+    # Send photo without text caption
+    photo_obj = [FakePhotoSize(file_id="raw_photo_id_456")]
+    up_photo = FakeUpdate(user_id=99999, text="", photo=photo_obj, caption=None)
+    asyncio.run(bot.handle_message(up_photo, ctx))
+
+    assert "BROADCAST PREVIEW" in up_photo.message.reply_text_calls[0]["text"]
+    assert "Photo included" in up_photo.message.reply_text_calls[0]["text"]
+    assert "(Photo announcement without text caption)" in up_photo.message.reply_text_calls[0]["text"]
+
+    users = asyncio.run(db.get_all_broadcast_user_ids())
+    q_send = FakeCallbackQuery(user_id=99999, data="adm_bcast_send:custom")
+    up_send = FakeUpdate(user_id=99999, callback_query=q_send)
+    asyncio.run(handle_admin_callback(up_send, ctx))
+
+    assert "Broadcast Complete" in q_send.edited_text
+    assert len(ctx.bot.send_photo_calls) == len(users)
+    assert all(c["photo"] == "raw_photo_id_456" for c in ctx.bot.send_photo_calls)
+    assert all(c["caption"] is None for c in ctx.bot.send_photo_calls)
+
+
+def test_admin_broadcast_with_photo_and_long_caption(monkeypatch):
+    from app.challenge.admin import handle_admin_callback, _verified_admin_cache
+
+    asyncio.run(db.reset_db())
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    _verified_admin_cache.add(99999)
+
+    asyncio.run(db.set_user_state(801, "ACTIVE"))
+
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_broadcast")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    ctx = FakeContext()
+    asyncio.run(handle_admin_callback(up1, ctx))
+
+    # Caption longer than 1024 characters
+    long_caption = "A" * 1100 + "\nOverflow announcement section."
+    photo_obj = [FakePhotoSize(file_id="long_caption_photo")]
+    up_photo = FakeUpdate(user_id=99999, text="", photo=photo_obj, caption=long_caption)
+    asyncio.run(bot.handle_message(up_photo, ctx))
+
+    users = asyncio.run(db.get_all_broadcast_user_ids())
+    q_send = FakeCallbackQuery(user_id=99999, data="adm_bcast_send:custom")
+    up_send = FakeUpdate(user_id=99999, callback_query=q_send)
+    asyncio.run(handle_admin_callback(up_send, ctx))
+
+    assert "Broadcast Complete" in q_send.edited_text
+    # Photo sent with caption <= 1024 chars
+    assert len(ctx.bot.send_photo_calls) == len(users)
+    assert all(len(c["caption"]) <= 1024 for c in ctx.bot.send_photo_calls)
+    # Overflow sent via send_message
+    assert len(ctx.bot.send_message_calls) >= len(users)
+    assert any("Overflow announcement section." in c["text"] for c in ctx.bot.send_message_calls)
+
+
+def test_admin_broadcast_cancel_cleans_staged_photo(monkeypatch):
+    from app.challenge.admin import handle_admin_callback, _verified_admin_cache
+
+    asyncio.run(db.reset_db())
+    monkeypatch.setenv("ADMIN_USER_IDS", "99999")
+    _verified_admin_cache.add(99999)
+
+    q1 = FakeCallbackQuery(user_id=99999, data="adm_broadcast")
+    up1 = FakeUpdate(user_id=99999, callback_query=q1)
+    ctx = FakeContext()
+    asyncio.run(handle_admin_callback(up1, ctx))
+
+    photo_obj = [FakePhotoSize(file_id="cancel_photo_id")]
+    up_photo = FakeUpdate(user_id=99999, text="", photo=photo_obj, caption="Test cancel caption")
+    asyncio.run(bot.handle_message(up_photo, ctx))
+    assert ctx.user_data.get("bcast_photo") == "cancel_photo_id"
+
+    # Cancel via callback
+    q_cancel = FakeCallbackQuery(user_id=99999, data="adm_bcast_cancel")
+    up_cancel = FakeUpdate(user_id=99999, callback_query=q_cancel)
+    asyncio.run(handle_admin_callback(up_cancel, ctx))
+
+    assert "Broadcast Cancelled" in q_cancel.edited_text
+    assert ctx.user_data.get("bcast_photo") is None
+    assert ctx.user_data.get("bcast_text") is None
+
 
 
 

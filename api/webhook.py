@@ -62,8 +62,9 @@ class handler(BaseHTTPRequestHandler):
             update_data = json.loads(post_data.decode("utf-8"))
             msg = update_data.get("message", {})
             user_id = msg.get("from", {}).get("id")
-            text = msg.get("text", "")
-            logger.info(f"POST update from user_id={user_id}: text={text[:60]!r}")
+            text = msg.get("text") or msg.get("caption", "")
+            has_photo = bool(msg.get("photo"))
+            logger.info(f"POST update from user_id={user_id}: text={text[:60]!r} (photo={has_photo})")
 
             update = Update.de_json(update_data, app.bot)
             loop.run_until_complete(app.process_update(update))

@@ -321,9 +321,10 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"✦ <b>Community Broadcast Center</b>\n\n"
         f"• <b>Active Reach:</b> <code>{count}</code> registered members\n\n"
-        f"Please type or paste the announcement message you wish to broadcast.\n\n"
+        f"Please type, paste, or send the announcement message you wish to broadcast.\n\n"
         f"• Supports HTML formatting (<b>bold</b>, <i>italic</i>, <code>code</code>, links)\n"
-        f"• Send your text directly as a message in this chat\n\n"
+        f"• You can also send a photo with a caption\n"
+        f"• Send directly as a message in this chat\n\n"
         f"<i>(Type /cancel to abort)</i>",
         parse_mode=ParseMode.HTML,
     )
@@ -377,6 +378,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     elif current_state == "WAITING_FOR_ADMIN_BROADCAST":
         await set_user_state(user_id, None)
+        context.user_data.pop("bcast_text", None)
+        context.user_data.pop("bcast_photo", None)
         await update.message.reply_text(
             "▪️ Broadcast cancelled.",
             reply_markup=get_main_menu_keyboard(),
@@ -441,8 +444,8 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Processes text messages based on the user's current state and sub-menu navigation."""
-    if not update.message or not update.message.text:
+    """Processes text and photo messages based on the user's current state and sub-menu navigation."""
+    if not update.message or (not update.message.text and not getattr(update.message, "photo", None)):
         return
 
     try:
@@ -460,7 +463,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Inner handler that does the actual work. Exceptions bubble up to handle_message."""
-    text = update.message.text
+    photo_id = update.message.photo[-1].file_id if getattr(update.message, "photo", None) else None
+
+    # Extract text or caption, preserving rich formatting (HTML / entities)
+    if getattr(update.message, "caption", None):
+        text = update.message.caption_html if getattr(update.message, "caption_entities", None) else update.message.caption
+    elif getattr(update.message, "text", None):
+        text = update.message.text_html if getattr(update.message, "entities", None) else update.message.text
+    else:
+        text = ""
+
     user = update.effective_user
     user_id = user.id
     if user:
@@ -1406,7 +1418,16 @@ async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TY
         if not await is_admin_user(user_id, chat_id, context.bot):
             await set_user_state(user_id, None)
             return
+
+        if not text and not photo_id:
+            await update.message.reply_text(
+                "▪️ Please provide announcement text or an image with a caption to broadcast.\n\n<i>(Type /cancel to abort)</i>",
+                parse_mode=ParseMode.HTML,
+            )
+            return
+
         context.user_data["bcast_text"] = text
+        context.user_data["bcast_photo"] = photo_id
         users = await get_all_broadcast_user_ids()
         count = len(users)
 
@@ -1414,12 +1435,16 @@ async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TY
         if len(preview_body) > 3000:
             preview_body = preview_body[:3000] + "...\n\n<i>(Preview truncated; full announcement will be delivered)</i>"
 
+        media_badge = "• <b>Attached Media:</b> 📷 Photo included\n" if photo_id else ""
+        content_preview = f"<blockquote>{preview_body}</blockquote>\n\n" if preview_body else "<i>(Photo announcement without text caption)</i>\n\n"
+
         preview_text = (
             f"✦ <b>BROADCAST PREVIEW</b>\n\n"
             f"• <b>Target Audience:</b> <code>{count}</code> registered members\n"
+            f"{media_badge}"
             f"• <b>Message Length:</b> <code>{len(text)}</code> characters\n\n"
-            f"<blockquote>{preview_body}</blockquote>\n\n"
-            f"<i>Are you sure you want to broadcast this message to all registered members?</i>"
+            f"{content_preview}"
+            f"<i>Are you sure you want to broadcast this {'photo & announcement' if photo_id else 'message'} to all registered members?</i>"
         )
         try:
             await update.message.reply_text(
@@ -1430,12 +1455,14 @@ async def _handle_message_inner(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             # Fallback if custom text contained unescaped HTML characters (<, >, &)
             safe_preview = html.escape(preview_body)
+            safe_content = f"<blockquote>{safe_preview}</blockquote>\n\n" if safe_preview else "<i>(Photo announcement without text caption)</i>\n\n"
             safe_text = (
                 f"✦ <b>BROADCAST PREVIEW</b>\n\n"
                 f"• <b>Target Audience:</b> <code>{count}</code> registered members\n"
+                f"{media_badge}"
                 f"• <b>Message Length:</b> <code>{len(text)}</code> characters\n\n"
-                f"<blockquote>{safe_preview}</blockquote>\n\n"
-                f"<i>Are you sure you want to broadcast this message to all registered members?</i>"
+                f"{safe_content}"
+                f"<i>Are you sure you want to broadcast this {'photo & announcement' if photo_id else 'message'} to all registered members?</i>"
             )
             await update.message.reply_text(
                 safe_text,
@@ -1985,10 +2012,10 @@ def create_application(token: str = None):
         )
     )
 
-    # User Private Messages
+    # User Private Messages (Text or Media like Photos)
     app.add_handler(
         MessageHandler(
-            filters.TEXT & filters.ChatType.PRIVATE & (~filters.COMMAND),
+            (filters.TEXT | filters.PHOTO) & filters.ChatType.PRIVATE & (~filters.COMMAND),
             handle_message,
         )
     )
