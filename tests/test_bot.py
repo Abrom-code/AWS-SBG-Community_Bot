@@ -133,6 +133,14 @@ class FakeUpdate:
             self.message = msg
             self.edited_message = None
 
+    @property
+    def effective_message(self):
+        if self.message:
+            return self.message
+        if self.callback_query and getattr(self.callback_query, "message", None):
+            return self.callback_query.message
+        return None
+
 
 class FakeBot:
     def __init__(self):
@@ -1601,7 +1609,7 @@ def test_about_command_and_menu_button():
 
 
 def test_community_inline_callback_navigation():
-    """Verifies inline buttons switch between education, events, and about smoothly."""
+    """Verifies inline buttons switch between education, events, and about smoothly, and feedback/question buttons work even when update.message is None."""
     from app.community import handle_community_callback
 
     # 1. Click comm_education
@@ -1622,6 +1630,26 @@ def test_community_inline_callback_navigation():
     up_ab = FakeUpdate(user_id=123, callback_query=q_ab)
     asyncio.run(handle_community_callback(up_ab, ctx))
     assert "About AWS Student Builder Group (AASTU)" in q_ab.edited_text
+
+    # 4. Click comm_feedback (inline post button where update.message is None)
+    q_fb = FakeCallbackQuery(user_id=123, data="comm_feedback")
+    up_fb = FakeUpdate(user_id=123, callback_query=q_fb)
+    up_fb.message = None
+    asyncio.run(handle_community_callback(up_fb, ctx))
+    assert q_fb.answered is True
+    assert asyncio.run(db.get_user_state(123)) == "WAITING_FOR_FEEDBACK"
+    assert len(q_fb.message.reply_text_calls) == 1
+    assert "Submit Feedback & Suggestions" in q_fb.message.reply_text_calls[0]["text"]
+
+    # 5. Click comm_question (inline post button where update.message is None)
+    q_q = FakeCallbackQuery(user_id=123, data="comm_question")
+    up_q = FakeUpdate(user_id=123, callback_query=q_q)
+    up_q.message = None
+    asyncio.run(handle_community_callback(up_q, ctx))
+    assert q_q.answered is True
+    assert asyncio.run(db.get_user_state(123)) == "WAITING_FOR_QUESTION"
+    assert len(q_q.message.reply_text_calls) == 1
+    assert "Ask a Question / Support" in q_q.message.reply_text_calls[0]["text"]
 
 
 def test_paused_challenge_commands_gracefully_fallback():

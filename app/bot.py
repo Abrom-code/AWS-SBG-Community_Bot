@@ -243,6 +243,20 @@ async def challenge_hub_command(update: Update, context: ContextTypes.DEFAULT_TY
     return await challenge_paused_command(update, context)
 
 
+async def send_response(update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, reply_markup=None, parse_mode=None):
+    """Safely responds to either a direct message update or a callback query."""
+    target_msg = update.effective_message or update.message
+    if target_msg:
+        return await target_msg.reply_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
+    elif update.effective_chat and context.bot:
+        return await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=text,
+            reply_markup=reply_markup,
+            parse_mode=parse_mode,
+        )
+
+
 async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the Feedback & Support hub with dedicated sub-menu."""
     if context.bot and update.effective_chat:
@@ -258,7 +272,9 @@ async def feedback_hub_command(update: Update, context: ContextTypes.DEFAULT_TYP
         "• About Support — Learn how our leadership team responds\n\n"
         "<i>Select an option below:</i>"
     )
-    await update.message.reply_text(
+    await send_response(
+        update,
+        context,
         hub_text,
         parse_mode=ParseMode.HTML,
         reply_markup=get_feedback_menu_keyboard(),
@@ -278,7 +294,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/help — This command guide\n\n"
         "<i>Or use the menu buttons below to navigate.</i>"
     )
-    await update.message.reply_text(
+    await send_response(
+        update,
+        context,
         help_text,
         parse_mode=ParseMode.HTML,
         reply_markup=get_main_menu_keyboard(),
@@ -287,7 +305,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def notifications_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Explains notification preferences and active broadcast status."""
-    await update.message.reply_text(
+    await send_response(
+        update,
+        context,
         "<b>Community Notifications</b>\n\n"
         "You are subscribed to real-time AWS Student Builder updates:\n\n"
         "• <b>Education Track:</b> Session schedules, lab walk-throughs, and recordings\n"
@@ -309,7 +329,9 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     chat = update.effective_chat
     if not user or not await is_admin_user(user.id, chat.id if chat else None, context.bot):
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "<b>Access Denied:</b> This command is restricted to AWS SBG administrators.",
             parse_mode=ParseMode.HTML,
         )
@@ -318,7 +340,9 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     users = await get_all_broadcast_user_ids()
     count = len(users)
     await set_user_state(user.id, "WAITING_FOR_ADMIN_BROADCAST")
-    await update.message.reply_text(
+    await send_response(
+        update,
+        context,
         f"✦ <b>Community Broadcast Center</b>\n\n"
         f"• <b>Active Reach:</b> <code>{count}</code> registered members\n\n"
         f"Please type, paste, or send the announcement message you wish to broadcast.\n\n"
@@ -332,10 +356,13 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Initiates member feedback / suggestions workflow."""
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id if user else 0
     await set_user_state(user_id, WAITING_FOR_FEEDBACK)
 
-    await update.message.reply_text(
+    await send_response(
+        update,
+        context,
         "✦ <b>Submit Feedback & Suggestions</b>\n\n"
         "We'd love to hear your thoughts, ideas, or suggestions for our AWS community!\n\n"
         "Please type your message below:\n\n"
@@ -347,10 +374,13 @@ async def feedback_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Initiates member question / support workflow."""
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id if user else 0
     await set_user_state(user_id, WAITING_FOR_QUESTION)
 
-    await update.message.reply_text(
+    await send_response(
+        update,
+        context,
         "✦ <b>Ask a Question / Support</b>\n\n"
         "Have a question about the Education Track, workshops, AWS certification, or need technical help?\n\n"
         "Please type your question below:\n\n"
@@ -362,17 +392,22 @@ async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Cancels the current feedback, question, or broadcast session and returns to the main menu."""
-    user_id = update.effective_user.id
+    user = update.effective_user
+    user_id = user.id if user else 0
     current_state = await get_user_state(user_id)
     if current_state == WAITING_FOR_FEEDBACK:
         await set_user_state(user_id, None)
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "▪️ Feedback submission cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
     elif current_state in (WAITING_FOR_QUESTION, "WAITING_FOR_SUPPORT"):
         await set_user_state(user_id, None)
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "▪️ Question submission cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
@@ -380,21 +415,27 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await set_user_state(user_id, None)
         context.user_data.pop("bcast_text", None)
         context.user_data.pop("bcast_photo", None)
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "▪️ Broadcast cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
     elif current_state == "WAITING_FOR_ADMIN_UPDATE_EDU":
         await set_user_state(user_id, None)
         context.user_data.pop("staged_edu", None)
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "▪️ Education Track update cancelled.",
             reply_markup=get_admin_menu_keyboard(),
         )
     elif current_state == "WAITING_FOR_ADMIN_NEW_TRACK":
         await set_user_state(user_id, None)
         context.user_data.pop("staged_new_track", None)
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "▪️ Adding new Education Track cancelled.",
             reply_markup=get_admin_menu_keyboard(),
         )
@@ -403,14 +444,18 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         for k in list(context.user_data.keys()):
             if k.startswith("staged_edit_track:"):
                 context.user_data.pop(k, None)
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "▪️ Education Track editing cancelled.",
             reply_markup=get_admin_menu_keyboard(),
         )
     elif current_state == "WAITING_FOR_ADMIN_UPDATE_EVENT":
         await set_user_state(user_id, None)
         context.user_data.pop("staged_event", None)
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "▪️ Next Event update cancelled.",
             reply_markup=get_admin_menu_keyboard(),
         )
@@ -431,12 +476,16 @@ async def cancel_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await set_user_state(user_id, None)
         context.user_data.pop("target_ch_id", None)
         context.user_data.pop("edit_ch_id", None)
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "▪️ Operation cancelled.",
             reply_markup=get_main_menu_keyboard(),
         )
     else:
-        await update.message.reply_text(
+        await send_response(
+            update,
+            context,
             "✦ <b>Main Menu</b>\n\nChoose an option below:",
             parse_mode=ParseMode.HTML,
             reply_markup=get_main_menu_keyboard(),

@@ -346,12 +346,21 @@ async def about_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-    elif update.message:
-        await update.message.reply_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_about_inline_keyboard(),
-        )
+    else:
+        target = update.effective_message or update.message
+        if target:
+            await target.reply_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_about_inline_keyboard(),
+            )
+        elif update.effective_chat and context.bot:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_about_inline_keyboard(),
+            )
 
 
 async def education_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -377,12 +386,21 @@ async def education_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-    elif update.message:
-        await update.message.reply_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=keyboard,
-        )
+    else:
+        target = update.effective_message or update.message
+        if target:
+            await target.reply_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard,
+            )
+        elif update.effective_chat and context.bot:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard,
+            )
 
 
 async def events_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -397,12 +415,21 @@ async def events_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
         except Exception:
             pass
-    elif update.message:
-        await update.message.reply_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_events_inline_keyboard(),
-        )
+    else:
+        target = update.effective_message or update.message
+        if target:
+            await target.reply_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_events_inline_keyboard(),
+            )
+        elif update.effective_chat and context.bot:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_events_inline_keyboard(),
+            )
 
 
 async def challenge_paused_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -418,12 +445,21 @@ async def challenge_paused_command(update: Update, context: ContextTypes.DEFAULT
             parse_mode=ParseMode.HTML,
             reply_markup=get_challenge_paused_keyboard(),
         )
-    elif update.message:
-        await update.message.reply_text(
-            text,
-            parse_mode=ParseMode.HTML,
-            reply_markup=get_challenge_paused_keyboard(),
-        )
+    else:
+        target = update.effective_message or update.message
+        if target:
+            await target.reply_text(
+                text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_paused_keyboard(),
+            )
+        elif update.effective_chat and context.bot:
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=text,
+                parse_mode=ParseMode.HTML,
+                reply_markup=get_challenge_paused_keyboard(),
+            )
 
 
 async def handle_community_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
